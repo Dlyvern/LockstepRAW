@@ -1,0 +1,37 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "debug",
+            "displayName": "Debug (validation layers, dev tools)",
+            "binaryDir": "${sourceDir}/build/debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "LOCKSTEP_DEV_TOOLS": "ON"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release (dev tools on)",
+            "binaryDir": "${sourceDir}/build/release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "LOCKSTEP_DEV_TOOLS": "ON"
+            }
+        },
+        {
+            "name": "shipping",
+            "displayName": "Shipping (no dev tools)",
+            "binaryDir": "${sourceDir}/build/shipping",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "LOCKSTEP_DEV_TOOLS": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "debug", "configurePreset": "debug" },
+        { "name": "release", "configurePreset": "release" },
+        { "name": "shipping", "configurePreset": "shipping" }
+    ]
+}

@@ -1,0 +1,47 @@
+{
+    "cmake.useCMakePresets": "always",
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.configureOnOpen": true,
+
+    // Each preset builds into its own folder (build/debug, build/release, ...).
+    // Copy the active preset's compile database to one fixed place so clangd
+    // always finds it, whichever preset is selected.
+    "cmake.copyCompileCommands": "${workspaceFolder}/build/compile_commands.json",
+
+    // clangd does IntelliSense; the Microsoft C/C++ extension only debugs.
+    // Two providers on the same files give phantom "undeclared identifier" errors.
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.autocomplete": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
+
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy",
+        "--header-insertion=never",
+        "--completion-style=detailed",
+        "--query-driver=/usr/bin/g++,/usr/bin/gcc,/usr/bin/c++,/usr/bin/clang++",
+        "--compile-commands-dir=${workspaceFolder}/build"
+    ],
+
+    "files.associations": {
+        "*.hpp": "cpp",
+        "*.inl": "cpp",
+        "*.vert": "glsl",
+        "*.frag": "glsl",
+        "*.comp": "glsl"
+    },
+    "files.eol": "\n",
+    "editor.formatOnSave": false,
+
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/.cache/**": true,
+        "external/**": true
+    },
+    "search.exclude": {
+        "build": true,
+        ".cache": true,
+        "external/Vela/build*": true,
+        "external/Vela/Examples/vendor": true
+    }
+}

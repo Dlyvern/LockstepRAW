@@ -1,0 +1,6 @@
+[submodule "external/Vela"]
+	path = external/Vela
+	url = https://github.com/Dlyvern/Vela.git
+[submodule "external/imgui"]
+	path = external/imgui
+	url = https://github.com/ocornut/imgui.git
