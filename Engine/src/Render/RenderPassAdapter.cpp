@@ -5,7 +5,7 @@
 namespace lockstep::render
 {
     RenderPassAdapter::RenderPassAdapter(RenderPass& pass)
-        : m_pass(&pass)
+        : m_pass(pass)
     {
     }
 
@@ -25,19 +25,6 @@ namespace lockstep::render
 
     void RenderPassAdapter::record(vela::graphics::PassRecorder& recorder)
     {
-        if (m_pass != nullptr)
-        {
-            m_pass->record(recorder);
-        }
-    }
-
-    bool RenderPassAdapter::isAttachedTo(const RenderPass& pass) const
-    {
-        return m_pass == &pass;
-    }
-
-    void RenderPassAdapter::detach()
-    {
-        m_pass = nullptr;
+        m_pass.record(recorder);
     }
 } //namespace lockstep::render

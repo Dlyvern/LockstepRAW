@@ -38,19 +38,22 @@ namespace lockstep::debug
 
     // Per-frame durations the Engine panel shows, each over the last FrameTimeHistory::k_capacity
     // frames.
-    // frame:     wall time of one run-loop iteration (work + render).
-    // cpuWork:   CPU time spent doing frame work: the iteration minus the time inside Vela's
-    //            RenderGraph::execute(). That call blocks on the frame fence and on swapchain
-    //            image acquire (the vsync wait) and also records, submits and presents; Engine
-    //            can't split those apart, so command recording inside the graph is left out too.
-    // velaFrame: Vela's FrameStats::cpuFrameMs, the duration of RenderGraph::execute(),
-    //            including the vsync wait.
+    // frame:      wall time of one run-loop iteration (work + render).
+    // engineWork: CPU time the Engine and Game spend on the frame: the iteration minus the time
+    //             inside Vela's RenderGraph::execute().
+    // velaWork:   Vela's FrameStats::cpuWorkMs: recording, submitting and presenting.
+    // velaWait:   Vela's FrameStats::cpuWaitMs: blocked on a frame in flight or a swapchain image
+    //             (where vsync waits).
+    // gpu:        Vela's FrameStats::gpuFrameMs of the newest finished frame, when valid.
     struct FrameTimeHistories
     {
         FrameTimeHistory frame;
-        FrameTimeHistory cpuWork;
-        FrameTimeHistory velaFrame;
+        FrameTimeHistory engineWork;
+        FrameTimeHistory velaWork;
+        FrameTimeHistory velaWait;
+        FrameTimeHistory gpu;
     };
+
 } //namespace lockstep::debug
 
 #endif //LOCKSTEP_DEBUG_FRAME_TIME_HISTORY_HPP

@@ -31,6 +31,11 @@ namespace lockstep::render
         return levels;
     }
 
+    bool Renderer::supportsBlockCompression() const
+    {
+        return m_state->context.getDeviceInfo().enabled(vela::core::Feature::TextureCompressionBC);
+    }
+
     Result<TextureHandle> Renderer::createTexture(const TextureDescription& description)
     {
         if (description.width == 0 || description.height == 0 || description.levels == 0
@@ -47,6 +52,13 @@ namespace lockstep::render
                 std::max(1u, description.height >> level));
         }
 
+        if (description.generateMips
+            && (description.levels != 1 || (description.format != TextureFormat::Rgba8Srgb
+                && description.format != TextureFormat::Rgba8Unorm)))
+        {
+            return Error{ErrorCode::InvalidArgument, "createTexture: generateMips needs one Rgba8 level"};
+        }
+
         if (description.pixels.size() != expectedSize)
         {
             return Error{ErrorCode::InvalidArgument, "createTexture: expected " + std::to_string(expectedSize)
@@ -60,7 +72,9 @@ namespace lockstep::render
         image.format = toVelaFormat(description.format);
         image.levels = description.levels;
 
-        auto texture = vela::graphics::Texture::create(m_state->context, image, toVelaSampler(description.filter));
+        const vela::graphics::TextureOptions options{.generateMips = description.generateMips};
+        auto texture = vela::graphics::Texture::create(m_state->context, image, toVelaSampler(description.filter),
+            options);
 
         if (!texture)
         {

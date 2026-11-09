@@ -107,9 +107,12 @@ namespace lockstep::assets
     // scale:                 uniform scale applied to the whole scene around the origin.
     // keepCollisionGeometry: keep mesh-space positions and indices in each SceneMesh so
     //                        createSceneCollision() can build colliders from them.
-    // compressTextures:      store textures that arrive uncompressed (jpg, png, KTX2 without
-    //                        mips) as Bc1, or Bc3 when they have alpha, after generating mips.
-    //                        KTX2 with a full mip chain is transcoded to Bc7 either way.
+    // compressTextures:      store single-level colour textures (base colour, emissive; jpg, png
+    //                        or KTX2) as Bc1, or Bc3 when they have alpha, with mips built on the
+    //                        CPU. Data textures (normal, metallic-roughness, occlusion), and colour
+    //                        ones without this option or Bc support, stay Rgba8 and the GPU builds
+    //                        their mips: Bc1/Bc3 band normal maps. Basis KTX2 with a mip chain
+    //                        becomes Bc7 whenever the GPU has Bc support.
     // workerThreads:         threads decoding textures; 0 picks the hardware thread count.
     struct SceneImportOptions
     {

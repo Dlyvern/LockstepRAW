@@ -114,14 +114,44 @@ namespace lockstep::assets
             return decoded;
         }
 
-        DecodedTexture mipmapRgba8Level(ktxTexture2* texture, bool srgb, bool compress)
+        render::TextureFormat rgba8Format(bool srgb)
+        {
+            return srgb ? render::TextureFormat::Rgba8Srgb : render::TextureFormat::Rgba8Unorm;
+        }
+
+        DecodedTexture singleRgba8Level(std::span<const uint8_t> rgba, uint32_t width, uint32_t height, bool srgb)
+        {
+            DecodedTexture decoded{};
+            decoded.format = rgba8Format(srgb);
+            decoded.width = width;
+            decoded.height = height;
+            decoded.levels = 1;
+            decoded.generateMips = decoded.levels < render::fullMipLevelCount(width, height);
+            const auto* bytes = reinterpret_cast<const std::byte*>(rgba.data());
+            decoded.bytes.assign(bytes, bytes + rgba.size());
+
+            return decoded;
+        }
+
+        DecodedTexture mipmapRgba8(std::span<const uint8_t> rgba, uint32_t width, uint32_t height, bool srgb,
+            const DecodeTargets& targets)
+        {
+            if (srgb && targets.blockCompression && targets.compress)
+            {
+                return buildMippedTexture(rgba, width, height, srgb, true);
+            }
+
+            return singleRgba8Level(rgba, width, height, srgb);
+        }
+
+        DecodedTexture mipmapKtxLevel(ktxTexture2* texture, bool srgb, const DecodeTargets& targets)
         {
             ktx_size_t offset = 0;
             ktxTexture_GetImageOffset(ktxTexture(texture), 0, 0, 0, &offset);
             const std::size_t size = static_cast<std::size_t>(texture->baseWidth) * texture->baseHeight * 4;
 
-            return buildMippedTexture(std::span<const uint8_t>(texture->pData + offset, size), texture->baseWidth,
-                texture->baseHeight, srgb, compress);
+            return mipmapRgba8(std::span<const uint8_t>(texture->pData + offset, size), texture->baseWidth,
+                texture->baseHeight, srgb, targets);
         }
 
         ktx_error_code_e transcode(ktxTexture2* texture, ktx_transcode_fmt_e target, TranscoderGate& gate)
@@ -138,7 +168,7 @@ namespace lockstep::assets
             return result;
         }
 
-        Result<DecodedTexture> decodeKtx2(std::span<const std::byte> encoded, bool srgb, bool compress,
+        Result<DecodedTexture> decodeKtx2(std::span<const std::byte> encoded, bool srgb, const DecodeTargets& targets,
             TranscoderGate& gate)
         {
             ktxTexture2* raw = nullptr;
@@ -162,7 +192,8 @@ namespace lockstep::assets
             if (ktxTexture2_NeedsTranscoding(texture.get()))
             {
                 const bool hasMips = texture->numLevels > 1;
-                const ktx_error_code_e transcoded = transcode(texture.get(), hasMips ? KTX_TTF_BC7_RGBA : KTX_TTF_RGBA32,
+                const bool toBc7 = hasMips && targets.blockCompression;
+                const ktx_error_code_e transcoded = transcode(texture.get(), toBc7 ? KTX_TTF_BC7_RGBA : KTX_TTF_RGBA32,
                     gate);
 
                 if (transcoded != KTX_SUCCESS)
@@ -170,12 +201,17 @@ namespace lockstep::assets
                     return decodeError(std::string("KTX2 transcode: ") + ktxErrorString(transcoded));
                 }
 
-                if (hasMips)
+                if (toBc7)
                 {
                     return copyLevels(texture.get(), srgb ? render::TextureFormat::Bc7Srgb : render::TextureFormat::Bc7Unorm);
                 }
 
-                return mipmapRgba8Level(texture.get(), srgb, compress);
+                if (hasMips)
+                {
+                    return copyLevels(texture.get(), rgba8Format(srgb));
+                }
+
+                return mipmapKtxLevel(texture.get(), srgb, targets);
             }
 
             const std::optional<render::TextureFormat> format = storedFormat(texture->vkFormat, srgb);
@@ -185,15 +221,20 @@ namespace lockstep::assets
                 return decodeError("KTX2: unsupported vkFormat " + std::to_string(texture->vkFormat));
             }
 
+            if (isBlockCompressed(*format) && !targets.blockCompression)
+            {
+                return decodeError("KTX2: block-compressed data, but the GPU has no Bc support");
+            }
+
             if (!isBlockCompressed(*format) && texture->numLevels == 1)
             {
-                return mipmapRgba8Level(texture.get(), srgb, compress);
+                return mipmapKtxLevel(texture.get(), srgb, targets);
             }
 
             return copyLevels(texture.get(), *format);
         }
 
-        Result<DecodedTexture> decodeStb(std::span<const std::byte> encoded, bool srgb, bool compress)
+        Result<DecodedTexture> decodeStb(std::span<const std::byte> encoded, bool srgb, const DecodeTargets& targets)
         {
             if (encoded.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
             {
@@ -215,8 +256,8 @@ namespace lockstep::assets
 
             const std::size_t size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
 
-            return buildMippedTexture(std::span<const uint8_t>(pixels.get(), size), static_cast<uint32_t>(width),
-                static_cast<uint32_t>(height), srgb, compress);
+            return mipmapRgba8(std::span<const uint8_t>(pixels.get(), size), static_cast<uint32_t>(width),
+                static_cast<uint32_t>(height), srgb, targets);
         }
     } //namespace
 
@@ -225,14 +266,14 @@ namespace lockstep::assets
         return format != render::TextureFormat::Rgba8Srgb && format != render::TextureFormat::Rgba8Unorm;
     }
 
-    Result<DecodedTexture> decodeImage(std::span<const std::byte> encoded, bool srgb, bool compress,
+    Result<DecodedTexture> decodeImage(std::span<const std::byte> encoded, bool srgb, const DecodeTargets& targets,
         TranscoderGate& gate)
     {
         if (isKtx2(encoded))
         {
-            return decodeKtx2(encoded, srgb, compress, gate);
+            return decodeKtx2(encoded, srgb, targets, gate);
         }
 
-        return decodeStb(encoded, srgb, compress);
+        return decodeStb(encoded, srgb, targets);
     }
 } //namespace lockstep::assets

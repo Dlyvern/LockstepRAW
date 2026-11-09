@@ -10,13 +10,15 @@
 namespace lockstep::assets
 {
     // A texture decoded on the CPU, laid out as render::TextureDescription expects: every mip
-    // level, largest first, tightly packed.
+    // level, largest first, tightly packed. With generateMips, `bytes` holds one Rgba8 level and
+    // the GPU builds the rest.
     struct DecodedTexture
     {
         render::TextureFormat format{render::TextureFormat::Rgba8Srgb};
         uint32_t width{0};
         uint32_t height{0};
         uint32_t levels{1};
+        bool generateMips{false};
         std::vector<std::byte> bytes;
     };
 

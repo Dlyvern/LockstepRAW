@@ -58,14 +58,17 @@ namespace lockstep::render
 
     // Renders the depth of every shadow caster into its tiles of the fixed-size shadow atlas: the
     // sun's cascades and possibly one spot light. Alpha-masked materials discard in their own
-    // shadow material. The atlas is cleared even when nothing casts, which keeps the graph static.
+    // shadow material. Every shadow material renders with the hardware depth bias of the shadow
+    // settings (see updateShadowMaterials()). The atlas is cleared even when nothing casts, which
+    // keeps the graph static.
     class ShadowPass final : public vela::graphics::Pass
     {
     public:
-        // Loads the shadow shaders and creates the depth-only material.
-        // state:   the renderer state whose draw lists and prepared lighting the pass reads every
-        //          frame. Must outlive the pass.
-        // Returns: the pass, or an error if a shader is missing or the material failed.
+        // Creates the pass. It draws opaque casters with RendererState::shadowMaterial, which must
+        // exist before the first frame.
+        // state:   the renderer state whose draw lists, prepared lighting and shadow materials the
+        //          pass reads every frame. Must outlive the pass.
+        // Returns: the pass.
         [[nodiscard]] static Result<std::unique_ptr<ShadowPass>> create(RendererState& state);
 
         // Returns: the shadow atlas as the only (depth) output.
@@ -76,10 +79,9 @@ namespace lockstep::render
         void record(vela::graphics::PassRecorder& recorder) override;
 
     private:
-        ShadowPass(const RendererState& state, vela::graphics::Material&& material);
+        explicit ShadowPass(const RendererState& state);
 
         const RendererState* m_state{nullptr};
-        vela::graphics::Material m_material;
     };
 
     // The forward scene pass: clears the HDR targets and depth, draws visible opaque draws front to
@@ -95,7 +97,8 @@ namespace lockstep::render
         // Returns: the pass, or an error if a shader is missing or the material failed.
         [[nodiscard]] static Result<std::unique_ptr<LitScenePass>> create(RendererState& state);
 
-        // Returns: colour, ambient and depth outputs (cleared); the shadow atlas and environment
+        // Returns: colour, ambient and depth outputs (cleared; multisampled and resolved into
+        //          them when RendererState::sceneSamples > 1); the shadow atlas and environment
         //          atlas as sampled inputs.
         [[nodiscard]] vela::graphics::PassDescription describe() const override;
 

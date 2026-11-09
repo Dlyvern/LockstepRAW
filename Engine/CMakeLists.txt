@@ -13,9 +13,11 @@ add_library(LockstepEngine STATIC
     src/Assets/TextureImport.cpp
     src/Core/Bounds.cpp
     src/Core/FixedTimestep.cpp
+    src/Core/Log.cpp
     src/Core/Result.cpp
     src/Core/Transform.cpp
     src/Core/VelaError.cpp
+    src/Core/VelaLog.cpp
     src/Net/InputBuffer.cpp
     src/Net/Network.cpp
     src/Net/Replication.cpp
@@ -44,9 +46,11 @@ add_library(LockstepEngine STATIC
     src/Render/PresentMode.cpp
     src/Render/Renderer.cpp
     src/Render/RendererResources.cpp
+    src/Render/RendererState.cpp
     src/Render/RenderPassAdapter.cpp
     src/Render/ShaderLoader.cpp
     src/Render/ShadowCascades.cpp
+    src/Render/ShadowMaterials.cpp
     src/Render/Shapes.cpp
     src/Render/SkyModel.cpp
     src/Render/VelaConversions.cpp
@@ -91,13 +95,12 @@ else()
 endif()
 
 # Vela's math (header-only) is public: Lockstep/Core/Math.hpp re-exports its types to Game.
-# The rest of Vela stays private. Vela::Builtins must come before Vela::Vela (Builtins uses the
-# backend without declaring it).
+# The rest of Vela stays private.
 target_link_libraries(LockstepEngine
     PUBLIC
         Vela::Math
     PRIVATE
-        Vela::Builtins Vela::Assets Vela::Vela
+        Vela::Vela Vela::Builtins Vela::Assets
 )
 
 # GameNetworkingSockets stays private: only Engine/src/Net includes it.

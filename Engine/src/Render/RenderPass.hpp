@@ -9,9 +9,8 @@ namespace lockstep::render
     // Engine-internal: implementations record with Vela directly, but never see Vela's attachment
     // model. The Renderer decides which attachment the pass draws into (today: the tonemapped
     // display image, loaded and stored, so overlays are not affected by exposure or fog) and runs
-    // passes in the order they were added.
-    // That order is not declared to Vela: it relies on Vela's graph sort keeping insertion order
-    // between passes that write the same attachment (see Vela gaps in CLAUDE.md).
+    // passes in the order they were added. Vela guarantees that order: a pass that loads an
+    // attachment runs after every pass added before it that writes the same attachment.
     class RenderPass
     {
     public:

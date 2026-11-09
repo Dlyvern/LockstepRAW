@@ -1,6 +1,7 @@
 #include "Lockstep/Render/Renderer.hpp"
 
 #include "RendererState.hpp"
+#include "ShadowMaterials.hpp"
 #include "VelaConversions.hpp"
 
 #include <Vela/Graphics/VertexLayout.hpp>
@@ -31,7 +32,6 @@ namespace lockstep::render
         };
 
         constexpr uint32_t k_unlitAlbedoSlot{0};
-        constexpr uint32_t k_maskedShadowBaseColorSlot{0};
         constexpr float k_notMasked{-1.0f};
 
         vela::graphics::VertexLayout pbrVertexLayout()
@@ -200,29 +200,6 @@ namespace lockstep::render
             }
 
             return {};
-        }
-
-        Result<vela::graphics::Material> createMaskedShadowMaterial(RendererState& state,
-            const vela::graphics::Texture& baseColor)
-        {
-            auto material = vela::graphics::Material::create(state.context,
-            {
-                .vertexShader = state.shaders.shadowMaskVertex,
-                .fragmentShader = state.shaders.shadowMaskFragment,
-                .vertexLayout = positionUvLayout()
-            });
-
-            if (!material)
-            {
-                return toError(material.error());
-            }
-
-            if (auto bound = material.value().setTexture(k_maskedShadowBaseColorSlot, baseColor); !bound)
-            {
-                return toError(bound.error());
-            }
-
-            return std::move(material).value();
         }
 
         PbrFactors toFactors(const PbrMaterialDescription& description)
@@ -415,6 +392,7 @@ namespace lockstep::render
             }
 
             record.maskedShadow.emplace(std::move(shadow).value());
+            record.maskedShadowBaseColor = resolved[0];
         }
 
         return state.materials.add(std::move(record));

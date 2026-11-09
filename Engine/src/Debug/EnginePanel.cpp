@@ -1,5 +1,6 @@
 #include "EnginePanel.hpp"
 
+#include "Lockstep/Core/Log.hpp"
 #include "Lockstep/Physics/PhysicsWorld.hpp"
 #include "Lockstep/Render/PresentMode.hpp"
 
@@ -14,6 +15,8 @@ namespace lockstep::debug
         constexpr double k_bytesPerMegabyte{1024.0 * 1024.0};
         constexpr float k_millisecondsPerSecond{1000.0f};
         constexpr ImVec2 k_panelPosition{10.0f, 10.0f};
+        constexpr render::PresentMode k_presentModes[]{render::PresentMode::VSync, render::PresentMode::LowLatency,
+            render::PresentMode::Uncapped};
 
         double toMegabytes(uint64_t bytes)
         {
@@ -32,9 +35,31 @@ namespace lockstep::debug
                 ImGui::SetTooltip("%s", text);
             }
         }
+
+        void drawPresentModeSelector(render::RendererState& renderer, const vela::core::SwapchainInfo& swapchain)
+        {
+            if (ImGui::BeginCombo("Present", render::toString(renderer.presentMode)))
+            {
+                for (const render::PresentMode mode : k_presentModes)
+                {
+                    if (ImGui::Selectable(render::toString(mode), mode == renderer.presentMode)
+                        && mode != renderer.presentMode)
+                    {
+                        if (auto changed = renderer.setPresentMode(mode); !changed)
+                        {
+                            log(LogLevel::Error, "DevTools", "present mode change failed: " + changed.error().message);
+                        }
+                    }
+                }
+
+                ImGui::EndCombo();
+            }
+
+            ImGui::TextDisabled("in use: %s", vela::core::toString(swapchain.actualVSync));
+        }
     } //namespace
 
-    void drawEnginePanel(const render::RendererState& renderer, const FrameTimeHistories& frameTimes)
+    void drawEnginePanel(render::RendererState& renderer, const FrameTimeHistories& frameTimes)
     {
         const FrameTimeSummary frame = frameTimes.frame.summary();
         const float framesPerSecond = frame.average > 0.0f ? k_millisecondsPerSecond / frame.average : 0.0f;
@@ -47,27 +72,27 @@ namespace lockstep::debug
         if (ImGui::Begin("Engine", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::TextUnformatted(renderer.context.getDeviceInfo().name.c_str());
-            ImGui::Text("Present    %s (asked: %s)", vela::core::toString(swapchain.actualVSync),
-                render::toString(renderer.requestedPresentMode));
+            drawPresentModeSelector(renderer, swapchain);
             ImGui::Separator();
             ImGui::Text("FPS        %.0f (avg over %u frames)", framesPerSecond, frame.count);
             ImGui::TextDisabled("%-22s %6s %6s %6s", "ms, last frames", "min", "avg", "max");
             drawTimeRow("Frame", frame);
-            drawTimeRow("CPU work", frameTimes.cpuWork.summary());
+            drawTimeRow("CPU Engine + Game", frameTimes.engineWork.summary());
             setTooltip("Run loop time outside Vela's RenderGraph::execute(): input, ticks, game, "
-                "dev tools, render setup.\nExcludes the vsync wait, and also Vela's command recording, "
-                "submit and present.");
-            drawTimeRow("Vela frame incl. vsync", frameTimes.velaFrame.summary());
-            setTooltip("Vela FrameStats::cpuFrameMs: RenderGraph::execute(), including the wait for "
-                "a free frame and swapchain image (vsync).");
+                "dev tools, render setup.");
+            drawTimeRow("CPU Vela work", frameTimes.velaWork.summary());
+            setTooltip("Vela FrameStats::cpuWorkMs: recording every pass, submitting and presenting.");
+            drawTimeRow("CPU Vela wait", frameTimes.velaWait.summary());
+            setTooltip("Vela FrameStats::cpuWaitMs: blocked on a frame in flight or a swapchain image. "
+                "With vsync this is where the frame waits for the display.");
 
             if (frameStats.gpuTimingValid)
             {
-                ImGui::Text("GPU frame  %.2f ms (last)", frameStats.gpuFrameMs);
+                drawTimeRow("GPU", frameTimes.gpu.summary());
             }
             else
             {
-                ImGui::TextUnformatted("GPU frame  n/a");
+                ImGui::TextUnformatted("GPU        n/a");
             }
 
             ImGui::Separator();

@@ -8,13 +8,14 @@
 
 namespace lockstep::render
 {
-    // How finished frames reach the screen. The Renderer falls back Uncapped -> LowLatency ->
+    // How finished frames reach the screen. Chosen when the Renderer is created and changeable
+    // later with Renderer::setPresentMode(). The Renderer falls back Uncapped -> LowLatency ->
     // VSync when the window surface does not support the requested mode; VSync is always
-    // available. The mode is fixed when the Renderer is created.
+    // available.
     // VSync:      waits for the display refresh (FIFO). Lowest power, adds up to one frame of
     //             latency and can block the CPU for a whole refresh when it falls behind.
-    // LowLatency: renders unthrottled and shows the newest finished frame at each refresh
-    //             (mailbox). No tearing, no blocking on present.
+    // LowLatency: shows the newest finished frame at each refresh, never tears: FIFO latest
+    //             ready where the driver has it, otherwise mailbox (renders unthrottled).
     // Uncapped:   presents immediately (immediate). May tear; for measuring raw frame rate.
     enum class PresentMode : uint8_t
     {

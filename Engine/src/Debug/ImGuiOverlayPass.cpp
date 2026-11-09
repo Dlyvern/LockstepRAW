@@ -1,5 +1,6 @@
 #include "ImGuiOverlayPass.hpp"
 
+#include "Lockstep/Core/Log.hpp"
 #include "Lockstep/Core/Math.hpp"
 
 #include "Render/ShaderLoader.hpp"
@@ -10,8 +11,8 @@
 #include <Vela/Graphics/VertexLayout.hpp>
 
 #include <algorithm>
-#include <iostream>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -22,7 +23,8 @@ namespace lockstep::debug
     {
         constexpr std::string_view k_vertexShader{"imgui.vert.spv"};
         constexpr std::string_view k_fragmentShader{"imgui.frag.spv"};
-        constexpr uint32_t k_fontTextureSlot{0};
+        constexpr uint32_t k_textureSlot{0};
+        constexpr std::size_t k_rgbaBytes{4};
 
         static_assert(sizeof(ImDrawIdx) == sizeof(uint16_t), "the index buffer is created as 16-bit");
 
@@ -50,36 +52,43 @@ namespace lockstep::debug
             return renderState;
         }
 
-        Result<vela::graphics::Texture> createFontTexture(vela::core::Context& context)
+        vela::graphics::ImageData toImageData(ImTextureData& texture, std::vector<std::byte>& expanded)
         {
-            unsigned char* pixels = nullptr;
-            int width = 0;
-            int height = 0;
-            int bytesPerPixel = 0;
-
-            ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&pixels, &width, &height, &bytesPerPixel);
-
-            if (pixels == nullptr || width <= 0 || height <= 0)
-            {
-                return Error{ErrorCode::Unknown, "ImGui font atlas could not be built"};
-            }
+            const std::size_t pixelCount = static_cast<std::size_t>(texture.Width) * static_cast<std::size_t>(texture.Height);
+            const auto* source = static_cast<const std::byte*>(texture.GetPixels());
 
             vela::graphics::ImageData image{};
-            image.width = static_cast<uint32_t>(width);
-            image.height = static_cast<uint32_t>(height);
+            image.width = static_cast<uint32_t>(texture.Width);
+            image.height = static_cast<uint32_t>(texture.Height);
             image.format = vela::graphics::TextureFormat::RGBA8Unorm;
-            image.pixels = std::span<const std::byte>(reinterpret_cast<const std::byte*>(pixels),
-                static_cast<std::size_t>(width) * static_cast<std::size_t>(height)
-                    * static_cast<std::size_t>(bytesPerPixel));
 
-            auto texture = vela::graphics::Texture::create(context, image);
-
-            if (!texture)
+            if (texture.Format == ImTextureFormat_RGBA32)
             {
-                return render::toError(texture.error());
+                image.pixels = std::span<const std::byte>(source, pixelCount * k_rgbaBytes);
+                return image;
             }
 
-            return std::move(texture).value();
+            expanded.assign(pixelCount * k_rgbaBytes, std::byte{0xFF});
+
+            for (std::size_t pixel = 0; pixel < pixelCount; ++pixel)
+            {
+                expanded[pixel * k_rgbaBytes + 3] = source[pixel];
+            }
+
+            image.pixels = expanded;
+
+            return image;
+        }
+
+        vela::graphics::SamplerDescription imguiSampler()
+        {
+            vela::graphics::SamplerDescription sampler{};
+            sampler.addressU = vela::graphics::AddressMode::ClampToEdge;
+            sampler.addressV = vela::graphics::AddressMode::ClampToEdge;
+            sampler.addressW = vela::graphics::AddressMode::ClampToEdge;
+            sampler.maxLod = 0.0f;
+
+            return sampler;
         }
 
         Result<vela::graphics::DynamicBuffer> createBuffer(vela::core::Context& context,
@@ -133,18 +142,6 @@ namespace lockstep::debug
             return render::toError(material.error());
         }
 
-        auto fontTexture = createFontTexture(context);
-
-        if (!fontTexture)
-        {
-            return fontTexture.error();
-        }
-
-        if (auto bound = material.value().setTexture(k_fontTextureSlot, fontTexture.value()); !bound)
-        {
-            return render::toError(bound.error());
-        }
-
         auto vertexBuffer = createBuffer(context, vela::graphics::DynamicBuffer::Usage::Vertex);
 
         if (!vertexBuffer)
@@ -159,22 +156,81 @@ namespace lockstep::debug
             return indexBuffer.error();
         }
 
-        return std::unique_ptr<ImGuiOverlayPass>(new ImGuiOverlayPass(*imguiContext, std::move(vertexShader).value(),
-            std::move(fragmentShader).value(), std::move(material).value(), std::move(fontTexture).value(),
+        return std::unique_ptr<ImGuiOverlayPass>(new ImGuiOverlayPass(context, *imguiContext,
+            std::move(vertexShader).value(), std::move(fragmentShader).value(), std::move(material).value(),
             std::move(vertexBuffer).value(), std::move(indexBuffer).value()));
     }
 
-    ImGuiOverlayPass::ImGuiOverlayPass(ImGuiContext& imguiContext, std::vector<uint32_t>&& vertexShader,
-        std::vector<uint32_t>&& fragmentShader, vela::graphics::Material&& material, vela::graphics::Texture&& fontTexture,
+    ImGuiOverlayPass::ImGuiOverlayPass(vela::core::Context& context, ImGuiContext& imguiContext,
+        std::vector<uint32_t>&& vertexShader, std::vector<uint32_t>&& fragmentShader, vela::graphics::Material&& material,
         vela::graphics::DynamicBuffer&& vertexBuffer, vela::graphics::DynamicBuffer&& indexBuffer)
-        : m_imguiContext(&imguiContext),
+        : m_context(&context),
+          m_imguiContext(&imguiContext),
           m_vertexShader(std::move(vertexShader)),
           m_fragmentShader(std::move(fragmentShader)),
           m_material(std::move(material)),
-          m_fontTexture(std::move(fontTexture)),
           m_vertexBuffer(std::move(vertexBuffer)),
           m_indexBuffer(std::move(indexBuffer))
     {
+    }
+
+    ImGuiOverlayPass::~ImGuiOverlayPass()
+    {
+        ImGui::SetCurrentContext(m_imguiContext);
+
+        for (ImTextureData* texture : ImGui::GetPlatformIO().Textures)
+        {
+            if (texture->RefCount == 1 && texture->Status != ImTextureStatus_Destroyed)
+            {
+                texture->SetTexID(ImTextureID_Invalid);
+                texture->SetStatus(ImTextureStatus_Destroyed);
+            }
+        }
+    }
+
+    Status ImGuiOverlayPass::handleTextureRequest(ImTextureData& texture)
+    {
+        std::vector<std::byte> expanded;
+
+        if (texture.Status == ImTextureStatus_WantCreate)
+        {
+            auto created = vela::graphics::Texture::create(*m_context, toImageData(texture, expanded), imguiSampler());
+
+            if (!created)
+            {
+                return render::toError(created.error());
+            }
+
+            m_textures.push_back(std::make_unique<vela::graphics::Texture>(std::move(created).value()));
+            texture.SetTexID(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(m_textures.back().get())));
+            texture.SetStatus(ImTextureStatus_OK);
+        }
+        else if (texture.Status == ImTextureStatus_WantUpdates)
+        {
+            auto* gpuTexture = reinterpret_cast<vela::graphics::Texture*>(static_cast<uintptr_t>(texture.GetTexID()));
+
+            if (auto updated = gpuTexture->update(toImageData(texture, expanded)); !updated)
+            {
+                return render::toError(updated.error());
+            }
+
+            texture.SetStatus(ImTextureStatus_OK);
+        }
+        else if (texture.Status == ImTextureStatus_WantDestroy)
+        {
+            const auto* gpuTexture = reinterpret_cast<const vela::graphics::Texture*>(
+                static_cast<uintptr_t>(texture.GetTexID()));
+
+            std::erase_if(m_textures, [gpuTexture](const std::unique_ptr<vela::graphics::Texture>& owned)
+            {
+                return owned.get() == gpuTexture;
+            });
+
+            texture.SetTexID(ImTextureID_Invalid);
+            texture.SetStatus(ImTextureStatus_Destroyed);
+        }
+
+        return {};
     }
 
     void ImGuiOverlayPass::beginFrame()
@@ -203,8 +259,30 @@ namespace lockstep::debug
         ImGui::Render();
         m_isFrameOpen = false;
 
-        const ImDrawData* drawData = ImGui::GetDrawData();
-        m_hasDrawData = drawData != nullptr && drawData->TotalIdxCount > 0;
+        ImDrawData* drawData = ImGui::GetDrawData();
+
+        if (drawData == nullptr)
+        {
+            return;
+        }
+
+        if (drawData->Textures != nullptr)
+        {
+            for (ImTextureData* texture : *drawData->Textures)
+            {
+                if (texture->Status == ImTextureStatus_OK)
+                {
+                    continue;
+                }
+
+                if (auto handled = handleTextureRequest(*texture); !handled)
+                {
+                    log(LogLevel::Error, "DevTools", "ImGui texture request failed: " + handled.error().message);
+                }
+            }
+        }
+
+        m_hasDrawData = drawData->TotalIdxCount > 0;
     }
 
     void ImGuiOverlayPass::record(vela::graphics::PassRecorder& recorder)
@@ -224,7 +302,7 @@ namespace lockstep::debug
 
         if (auto uploaded = uploadDrawData(drawData); !uploaded)
         {
-            std::cerr << "DevTools: " << uploaded.error().message << '\n';
+            log(LogLevel::Error, "DevTools", uploaded.error().message);
             return;
         }
 
@@ -247,7 +325,9 @@ namespace lockstep::debug
         {
             for (const ImDrawCmd& command : list->CmdBuffer)
             {
-                if (command.UserCallback != nullptr)
+                const ImTextureID textureId = command.GetTexID();
+
+                if (command.UserCallback != nullptr || textureId == ImTextureID_Invalid)
                 {
                     continue;
                 }
@@ -267,6 +347,8 @@ namespace lockstep::debug
                     continue;
                 }
 
+                recorder.bindTexture(k_textureSlot,
+                    *reinterpret_cast<const vela::graphics::Texture*>(static_cast<uintptr_t>(textureId)));
                 recorder.setScissor(left, top, static_cast<uint32_t>(right - left), static_cast<uint32_t>(bottom - top));
                 recorder.drawIndexed(command.ElemCount, indexOffset + command.IdxOffset,
                     static_cast<int32_t>(vertexOffset + command.VtxOffset));

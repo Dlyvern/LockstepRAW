@@ -12,13 +12,13 @@ namespace lockstep::physics
 
 namespace lockstep::debug
 {
-    // Draws the "Engine" ImGui window: the GPU name, the present mode in use (and the one asked
-    // for), frame rate, min/avg/max of frame time, CPU work and Vela frame time (which includes
-    // the vsync wait), the last GPU frame time, VRAM use, GPU allocation count and Vulkan
-    // validation message count. Must be called inside an ImGui frame.
-    // renderer:   the state of the renderer to report on.
+    // Draws the "Engine" ImGui window: the GPU name, a present mode selector (and the mode in
+    // use), frame rate, min/avg/max of frame time, Engine CPU work, Vela CPU work and wait (the
+    // vsync wait), GPU frame time, VRAM use, GPU allocation count and Vulkan validation message
+    // count. Must be called inside an ImGui frame.
+    // renderer:   the state of the renderer to report on; the present mode selector changes it.
     // frameTimes: the recent per-frame durations recorded by the run loop.
-    void drawEnginePanel(const render::RendererState& renderer, const FrameTimeHistories& frameTimes);
+    void drawEnginePanel(render::RendererState& renderer, const FrameTimeHistories& frameTimes);
 
     // Appends a Physics section to the "Engine" ImGui window: body and controller counts, last
     // step time and substeps, PhysX error and warning counts. Must be called inside an ImGui

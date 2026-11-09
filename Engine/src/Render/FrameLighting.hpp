@@ -37,11 +37,11 @@ namespace lockstep::render
     // sunRadiance:       rgb sun colour times intensity.
     // fogColor:          rgb fog colour, w density.
     // fogParams:         x start, y 1 if enabled, z max amount.
-    // shadowParams:      x sun cascades in use (0 for no sun shadow), y depth bias and z normal
-    //                    bias in texels, w 1 to tint by cascade.
+    // shadowParams:      x sun cascades in use (0 for no sun shadow), y unused, z normal bias in
+    //                    texels, w 1 to tint by cascade. Depth bias is rendered into the shadow
+    //                    map (hardware depth bias), not applied here.
     // spotShadowParams:  x index of the shadow-casting spot light among the local lights (-1 for
-    //                    none), y normal bias per metre of distance, z depth bias in metres, w its
-    //                    atlas tile.
+    //                    none), y normal bias per metre of distance, z unused, w its atlas tile.
     // iblParams:         x diffuse and y specular intensity, w 1 if image-based lighting is on.
     // skyA..skyE, skyZenith, skyGround: SkyCoefficients (zenith w is the radiance scale, ground w
     //                    is 1 if the sky is on).

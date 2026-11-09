@@ -33,7 +33,7 @@ layout(set = 1, binding = 2) uniform sampler2D metallicRoughnessTexture;
 layout(set = 1, binding = 3) uniform sampler2D occlusionTexture;
 layout(set = 1, binding = 4) uniform sampler2D emissiveTexture;
 
-layout(set = 2, binding = 0) uniform sampler2D shadowAtlas;
+layout(set = 2, binding = 0) uniform sampler2DShadow shadowAtlas;
 layout(set = 2, binding = 1) uniform sampler2D environmentAtlas;
 layout(set = 2, binding = 2) uniform sampler2D brdfLut;
 
@@ -55,46 +55,18 @@ struct Surface
     float nDotV;
 };
 
-float bilinear(vec4 quad, vec2 weight)
-{
-    vec2 rows = mix(quad.wx, quad.zy, weight.x);
-    return mix(rows.x, rows.y, weight.y);
-}
-
-vec4 compareQuad(vec2 uv, float depth)
-{
-    return step(vec4(depth), textureGather(shadowAtlas, uv, 0));
-}
-
-// 4x4 texels around the sample, compared in four gathers, filtered as 3x3 bilinear PCF.
+// 3x3 bilinear PCF: nine hardware-filtered comparisons (each a 2x2 bilinear PCF), one texel
+// apart, so the kernel covers 4x4 texels with tent weights.
 float filteredShadow(vec2 uv, float depth)
 {
-    vec2 size = vec2(textureSize(shadowAtlas, 0));
-    vec2 texel = 1.0 / size;
-    vec2 position = uv * size - 0.5;
-    vec2 base = floor(position);
-    vec2 weight = position - base;
-
-    vec4 q00 = compareQuad((base + vec2(0.0, 0.0)) * texel, depth);
-    vec4 q10 = compareQuad((base + vec2(2.0, 0.0)) * texel, depth);
-    vec4 q01 = compareQuad((base + vec2(0.0, 2.0)) * texel, depth);
-    vec4 q11 = compareQuad((base + vec2(2.0, 2.0)) * texel, depth);
-
-    // Gather order: x = (0,1), y = (1,1), z = (1,0), w = (0,0).
-    float t[16];
-    t[0] = q00.w;  t[1] = q00.z;  t[2] = q10.w;  t[3] = q10.z;
-    t[4] = q00.x;  t[5] = q00.y;  t[6] = q10.x;  t[7] = q10.y;
-    t[8] = q01.w;  t[9] = q01.z;  t[10] = q11.w; t[11] = q11.z;
-    t[12] = q01.x; t[13] = q01.y; t[14] = q11.x; t[15] = q11.y;
-
+    vec2 texel = 1.0 / vec2(textureSize(shadowAtlas, 0));
     float sum = 0.0;
 
-    for (int y = 0; y < 3; ++y)
+    for (int y = -1; y <= 1; ++y)
     {
-        for (int x = 0; x < 3; ++x)
+        for (int x = -1; x <= 1; ++x)
         {
-            int i = y * 4 + x;
-            sum += bilinear(vec4(t[i + 4], t[i + 5], t[i + 1], t[i]), weight);
+            sum += texture(shadowAtlas, vec3(uv + vec2(x, y) * texel, depth));
         }
     }
 
@@ -126,7 +98,7 @@ float tileShadow(uint tile, vec3 position)
     return filteredShadow(uv, ndc.z);
 }
 
-float sunShadow(vec3 position, vec3 geometryNormal, vec3 toLight, out int cascade)
+float sunShadow(vec3 position, vec3 geometryNormal, out int cascade)
 {
     cascade = -1;
     uint count = uint(frame.shadowParams.x);
@@ -134,7 +106,7 @@ float sunShadow(vec3 position, vec3 geometryNormal, vec3 toLight, out int cascad
     for (uint index = 0u; index < count; ++index)
     {
         float texel = frame.cascadeTexelSize[index];
-        vec3 biased = position + geometryNormal * (texel * frame.shadowParams.z) + toLight * (texel * frame.shadowParams.y);
+        vec3 biased = position + geometryNormal * (texel * frame.shadowParams.z);
         float lit = tileShadow(index, biased);
 
         if (lit >= 0.0)
@@ -147,10 +119,10 @@ float sunShadow(vec3 position, vec3 geometryNormal, vec3 toLight, out int cascad
     return 1.0;
 }
 
-float spotShadow(vec3 position, vec3 geometryNormal, vec3 toLight, float lightDistance)
+float spotShadow(vec3 position, vec3 geometryNormal, float lightDistance)
 {
     float normalOffset = frame.spotShadowParams.y * lightDistance;
-    vec3 biased = position + geometryNormal * normalOffset + toLight * frame.spotShadowParams.z;
+    vec3 biased = position + geometryNormal * normalOffset;
     float lit = tileShadow(uint(frame.spotShadowParams.w), biased);
 
     return lit < 0.0 ? 1.0 : lit;
@@ -298,7 +270,7 @@ void main()
     if (frame.sunDirection.w > 0.0)
     {
         vec3 toLight = -frame.sunDirection.xyz;
-        float shadow = sunShadow(inWorldPosition, geometryNormal, toLight, cascade);
+        float shadow = sunShadow(inWorldPosition, geometryNormal, cascade);
         direct += shadeLight(surface, toLight, frame.sunRadiance.rgb) * shadow;
     }
 
@@ -329,7 +301,7 @@ void main()
 
         if (frame.spotShadowParams.x == float(index))
         {
-            attenuation *= spotShadow(inWorldPosition, geometryNormal, toLight, lightDistance);
+            attenuation *= spotShadow(inWorldPosition, geometryNormal, lightDistance);
         }
 
         direct += shadeLight(surface, toLight, light.color.rgb * attenuation);

@@ -1,5 +1,7 @@
 #include "FramePasses.hpp"
 
+#include "Lockstep/Core/Log.hpp"
+
 #include "FrameAttachments.hpp"
 #include "RendererState.hpp"
 #include "ShaderLoader.hpp"
@@ -8,7 +10,6 @@
 #include <Vela/Graphics/VertexLayout.hpp>
 
 #include <cstddef>
-#include <iostream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,8 +21,6 @@ namespace lockstep::render
     {
         constexpr std::string_view k_fullscreenVertexShader{"fullscreen.vert.spv"};
         constexpr std::string_view k_environmentFragmentShader{"environment.frag.spv"};
-        constexpr std::string_view k_shadowVertexShader{"shadow.vert.spv"};
-        constexpr std::string_view k_shadowFragmentShader{"shadow.frag.spv"};
         constexpr std::string_view k_skyVertexShader{"sky.vert.spv"};
         constexpr std::string_view k_skyFragmentShader{"sky.frag.spv"};
         constexpr uint32_t k_lightingSlot{0};
@@ -45,15 +44,17 @@ namespace lockstep::render
         static_assert(sizeof(PbrDrawConstants) == 128);
         static_assert(sizeof(MaskedShadowConstants) == 80);
 
-        vela::graphics::VertexLayout positionOnlyLayout()
+        vela::graphics::SamplerDescription shadowCompareSampler()
         {
-            return vela::graphics::VertexLayout
-            {
-                sizeof(PbrVertex),
-                {
-                    {0, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(PbrVertex, position))}
-                }
-            };
+            vela::graphics::SamplerDescription sampler{};
+            sampler.addressU = vela::graphics::AddressMode::ClampToEdge;
+            sampler.addressV = vela::graphics::AddressMode::ClampToEdge;
+            sampler.addressW = vela::graphics::AddressMode::ClampToEdge;
+            sampler.mipMode = vela::graphics::MipMode::Nearest;
+            sampler.maxLod = 0.0f;
+            sampler.compareOp = vela::graphics::DepthCompare::LessOrEqual;
+
+            return sampler;
         }
 
         vela::graphics::AttachmentSlot clearedSlot(std::string_view name, vela::graphics::TextureFormat format)
@@ -65,6 +66,13 @@ namespace lockstep::render
             slot.store = vela::graphics::StoreOp::Store;
 
             return slot;
+        }
+
+        void multisample(vela::graphics::AttachmentSlot& slot, std::string_view multisampledName, uint32_t samples)
+        {
+            slot.resolveTarget = slot.name;
+            slot.name = std::string(multisampledName);
+            slot.samples = samples;
         }
 
         vela::graphics::RenderState fullscreenState()
@@ -153,7 +161,7 @@ namespace lockstep::render
 
         if (auto uploaded = m_state->lightBuffer.update(std::as_bytes(std::span(&lighting, 1))); !uploaded)
         {
-            std::cerr << "Renderer: lighting upload failed: " << uploaded.error().message << '\n';
+            log(LogLevel::Error, "Render", "lighting upload failed: " + uploaded.error().message);
             return;
         }
 
@@ -168,20 +176,11 @@ namespace lockstep::render
 
     Result<std::unique_ptr<ShadowPass>> ShadowPass::create(RendererState& state)
     {
-        auto material = createBuiltinMaterial(state.context, k_shadowVertexShader, k_shadowFragmentShader,
-            positionOnlyLayout(), vela::graphics::RenderState{});
-
-        if (!material)
-        {
-            return material.error();
-        }
-
-        return std::unique_ptr<ShadowPass>(new ShadowPass(state, std::move(material).value()));
+        return std::unique_ptr<ShadowPass>(new ShadowPass(state));
     }
 
-    ShadowPass::ShadowPass(const RendererState& state, vela::graphics::Material&& material)
-        : m_state(&state),
-          m_material(std::move(material))
+    ShadowPass::ShadowPass(const RendererState& state)
+        : m_state(&state)
     {
     }
 
@@ -230,7 +229,7 @@ namespace lockstep::render
                     continue;
                 }
 
-                recorder.draw(*item.mesh, m_material, lightModel);
+                recorder.draw(*item.mesh, *m_state->shadowMaterial, lightModel);
             }
         }
     }
@@ -270,10 +269,19 @@ namespace lockstep::render
         vela::graphics::AttachmentSlot ambient = clearedSlot(k_sceneAmbientAttachment, k_sceneColorFormat);
         ambient.clear = {0.0f, 0.0f, 0.0f, 0.0f};
 
+        vela::graphics::AttachmentSlot depth = clearedSlot(k_sceneDepthAttachment, k_depthFormat);
+
+        if (m_state->sceneSamples > 1)
+        {
+            multisample(color, k_sceneColorMsaaAttachment, m_state->sceneSamples);
+            multisample(ambient, k_sceneAmbientMsaaAttachment, m_state->sceneSamples);
+            multisample(depth, k_sceneDepthMsaaAttachment, m_state->sceneSamples);
+        }
+
         vela::graphics::PassDescription description{};
         description.colorOutputs.push_back(color);
         description.colorOutputs.push_back(ambient);
-        description.depthOutput = clearedSlot(k_sceneDepthAttachment, k_depthFormat);
+        description.depthOutput = depth;
         description.inputs.push_back({std::string(k_shadowMapAttachment), vela::graphics::InputUsage::Sampled});
         description.inputs.push_back({std::string(k_environmentAttachment), vela::graphics::InputUsage::Sampled});
 
@@ -282,7 +290,7 @@ namespace lockstep::render
 
     void LitScenePass::record(vela::graphics::PassRecorder& recorder)
     {
-        recorder.bindAttachment(k_shadowAtlasSlot, std::string(k_shadowMapAttachment));
+        recorder.bindAttachment(k_shadowAtlasSlot, std::string(k_shadowMapAttachment), shadowCompareSampler());
         recorder.bindAttachment(k_environmentSlot, std::string(k_environmentAttachment));
         recorder.bindTexture(k_brdfLutSlot, m_state->environment.brdfLut);
 

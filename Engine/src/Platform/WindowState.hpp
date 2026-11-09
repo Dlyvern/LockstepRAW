@@ -23,6 +23,7 @@ namespace lockstep::platform
         Input input;
         std::optional<math::Vec2> lastCursorPosition;
         bool isCursorCaptured{false};
+        bool hasRawMouseMotion{true};
     };
 
     // Engine-internal access to a Window's state, for Engine modules that need the Vela window

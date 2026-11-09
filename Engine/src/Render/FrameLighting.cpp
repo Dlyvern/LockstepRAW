@@ -89,7 +89,7 @@ namespace lockstep::render
         {
             GpuFrameLighting& gpu = prepared.lighting;
             const ShadowSettings& shadows = settings.shadows;
-            store(gpu.shadowParams, math::Vec3{0.0f, shadows.depthBias, shadows.normalBias},
+            store(gpu.shadowParams, math::Vec3{0.0f, 0.0f, shadows.normalBias},
                 shadows.debugCascades ? 1.0f : 0.0f);
             store(gpu.spotShadowParams, math::Vec3{k_noSpotShadow, 0.0f, 0.0f}, 0.0f);
             store(gpu.cascadeTexelSize, math::Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
@@ -116,8 +116,8 @@ namespace lockstep::render
                     prepared.spotTile = tile;
                     prepared.tiles[tile] = spotTile;
                     sunTiles = tile;
-                    store(gpu.spotShadowParams, math::Vec3{slot, shadows.normalBias * spotTile.texelSize,
-                        shadows.depthBias * 0.02f}, static_cast<float>(tile));
+                    store(gpu.spotShadowParams, math::Vec3{slot, shadows.normalBias * spotTile.texelSize, 0.0f},
+                        static_cast<float>(tile));
                 }
             }
 

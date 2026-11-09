@@ -72,8 +72,9 @@ namespace lockstep::render
     // cascadeCount:  sun cascades, 1 to k_maxShadowCascades.
     // distance:      view distance the cascades cover, in metres. Beyond it the sun casts none.
     // splitLambda:   cascade split distribution, 0 uniform to 1 logarithmic.
-    // depthBias:     offset of the shadow lookup towards the light against acne, in shadow texels
-    //                (spot light: in metres).
+    // depthBias:     slope-scaled depth bias rendered into the shadow map against acne, roughly in
+    //                shadow texels of depth along the caster's slope. A change rebuilds the shadow
+    //                materials (depth bias is pipeline state), so avoid changing it every frame.
     // normalBias:    offset of the shadow lookup along the surface normal against acne, in shadow
     //                texels.
     // debugCascades: tint the scene by the cascade each pixel reads.
@@ -151,10 +152,14 @@ namespace lockstep::render
     };
 
     // Anti-aliasing of the final image.
-    // fxaa: run FXAA on the tonemapped image.
+    // fxaa:        run FXAA on the tonemapped image.
+    // msaaSamples: samples per pixel of the lit scene pass (colour, ambient and depth), resolved
+    //              before post-processing: 1 (off), 2, 4 or 8, lowered to what the GPU supports.
+    //              A change rebuilds the frame's attachments.
     struct AntiAliasingSettings
     {
         bool fxaa{true};
+        uint32_t msaaSamples{1};
     };
 
     // CPU-side visibility.

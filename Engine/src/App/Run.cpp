@@ -9,6 +9,7 @@
 #include "Lockstep/World/Entities.hpp"
 #include "Lockstep/World/TimeDomains.hpp"
 
+#include "Core/VelaLog.hpp"
 #include "Platform/InputAccess.hpp"
 
 #include <chrono>
@@ -165,6 +166,8 @@ namespace lockstep::app
         {
             return valid;
         }
+
+        routeVelaLogs();
 
         auto window = platform::Window::create(description.window);
 

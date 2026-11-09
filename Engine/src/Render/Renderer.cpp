@@ -6,6 +6,7 @@
 #include "PostPasses.hpp"
 #include "RendererState.hpp"
 #include "ShaderLoader.hpp"
+#include "ShadowMaterials.hpp"
 #include "VelaConversions.hpp"
 
 #include "Platform/WindowState.hpp"
@@ -29,41 +30,19 @@ namespace lockstep::render
         constexpr std::string_view k_unlitFragmentShader{"unlit.frag.spv"};
         constexpr std::string_view k_pbrVertexShader{"pbr.vert.spv"};
         constexpr std::string_view k_pbrFragmentShader{"pbr.frag.spv"};
+        constexpr std::string_view k_shadowVertexShader{"shadow.vert.spv"};
+        constexpr std::string_view k_shadowFragmentShader{"shadow.frag.spv"};
         constexpr std::string_view k_shadowMaskVertexShader{"shadow_mask.vert.spv"};
         constexpr std::string_view k_shadowMaskFragmentShader{"shadow_mask.frag.spv"};
         constexpr std::string_view k_environmentPassName{"environment"};
         constexpr std::string_view k_shadowPassName{"shadow"};
         constexpr std::string_view k_scenePassName{"scene"};
         constexpr const char* k_engineName{"Lockstep"};
-        constexpr std::string_view k_enginePassPrefix{"engine-pass-"};
-        constexpr vela::core::VSync k_uncappedChain[]{vela::core::VSync::Off, vela::core::VSync::Fast};
-        constexpr vela::core::VSync k_lowLatencyChain[]{vela::core::VSync::Fast};
 
-        std::span<const vela::core::VSync> fallbackChain(PresentMode mode)
+        Result<vela::core::Context> createPresentingContext(vela::core::Window& window,
+            vela::core::ContextPreferences preferences, PresentMode mode)
         {
-            switch (mode)
-            {
-                case PresentMode::Uncapped:
-                {
-                    return k_uncappedChain;
-                }
-                case PresentMode::LowLatency:
-                {
-                    return k_lowLatencyChain;
-                }
-                case PresentMode::VSync:
-                {
-                    break;
-                }
-            }
-
-            return {};
-        }
-
-        Result<vela::core::Context> createAttachedContext(vela::core::Window& window,
-            vela::core::ContextPreferences& preferences, vela::core::VSync vsync)
-        {
-            preferences.preferredVSync = vsync;
+            preferences.preferredVSync = toVelaVSync(mode, {});
             auto context = vela::core::Context::create(window, preferences);
 
             if (!context)
@@ -76,23 +55,52 @@ namespace lockstep::render
                 return toError(attached.error());
             }
 
-            return std::move(context).value();
-        }
+            const vela::core::VSync best = toVelaVSync(mode, context.value().getSupportedVSync());
 
-        Result<vela::core::Context> createPresentingContext(vela::core::Window& window,
-            vela::core::ContextPreferences preferences, PresentMode mode)
-        {
-            for (const vela::core::VSync vsync : fallbackChain(mode))
+            if (best != preferences.preferredVSync)
             {
-                auto context = createAttachedContext(window, preferences, vsync);
-
-                if (!context || context.value().getSwapchainInfo().actualVSync == vsync)
+                if (auto changed = context.value().setVSync(best); !changed)
                 {
-                    return context;
+                    return toError(changed.error());
                 }
             }
 
-            return createAttachedContext(window, preferences, vela::core::VSync::On);
+            return std::move(context).value();
+        }
+
+        uint32_t supportedSamples(const RendererState& state, uint32_t requested)
+        {
+            const uint32_t maximum = state.context.getDeviceInfo().maxMsaaSamples;
+            uint32_t samples = 1;
+
+            while (samples * 2 <= std::min(requested, maximum))
+            {
+                samples *= 2;
+            }
+
+            return samples;
+        }
+
+        Status updateSceneSamples(RendererState& state)
+        {
+            const uint32_t samples = supportedSamples(state, state.settings.antiAliasing.msaaSamples);
+
+            if (samples == state.sceneSamples)
+            {
+                return {};
+            }
+
+            const uint32_t previous = state.sceneSamples;
+            state.sceneSamples = samples;
+
+            if (auto redescribed = state.graph->redescribePass(std::string(k_scenePassName)); !redescribed)
+            {
+                state.sceneSamples = previous;
+                state.settings.antiAliasing.msaaSamples = previous;
+                return toError(redescribed.error());
+            }
+
+            return {};
         }
 
         void updateAspectRatio(RendererState& state)
@@ -115,6 +123,8 @@ namespace lockstep::render
                 {k_unlitFragmentShader, &shaders.unlitFragment},
                 {k_pbrVertexShader, &shaders.pbrVertex},
                 {k_pbrFragmentShader, &shaders.pbrFragment},
+                {k_shadowVertexShader, &shaders.shadowVertex},
+                {k_shadowFragmentShader, &shaders.shadowFragment},
                 {k_shadowMaskVertexShader, &shaders.shadowMaskVertex},
                 {k_shadowMaskFragmentShader, &shaders.shadowMaskFragment}};
 
@@ -202,61 +212,6 @@ namespace lockstep::render
         }
     } //namespace
 
-    RendererState::RendererState(vela::core::Window& window, vela::core::Context&& context, MaterialShaders&& shaders,
-        vela::graphics::DynamicBuffer&& lightBuffer, EnvironmentResources&& environment)
-        : window(window),
-          context(std::move(context)),
-          shaders(std::move(shaders)),
-          environment(std::move(environment)),
-          lightBuffer(std::move(lightBuffer))
-    {
-    }
-
-    RendererState::~RendererState()
-    {
-        context.waitIdle();
-    }
-
-    Status RendererState::addPass(std::unique_ptr<RenderPass> pass)
-    {
-        assert(pass != nullptr && "addPass: pass must not be null");
-
-        if (pass == nullptr)
-        {
-            return Error{ErrorCode::InvalidArgument, "addPass: pass must not be null"};
-        }
-
-        auto adapter = std::make_unique<RenderPassAdapter>(*pass);
-        RenderPassAdapter* adapterAddress = adapter.get();
-        const std::string name = std::string(k_enginePassPrefix) + std::to_string(passNameCounter++);
-
-        if (auto added = graph->addPass(name, std::move(adapter)); !added)
-        {
-            return toError(added.error());
-        }
-
-        passes.push_back({.pass = std::move(pass), .adapter = adapterAddress});
-
-        return {};
-    }
-
-    void RendererState::removePass(const RenderPass& pass)
-    {
-        const auto registered = std::find_if(passes.begin(), passes.end(), [&pass](const RegisteredPass& entry)
-        {
-            return entry.adapter->isAttachedTo(pass);
-        });
-
-        if (registered == passes.end())
-        {
-            return;
-        }
-
-        context.waitIdle();
-        registered->adapter->detach();
-        passes.erase(registered);
-    }
-
     RendererState& rendererState(Renderer& renderer)
     {
         return *renderer.m_state;
@@ -276,6 +231,7 @@ namespace lockstep::render
         vela::core::ContextPreferences preferences{};
         preferences.applicationName = description.applicationName;
         preferences.engineName = k_engineName;
+        preferences.optionalFeatures.push_back(vela::core::Feature::SamplerAnisotropy);
 
         auto context = createPresentingContext(velaWindow, preferences, description.presentMode);
 
@@ -302,7 +258,12 @@ namespace lockstep::render
         auto state = std::make_unique<RendererState>(velaWindow, std::move(context).value(),
             std::move(shaders).value(), std::move(lightBuffer).value(), std::move(environment).value());
 
-        state->requestedPresentMode = description.presentMode;
+        state->presentMode = description.presentMode;
+
+        if (auto shadowMaterials = updateShadowMaterials(*state); !shadowMaterials)
+        {
+            return shadowMaterials.error();
+        }
 
         if (auto built = buildFrameGraph(*state); !built)
         {
@@ -378,6 +339,16 @@ namespace lockstep::render
         m_state->lights.spots.push_back(light);
     }
 
+    Status Renderer::setPresentMode(PresentMode mode)
+    {
+        return m_state->setPresentMode(mode);
+    }
+
+    PresentMode Renderer::presentMode() const
+    {
+        return m_state->presentMode;
+    }
+
     RenderSettings& Renderer::settings()
     {
         return m_state->settings;
@@ -404,7 +375,20 @@ namespace lockstep::render
         buildDrawLists(state, state.projection * state.view);
         state.graph->setView(state.view, state.projection);
 
-        auto frame = state.graph->execute();
+        Status frame = updateShadowMaterials(state);
+
+        if (frame)
+        {
+            frame = updateSceneSamples(state);
+        }
+
+        if (frame)
+        {
+            if (auto executed = state.graph->execute(); !executed)
+            {
+                frame = toError(executed.error());
+            }
+        }
 
         uint32_t shadowDraws = 0;
 
@@ -427,11 +411,6 @@ namespace lockstep::render
         state.lights.clear();
         ++state.frameIndex;
 
-        if (!frame)
-        {
-            return toError(frame.error());
-        }
-
-        return {};
+        return frame;
     }
 } //namespace lockstep::render

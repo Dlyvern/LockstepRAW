@@ -61,7 +61,8 @@ namespace lockstep::render
         Bc7Unorm
     };
 
-    // How a texture is sampled when magnified or minified.
+    // How a texture is sampled when magnified or minified. Linear is trilinear and 16x
+    // anisotropic where the GPU supports it.
     enum class TextureFilter : uint8_t
     {
         Linear = 0,
@@ -72,6 +73,8 @@ namespace lockstep::render
     // pixels: every mip level, largest first, tightly packed. Level n is max(1, width >> n) by
     //         max(1, height >> n) pixels; its size is textureLevelBytes() of that extent.
     // levels: number of mip levels in `pixels`, 1 for none. At most the full chain down to 1x1.
+    // generateMips: build the full mip chain on the GPU from the single level in `pixels`
+    //         (filtered in linear space for Srgb). Needs levels == 1 and an Rgba8 format.
     struct TextureDescription
     {
         std::span<const std::byte> pixels;
@@ -80,6 +83,7 @@ namespace lockstep::render
         TextureFormat format{TextureFormat::Rgba8Srgb};
         TextureFilter filter{TextureFilter::Linear};
         uint32_t levels{1};
+        bool generateMips{false};
     };
 
     // format:  pixel layout.

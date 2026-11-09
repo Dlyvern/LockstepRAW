@@ -37,6 +37,17 @@ namespace lockstep::render
             return &m_resources[handle.index];
         }
 
+        // Calls `function` with every resource, in creation order.
+        // function: callable taking ResourceT&.
+        template<typename Function>
+        void forEach(Function&& function)
+        {
+            for (ResourceT& resource : m_resources)
+            {
+                function(resource);
+            }
+        }
+
     private:
         std::deque<ResourceT> m_resources;
     };

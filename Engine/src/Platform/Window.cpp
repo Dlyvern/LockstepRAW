@@ -1,5 +1,7 @@
 #include "Lockstep/Platform/Window.hpp"
 
+#include "Lockstep/Core/Log.hpp"
+
 #include "InputAccess.hpp"
 #include "VelaInput.hpp"
 #include "WindowState.hpp"
@@ -153,6 +155,15 @@ namespace lockstep::platform
 
         m_state->window.setCursorMode(captured ? vela::core::CursorMode::Disabled : vela::core::CursorMode::Normal);
         m_state->isCursorCaptured = captured;
+
+        if (m_state->hasRawMouseMotion)
+        {
+            if (auto raw = m_state->window.setRawMouseMotion(captured); !raw)
+            {
+                m_state->hasRawMouseMotion = false;
+                log(LogLevel::Info, "Platform", "raw mouse motion is not available: " + raw.error().message);
+            }
+        }
         m_state->lastCursorPosition.reset();
     }
 

@@ -1,7 +1,14 @@
 #include "VelaConversions.hpp"
 
+#include <algorithm>
+
 namespace lockstep::render
 {
+    namespace
+    {
+        constexpr float k_materialAnisotropy{16.0f};
+    } //namespace
+
     math::Mat4 toViewMatrix(const Camera& camera)
     {
         return math::lookAt(camera.position, camera.target, camera.up);
@@ -66,7 +73,32 @@ namespace lockstep::render
         vela::graphics::SamplerDescription sampler{};
         sampler.minFilter = velaFilter;
         sampler.magFilter = velaFilter;
+        sampler.anisotropy = filter == TextureFilter::Linear ? k_materialAnisotropy : 1.0f;
 
         return sampler;
+    }
+
+    vela::core::VSync toVelaVSync(PresentMode mode, std::span<const vela::core::VSync> supported)
+    {
+        switch (mode)
+        {
+            case PresentMode::Uncapped:
+            {
+                return vela::core::VSync::Off;
+            }
+            case PresentMode::LowLatency:
+            {
+                const bool hasLatestReady = std::find(supported.begin(), supported.end(),
+                    vela::core::VSync::LatestReady) != supported.end();
+
+                return hasLatestReady ? vela::core::VSync::LatestReady : vela::core::VSync::Fast;
+            }
+            case PresentMode::VSync:
+            {
+                break;
+            }
+        }
+
+        return vela::core::VSync::On;
     }
 } //namespace lockstep::render

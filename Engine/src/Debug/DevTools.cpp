@@ -1,5 +1,7 @@
 #include "Lockstep/Debug/DevTools.hpp"
 
+#include "Lockstep/Core/Log.hpp"
+
 #include "EnginePanel.hpp"
 #include "FrameTimeHistory.hpp"
 #include "GraphicsPanel.hpp"
@@ -38,7 +40,7 @@ namespace lockstep::debug
             io.LogFilename = nullptr;
             io.BackendPlatformName = "lockstep-vela-window";
             io.BackendRendererName = "lockstep-vela";
-            io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+            io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
 
             ImGui::StyleColorsDark();
         }
@@ -102,7 +104,10 @@ namespace lockstep::debug
         {
             if (overlay != nullptr)
             {
-                renderer->removePass(*overlay);
+                if (auto removed = renderer->removePass(*overlay); !removed)
+                {
+                    log(LogLevel::Error, "DevTools", "removing the overlay pass failed: " + removed.error().message);
+                }
             }
 
             ImGui::DestroyContext(imguiContext);
@@ -236,12 +241,19 @@ namespace lockstep::debug
             return;
         }
 
-        const float velaFrameMilliseconds = m_state->renderer->graph->getFrameStats().cpuFrameMs;
-        const float engineRenderMilliseconds = std::max(timing.renderMilliseconds - velaFrameMilliseconds, 0.0f);
+        const vela::graphics::FrameStats stats = m_state->renderer->graph->getFrameStats();
+        const float engineRenderMilliseconds = std::max(timing.renderMilliseconds - stats.cpuFrameMs, 0.0f);
+        FrameTimeHistories& frameTimes = m_state->frameTimes;
 
-        m_state->frameTimes.frame.add(timing.workMilliseconds + timing.renderMilliseconds);
-        m_state->frameTimes.cpuWork.add(timing.workMilliseconds + engineRenderMilliseconds);
-        m_state->frameTimes.velaFrame.add(velaFrameMilliseconds);
+        frameTimes.frame.add(timing.workMilliseconds + timing.renderMilliseconds);
+        frameTimes.engineWork.add(timing.workMilliseconds + engineRenderMilliseconds);
+        frameTimes.velaWork.add(stats.cpuWorkMs);
+        frameTimes.velaWait.add(stats.cpuWaitMs);
+
+        if (stats.gpuTimingValid)
+        {
+            frameTimes.gpu.add(stats.gpuFrameMs);
+        }
     }
 
     bool DevTools::isVisible() const

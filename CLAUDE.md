@@ -158,48 +158,16 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
 - Read Vela's public headers in `external/Vela/*/include/Vela/` and its README before using it.
   `external/Vela/Examples/LittleEngine` is the most complete usage example (glTF, lighting,
   shadows, ImGui).
-- Link order: `Vela::Builtins` must come before `Vela::Vela` (Builtins uses the backend but does
-  not declare it). This is a Vela bug to fix in the Vela repo.
-- If Vela is missing something we need, don't patch `external/Vela` yourself. Report the gap;
-  the `vela-maintainer` agent decides whether it goes into Vela or becomes an Engine workaround.
-- Known Vela gaps (from the first Render slice), candidates for vela-maintainer:
-  1. `Shaders/static_shader.vert` ignores the normal that `StaticVertex::layout()` declares,
-     causing a validation warning.
-  2. `assets::resources::executableDirectory()` can throw (macOS) and ignores a Windows failure.
-  3. `vela_compile_shaders` can't stage shaders of a static library for the executables
-     linking it.
-  4. `Result`/`Status` aren't `[[nodiscard]]` as types.
-  5. `MaterialDescription` keeps spans to shader code; the lifetime rule isn't documented.
-  6. `ScenePass` clear colour is hardcoded.
-  7. A minimized window blocks the frame loop inside swapchain recreation.
-  8. No `RenderGraph::removePass`; Engine detaches instead, leaving an empty pass in the graph.
-  9. Pass order between two writers of one attachment isn't declared; it relies on the sort's
-     tie-break keeping insertion order. Needs a supported "load and modify after the previous
-     writer" rule.
-  10. No `Texture::update` (forces ImGui's legacy pre-baked font atlas).
-  11. ScenePass attachment names/formats ("color" RGBA16Float, "depth") aren't public constants.
-  12. Undocumented: `Window::events()` lifetime, `popEvent()` consuming and O(n); attachments are
-      linear and UI in sRGB must linearize (LittleEngine's ImGui shader doesn't).
-  13. `DynamicBuffer::create` requires an `IndexType` for every usage.
-  14. Vela logs to stdout/stderr unconditionally; no log level or callback.
-  15. No raw mouse motion option (GLFW_RAW_MOUSE_MOTION) for mouse look.
-  16. `FrameStats::cpuFrameMs` includes the fence wait and the blocking `vkAcquireNextImageKHR`
-      (vsync wait), so it reads as "CPU time" when it is mostly waiting. Report wait separately.
-  17. Present mode: `VSync::Off` silently falls back to FIFO when IMMEDIATE is missing (always on
-      Wayland); should fall back Off -> MAILBOX -> FIFO and report the chosen mode.
-      `FIFO_LATEST_READY` isn't mapped.
-  18. Undocumented that `VSync::Off` may not exist on a platform.
-  19. GLFW on Wayland uses libdecor (pulls in GTK), the source of all at-exit leak-sanitizer noise;
-      document it or disable libdecor.
-  20. `DynamicBuffer::update` before `execute()` writes the previous frame's slot (`retireFrame`
-      advances in `beginFrame`): one frame late and may race the GPU. Engine uploads inside
-      `record()` to avoid it.
-  21. No per-pass GPU timestamps, only whole-frame GPU time.
-  22. `RenderState` has no depth bias / slope-scaled bias.
-  23. No comparison sampler for depth attachments (shadow PCF is done by hand).
-  24. Pass attachment descriptions are read once at `addPass`; resizing needs a graph rebuild.
-  25. No frame readback for screenshots.
-  26. Material reflection silently merges push-constant blocks of both stages (undocumented).
-  27. No query for supported present modes and no way to change present mode without recreating
-      the context (Engine falls back by recreating it at startup).
-  28. `FrameStats` should split wait time from record/submit time.
+- Known Vela gaps, candidates for vela-maintainer:
+  1. `vela_compile_shaders` can't stage shaders of a static library for the executables
+     linking it (Engine works around it with `lockstep_stage_engine_shaders`).
+  2. `vela_compile_shaders` doesn't restage on shader-only edits and doesn't track `#include`.
+  3. Attachments don't persist contents between frames, and a pass can't render into a
+     persistent `Texture` (the sky IBL atlas is rebuilt every frame).
+  4. No cubemap, array or per-mip attachments.
+  5. No `PassRecorder::setViewport` (only scissor).
+  6. Only 4 pass-input slots.
+  7. No pre-record upload hook (may be moot: `DynamicBuffer::update` before `execute()` now
+     lands in that frame; check before asking).
+  8. A depth prepass read by SSAO and then loaded by the lit pass forms a graph cycle.
+  9. `ComputeRecorder` can't write images and only takes `Mat4` constants.

@@ -78,11 +78,16 @@ namespace lockstep::render
             std::span<const uint32_t> indices);
 
         // Uploads a 2D texture (RGBA8 or block compressed, with or without mips) to the GPU.
-        // description: pixel data of every level, size, format, filtering and level count. Pixels
-        //              must hold exactly the sum of textureLevelBytes() over the levels.
-        // Returns:     a handle to the texture, or an error if the description is invalid or the
-        //              upload failed.
+        // description: pixel data of every level, size, format, filtering, level count and whether
+        //              the GPU generates the mips. Pixels must hold exactly the sum of
+        //              textureLevelBytes() over the levels.
+        // Returns:     a handle to the texture, or an error if the description is invalid, a Bc
+        //              format is used without supportsBlockCompression(), or the upload failed.
         [[nodiscard]] Result<TextureHandle> createTexture(const TextureDescription& description);
+
+        // Returns: true if the GPU samples Bc texture formats; without it only Rgba8 textures can be
+        //          created.
+        [[nodiscard]] bool supportsBlockCompression() const;
 
         // Creates a textured material, lit or unlit.
         // description: the albedo texture, which must have been created by this renderer, and the
@@ -121,6 +126,15 @@ namespace lockstep::render
         // lights are queued.
         // light: the light.
         void submitLight(const SpotLight& light);
+
+        // Changes how frames reach the screen, from the next render() on. Only the swapchain is
+        // recreated; nothing else is rebuilt.
+        // mode:    the present mode; falls back towards VSync when unsupported (see PresentMode).
+        // Returns: success, or an error if the change was rejected (the old mode stays).
+        [[nodiscard]] Status setPresentMode(PresentMode mode);
+
+        // Returns: the present mode last asked for, at creation or with setPresentMode().
+        [[nodiscard]] PresentMode presentMode() const;
 
         // Returns: the feature switches and tunables (lighting, shadows, fog, tonemapping). Changes
         //          apply from the next render(). The dev tools edit the same settings.

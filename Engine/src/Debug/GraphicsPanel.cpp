@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include <vector>
+
 namespace lockstep::debug
 {
     namespace
@@ -31,6 +33,47 @@ namespace lockstep::debug
         bool header(const char* label)
         {
             return ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen);
+        }
+
+        void smooth(float& smoothed, float sample)
+        {
+            smoothed += (sample - smoothed) * k_gpuSmoothing;
+        }
+
+        void drawPassTimings(GraphicsPanelState& panel, const std::vector<vela::graphics::PassTiming>& timings)
+        {
+            if (!ImGui::CollapsingHeader("GPU time per pass"))
+            {
+                return;
+            }
+
+            if (timings.empty())
+            {
+                ImGui::TextDisabled("No pass timings (no GPU timestamps yet)");
+                return;
+            }
+
+            if (!ImGui::BeginTable("passTimings", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+            {
+                return;
+            }
+
+            ImGui::TableSetupColumn("Pass");
+            ImGui::TableSetupColumn("ms (smoothed)");
+            ImGui::TableHeadersRow();
+
+            for (const vela::graphics::PassTiming& timing : timings)
+            {
+                const float smoothed = panel.smoothedPassMs[timing.name];
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(timing.name.c_str());
+                ImGui::TableNextColumn();
+                ImGui::Text("%.3f", static_cast<double>(smoothed));
+            }
+
+            ImGui::EndTable();
         }
 
         void drawLighting(render::LightingSettings& lighting)
@@ -89,7 +132,7 @@ namespace lockstep::debug
 
             ImGui::SliderFloat("Distance (m)", &shadows.distance, k_minShadowDistance, k_maxShadowDistance, "%.0f");
             ImGui::SliderFloat("Split lambda", &shadows.splitLambda, 0.0f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Depth bias (texels)", &shadows.depthBias, 0.0f, k_maxShadowBias, "%.2f");
+            ImGui::SliderFloat("Slope depth bias", &shadows.depthBias, 0.0f, k_maxShadowBias, "%.2f");
             ImGui::SliderFloat("Normal bias (texels)", &shadows.normalBias, 0.0f, k_maxShadowBias, "%.2f");
             ImGui::Checkbox("Show cascades", &shadows.debugCascades);
         }
@@ -106,6 +149,21 @@ namespace lockstep::debug
             ImGui::SliderFloat("Density", &fog.density, 0.0f, k_maxFogDensity, "%.4f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Start (m)", &fog.start, 0.0f, k_maxFogStart, "%.1f");
             ImGui::SliderFloat("Max amount", &fog.maxAmount, 0.0f, 1.0f, "%.2f");
+        }
+
+        void drawMsaa(render::AntiAliasingSettings& antiAliasing)
+        {
+            int choice = 0;
+
+            while (choice < 3 && (2u << choice) <= antiAliasing.msaaSamples)
+            {
+                ++choice;
+            }
+
+            if (ImGui::Combo("MSAA (scene)", &choice, "Off\0" "2x\0" "4x\0" "8x\0"))
+            {
+                antiAliasing.msaaSamples = 1u << choice;
+            }
         }
 
         void drawPostProcessing(render::RenderSettings& settings)
@@ -125,6 +183,7 @@ namespace lockstep::debug
             ImGui::Checkbox("Bloom", &settings.bloom.enabled);
             ImGui::SliderFloat("Bloom strength", &settings.bloom.strength, 0.0f, k_maxBloomStrength, "%.3f");
             ImGui::Checkbox("FXAA", &settings.antiAliasing.fxaa);
+            drawMsaa(settings.antiAliasing);
             ImGui::Checkbox("Frustum culling", &settings.culling.frustumCulling);
         }
 
@@ -154,9 +213,16 @@ namespace lockstep::debug
     {
         const vela::graphics::FrameStats frameStats = renderer.graph->getFrameStats();
 
+        const std::vector<vela::graphics::PassTiming>& passTimings = renderer.graph->getPassTimings();
+
         if (frameStats.gpuTimingValid)
         {
-            panel.smoothedGpuMs += (frameStats.gpuFrameMs - panel.smoothedGpuMs) * k_gpuSmoothing;
+            smooth(panel.smoothedGpuMs, frameStats.gpuFrameMs);
+        }
+
+        for (const vela::graphics::PassTiming& timing : passTimings)
+        {
+            smooth(panel.smoothedPassMs[timing.name], timing.gpuMs);
         }
 
         ImGui::SetNextWindowPos(k_panelPosition, ImGuiCond_FirstUseEver);
@@ -173,6 +239,7 @@ namespace lockstep::debug
             ImGui::Text("Lights: %u local (%u dropped), sun %s", frame.local, frame.dropped,
                 frame.hasDirectional ? "yes" : "no");
             ImGui::Text("Shadows: %u cascades%s", frame.cascades, frame.spotShadow ? " + spot" : "");
+            drawPassTimings(panel, passTimings);
             ImGui::Separator();
 
             render::RenderSettings& settings = renderer.settings;

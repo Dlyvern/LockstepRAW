@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace lockstep::render
@@ -41,6 +42,8 @@ namespace lockstep::render
         std::vector<uint32_t> unlitFragment;
         std::vector<uint32_t> pbrVertex;
         std::vector<uint32_t> pbrFragment;
+        std::vector<uint32_t> shadowVertex;
+        std::vector<uint32_t> shadowFragment;
         std::vector<uint32_t> shadowMaskVertex;
         std::vector<uint32_t> shadowMaskFragment;
     };
@@ -71,6 +74,8 @@ namespace lockstep::render
     // material:     the Vela material for the scene pass (pipeline and set-1 bindings).
     // maskedShadow: for alpha-masked lit materials, the shadow-pass material that discards by
     //               the base colour alpha.
+    // maskedShadowBaseColor: the texture maskedShadow masks by, for rebuilding it (null when
+    //               there is no maskedShadow). Owned by the RendererState.
     // shading:      lit (PBR) or unlit.
     // alphaMode:    opaque, masked or blended; blended draws are sorted after opaque ones and
     //               cast no shadows.
@@ -79,6 +84,7 @@ namespace lockstep::render
     {
         vela::graphics::Material material;
         std::optional<vela::graphics::Material> maskedShadow;
+        const vela::graphics::Texture* maskedShadowBaseColor{nullptr};
         Shading shading{Shading::Lit};
         AlphaMode alphaMode{AlphaMode::Opaque};
         PbrFactors factors{};
@@ -131,11 +137,12 @@ namespace lockstep::render
         uint32_t shadowDraws{0};
     };
 
-    // An Engine pass added to the render graph, and the graph-owned adapter that forwards to it.
+    // An Engine pass added to the render graph, and the name its graph-owned adapter was added
+    // under.
     struct RegisteredPass
     {
         std::unique_ptr<RenderPass> pass;
-        RenderPassAdapter* adapter{nullptr};
+        std::string graphName;
     };
 
     // Everything the Renderer owns, kept behind a pointer so the public header stays free of Vela
@@ -170,14 +177,21 @@ namespace lockstep::render
         // Returns: success, or an error if the render graph rejected the pass.
         [[nodiscard]] Status addPass(std::unique_ptr<RenderPass> pass);
 
-        // Waits for the GPU to go idle, then destroys a pass added with addPass(). Does nothing if
-        // `pass` is not registered.
-        // pass: the pass to remove.
-        void removePass(const RenderPass& pass);
+        // Removes a pass added with addPass() from the render graph, waits for the GPU to go idle
+        // and destroys it. Does nothing if `pass` is not registered.
+        // pass:    the pass to remove.
+        // Returns: success, or an error if the graph refused to remove it (the pass is then kept
+        //          alive until the RendererState is destroyed).
+        [[nodiscard]] Status removePass(const RenderPass& pass);
+
+        // Changes the present mode; the swapchain is recreated on the next render().
+        // mode:    the mode to switch to (see PresentMode for the fallbacks).
+        // Returns: success, or an error if Vela rejected the change.
+        [[nodiscard]] Status setPresentMode(PresentMode mode);
 
         vela::core::Window& window;
         vela::core::Context context;
-        PresentMode requestedPresentMode{k_defaultPresentMode};
+        PresentMode presentMode{k_defaultPresentMode};
 
         MaterialShaders shaders;
 
@@ -186,6 +200,9 @@ namespace lockstep::render
         ResourcePool<MeshHandle, MeshRecord> meshes;
         vela::graphics::DynamicBuffer lightBuffer;
         ResourcePool<MaterialHandle, MaterialRecord> materials;
+        std::optional<vela::graphics::Material> shadowMaterial;
+        float shadowMaterialBias{0.0f};
+        uint32_t sceneSamples{1};
 
         std::vector<RegisteredPass> passes;
         uint32_t passNameCounter{0};

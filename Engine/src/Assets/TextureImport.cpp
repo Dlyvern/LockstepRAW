@@ -29,7 +29,7 @@ namespace lockstep::assets
             std::vector<std::optional<Result<DecodedTexture>>> results;
         };
 
-        Result<DecodedTexture> decodeKey(const TextureKey& key, const std::filesystem::path& directory, bool compress,
+        Result<DecodedTexture> decodeKey(const TextureKey& key, const std::filesystem::path& directory, const DecodeTargets& targets,
             TranscoderGate& gate)
         {
             auto bytes = readImageBytes(*key.image, directory);
@@ -39,11 +39,11 @@ namespace lockstep::assets
                 return bytes.error();
             }
 
-            return decodeImage(bytes.value(), key.srgb, compress, gate);
+            return decodeImage(bytes.value(), key.srgb, targets, gate);
         }
 
         void decodeWorker(DecodeQueue& queue, const std::vector<TextureKey>& keys,
-            const std::filesystem::path& directory, bool compress, TranscoderGate& gate)
+            const std::filesystem::path& directory, const DecodeTargets& targets, TranscoderGate& gate)
         {
             while (true)
             {
@@ -64,7 +64,7 @@ namespace lockstep::assets
                     job = queue.nextJob++;
                 }
 
-                Result<DecodedTexture> decoded = decodeKey(keys[job], directory, compress, gate);
+                Result<DecodedTexture> decoded = decodeKey(keys[job], directory, targets, gate);
 
                 {
                     std::lock_guard lock(queue.mutex);
@@ -103,6 +103,24 @@ namespace lockstep::assets
             return "#" + std::to_string(slot);
         }
 
+        uint64_t gpuBytes(const DecodedTexture& texture)
+        {
+            if (!texture.generateMips)
+            {
+                return texture.bytes.size();
+            }
+
+            uint64_t total = 0;
+
+            for (uint32_t level = 0; level < render::fullMipLevelCount(texture.width, texture.height); ++level)
+            {
+                total += render::textureLevelBytes(texture.format, std::max(1u, texture.width >> level),
+                    std::max(1u, texture.height >> level));
+            }
+
+            return total;
+        }
+
         uint32_t workerCount(const SceneImportOptions& options, std::size_t jobs)
         {
             const uint32_t requested = options.workerThreads != 0
@@ -128,15 +146,18 @@ namespace lockstep::assets
         queue.results.resize(keys.size());
         queue.maxAhead = workers * k_decodedPerWorker;
         TranscoderGate gate{};
+        const DecodeTargets targets{
+            .blockCompression = renderer.supportsBlockCompression(),
+            .compress = options.compressTextures};
 
         std::vector<std::jthread> threads;
         threads.reserve(workers);
 
         for (uint32_t worker = 0; worker < workers; ++worker)
         {
-            threads.emplace_back([&queue, &keys, &directory, &options, &gate]
+            threads.emplace_back([&queue, &keys, &directory, &targets, &gate]
             {
-                decodeWorker(queue, keys, directory, options.compressTextures, gate);
+                decodeWorker(queue, keys, directory, targets, gate);
             });
         }
 
@@ -164,7 +185,8 @@ namespace lockstep::assets
                 .height = texture.height,
                 .format = texture.format,
                 .filter = render::TextureFilter::Linear,
-                .levels = texture.levels});
+                .levels = texture.levels,
+                .generateMips = texture.generateMips});
 
             if (!handle)
             {
@@ -174,7 +196,7 @@ namespace lockstep::assets
 
             textures.setHandle(slot, handle.value());
             ++stats.textureCount;
-            stats.textureBytes += texture.bytes.size();
+            stats.textureBytes += gpuBytes(texture);
             stats.compressedTextures += isBlockCompressed(texture.format) ? 1u : 0u;
         }
 

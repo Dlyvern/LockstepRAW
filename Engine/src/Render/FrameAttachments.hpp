@@ -15,6 +15,8 @@ namespace lockstep::render
     // color:         HDR direct light, emissive, sky and transparent surfaces (lit scene pass).
     // ambient:       HDR environment / ambient light of opaque surfaces, darkened later by SSAO.
     // depth:         the scene depth buffer.
+    // *Msaa:         multisampled colour, ambient and depth of the lit scene pass when MSAA is on,
+    //                resolved into color, ambient and depth (depth takes sample zero).
     // occlusion:     raw SSAO, half resolution.
     // occlusionBlur: depth-aware blurred SSAO, half resolution; what composition reads.
     // bloomDown*/bloomUp*: the bloom mip chain; bloomUp1 is the result.
@@ -25,6 +27,9 @@ namespace lockstep::render
     inline constexpr std::string_view k_sceneColorAttachment{"color"};
     inline constexpr std::string_view k_sceneAmbientAttachment{"ambient"};
     inline constexpr std::string_view k_sceneDepthAttachment{"depth"};
+    inline constexpr std::string_view k_sceneColorMsaaAttachment{"colorMsaa"};
+    inline constexpr std::string_view k_sceneAmbientMsaaAttachment{"ambientMsaa"};
+    inline constexpr std::string_view k_sceneDepthMsaaAttachment{"depthMsaa"};
     inline constexpr std::string_view k_occlusionAttachment{"occlusion"};
     inline constexpr std::string_view k_occlusionBlurAttachment{"occlusionBlur"};
     inline constexpr std::string_view k_ldrAttachment{"ldr"};
