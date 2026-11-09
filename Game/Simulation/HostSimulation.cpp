@@ -1,6 +1,7 @@
 #include "Simulation/HostSimulation.hpp"
 
 #include "GameState.hpp"
+#include "Simulation/RoomSimulation.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
@@ -153,6 +154,7 @@ namespace game
                     {
                         pawn.hasCommand = true;
                         pawn.processedShots = command->shotCount;
+                        pawn.processedInteracts = command->interactCount;
                     }
                 }
 
@@ -162,6 +164,7 @@ namespace game
                 }
 
                 fireShots(state, engine, k_clientPawn, input.viewTick);
+                interactWithRoom(state, engine, k_clientPawn);
             }
         }
 
@@ -176,6 +179,7 @@ namespace game
             }
 
             fireShots(state, engine, k_hostPawn, std::nullopt);
+            interactWithRoom(state, engine, k_hostPawn);
         }
 
         std::vector<EnemyTarget> livingPawns(const GameState& state, const EngineContext& engine)
@@ -340,6 +344,11 @@ namespace game
 
         std::clog << "Game: Player1 pawn spawned\n";
 
+        if (!state.settings.hasEnemy)
+        {
+            return {};
+        }
+
         return spawnEnemy(state.simulation.enemy, engine.entities, engine.replication, engine.physics,
             state.settings.enemy);
     }
@@ -354,10 +363,16 @@ namespace game
         applyClientInputs(state, engine);
         updateBulletTime(state, engine);
         moveHostPawn(state, engine);
-        updateEnemyOnHost(state, engine);
+
+        if (state.settings.hasEnemy)
+        {
+            updateEnemyOnHost(state, engine);
+        }
+
         respawnPawns(state, engine);
         recordHittables(state, engine);
         publishStatuses(state, engine);
         publishClientState(state, engine);
+        runRoomHostTick(state, engine);
     }
 } //namespace game

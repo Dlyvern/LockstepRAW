@@ -19,6 +19,7 @@ namespace game
         constexpr std::size_t k_shotCountOffset{3};
         constexpr std::size_t k_yawOffset{4};
         constexpr std::size_t k_pitchOffset{8};
+        constexpr std::size_t k_interactCountOffset{12};
 
         float axis(const platform::Input& input, platform::Key positive, platform::Key negative)
         {
@@ -51,6 +52,11 @@ namespace game
             {
                 ++controls.shotCount;
             }
+
+            if (input.wasKeyPressed(platform::Key::E))
+            {
+                ++controls.interactCount;
+            }
         }
 
         return PlayerCommand{
@@ -58,7 +64,8 @@ namespace game
             .yaw = controls.yaw,
             .pitch = controls.pitch,
             .shotCount = controls.shotCount,
-            .bulletTime = input.isKeyDown(platform::Key::Space)};
+            .bulletTime = input.isKeyDown(platform::Key::Space),
+            .interactCount = controls.interactCount};
     }
 
     std::array<std::byte, k_playerCommandBytes> encodeCommand(const PlayerCommand& command)
@@ -70,6 +77,7 @@ namespace game
         bytes[k_shotCountOffset] = static_cast<std::byte>(command.shotCount);
         writeFloat(bytes, k_yawOffset, command.yaw);
         writeFloat(bytes, k_pitchOffset, command.pitch);
+        bytes[k_interactCountOffset] = static_cast<std::byte>(command.interactCount);
 
         return bytes;
     }
@@ -94,6 +102,7 @@ namespace game
             .yaw = yaw,
             .pitch = pitch,
             .shotCount = static_cast<uint8_t>(bytes[k_shotCountOffset]),
-            .bulletTime = (bytes[k_flagsOffset] & k_bulletTimeBit) != std::byte{0}};
+            .bulletTime = (bytes[k_flagsOffset] & k_bulletTimeBit) != std::byte{0},
+            .interactCount = static_cast<uint8_t>(bytes[k_interactCountOffset])};
     }
 } //namespace game

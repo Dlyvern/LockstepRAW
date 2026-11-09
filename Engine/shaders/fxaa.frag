@@ -1,22 +1,28 @@
 #version 450
 
-// FXAA 3.11 (quality preset 12) after T. Lottes, followed by output dithering.
+// The output pass: FXAA 3.11 (quality preset 12) after T. Lottes on the tonemapped image, or
+// sharpening of the TAA result, or a plain copy; then output dithering.
 
 const float k_edgeThreshold = 0.125;
 const float k_edgeThresholdMin = 0.0312;
 const float k_subpixelQuality = 0.75;
 const int k_searchSteps = 8;
+const uint k_filterNone = 0u;
+const uint k_filterFxaa = 1u;
+const uint k_filterTemporalSharpen = 2u;
 const float k_stepSizes[k_searchSteps] = float[](1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0);
 
 layout(push_constant) uniform OutputConstants
 {
     vec2 inverseSize;
-    float enabled;
+    uint filterMode;
     float dither;
     uint frameIndex;
+    float sharpness;
 } constants;
 
 layout(set = 2, binding = 0) uniform sampler2D source;
+layout(set = 2, binding = 1) uniform sampler2D temporal;
 
 layout(location = 0) in vec2 inUv;
 
@@ -204,10 +210,46 @@ vec3 toLinear(vec3 srgb)
     return mix(srgb / 12.92, pow((srgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), srgb));
 }
 
+// Contrast-limited sharpening of the TAA result: a negative-lobe cross filter whose weight
+// shrinks where the neighbourhood is already contrasty, clamped to the neighbourhood so it never
+// rings.
+vec3 sharpenedTemporal(ivec2 pixel)
+{
+    ivec2 last = textureSize(temporal, 0) - 1;
+    vec3 center = texelFetch(temporal, pixel, 0).rgb;
+    vec3 north = texelFetch(temporal, clamp(pixel + ivec2(0, -1), ivec2(0), last), 0).rgb;
+    vec3 south = texelFetch(temporal, clamp(pixel + ivec2(0, 1), ivec2(0), last), 0).rgb;
+    vec3 west = texelFetch(temporal, clamp(pixel + ivec2(-1, 0), ivec2(0), last), 0).rgb;
+    vec3 east = texelFetch(temporal, clamp(pixel + ivec2(1, 0), ivec2(0), last), 0).rgb;
+
+    vec3 low = min(center, min(min(north, south), min(west, east)));
+    vec3 high = max(center, max(max(north, south), max(west, east)));
+    vec3 headroom = min(low, 1.0 - high) / max(high, 1e-4);
+    vec3 amplitude = sqrt(clamp(headroom, 0.0, 1.0));
+    vec3 lobe = -amplitude * mix(0.0, 0.2, clamp(constants.sharpness, 0.0, 1.0));
+    vec3 sharpened = (center + (north + south + west + east) * lobe) / (1.0 + 4.0 * lobe);
+
+    return clamp(sharpened, low, high);
+}
+
 void main()
 {
     vec2 uv = gl_FragCoord.xy * constants.inverseSize;
-    vec3 color = constants.enabled > 0.5 ? fxaa(uv) : texelFetch(source, ivec2(gl_FragCoord.xy), 0).rgb;
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    vec3 color;
+
+    if (constants.filterMode == k_filterTemporalSharpen)
+    {
+        color = sharpenedTemporal(pixel);
+    }
+    else if (constants.filterMode == k_filterFxaa)
+    {
+        color = fxaa(uv);
+    }
+    else
+    {
+        color = texelFetch(source, pixel, 0).rgb;
+    }
 
     if (constants.dither > 0.0)
     {

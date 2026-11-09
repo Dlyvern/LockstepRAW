@@ -27,11 +27,13 @@ namespace lockstep::render
         constexpr uint32_t k_shadowAtlasSlot{0};
         constexpr uint32_t k_environmentSlot{1};
         constexpr uint32_t k_brdfLutSlot{2};
+        constexpr uint32_t k_planarReflectionSlot{3};
         constexpr uint32_t k_fullscreenTriangleVertices{3};
 
         struct PbrDrawConstants
         {
             math::Mat4 model;
+            math::Mat4 previousModel;
             PbrFactors factors;
         };
 
@@ -41,21 +43,8 @@ namespace lockstep::render
             float mask[4];
         };
 
-        static_assert(sizeof(PbrDrawConstants) == 128);
+        static_assert(sizeof(PbrDrawConstants) == 192);
         static_assert(sizeof(MaskedShadowConstants) == 80);
-
-        vela::graphics::SamplerDescription shadowCompareSampler()
-        {
-            vela::graphics::SamplerDescription sampler{};
-            sampler.addressU = vela::graphics::AddressMode::ClampToEdge;
-            sampler.addressV = vela::graphics::AddressMode::ClampToEdge;
-            sampler.addressW = vela::graphics::AddressMode::ClampToEdge;
-            sampler.mipMode = vela::graphics::MipMode::Nearest;
-            sampler.maxLod = 0.0f;
-            sampler.compareOp = vela::graphics::DepthCompare::LessOrEqual;
-
-            return sampler;
-        }
 
         vela::graphics::AttachmentSlot clearedSlot(std::string_view name, vela::graphics::TextureFormat format)
         {
@@ -84,6 +73,33 @@ namespace lockstep::render
             return renderState;
         }
     } //namespace
+
+    vela::graphics::SamplerDescription shadowCompareSampler()
+    {
+        vela::graphics::SamplerDescription sampler{};
+        sampler.addressU = vela::graphics::AddressMode::ClampToEdge;
+        sampler.addressV = vela::graphics::AddressMode::ClampToEdge;
+        sampler.addressW = vela::graphics::AddressMode::ClampToEdge;
+        sampler.mipMode = vela::graphics::MipMode::Nearest;
+        sampler.maxLod = 0.0f;
+        sampler.compareOp = vela::graphics::DepthCompare::LessOrEqual;
+
+        return sampler;
+    }
+
+    void recordSceneDraw(vela::graphics::PassRecorder& recorder, const DrawItem& item, PbrView view)
+    {
+        if (item.material->shading == Shading::Unlit)
+        {
+            recorder.draw(*item.mesh, item.material->material, item.model);
+            return;
+        }
+
+        PbrDrawConstants constants{.model = item.model, .previousModel = item.previousModel,
+            .factors = item.material->factors};
+        constants.factors.flags[2] = static_cast<float>(view);
+        recorder.draw(*item.mesh, item.material->material, constants);
+    }
 
     Result<vela::graphics::Material> createBuiltinMaterial(vela::core::Context& context, std::string_view vertexFile,
         std::string_view fragmentFile, const vela::graphics::VertexLayout& layout,
@@ -269,21 +285,26 @@ namespace lockstep::render
         vela::graphics::AttachmentSlot ambient = clearedSlot(k_sceneAmbientAttachment, k_sceneColorFormat);
         ambient.clear = {0.0f, 0.0f, 0.0f, 0.0f};
 
+        vela::graphics::AttachmentSlot velocity = clearedSlot(k_sceneVelocityAttachment, k_sceneColorFormat);
+        velocity.clear = {0.0f, 0.0f, 0.0f, 0.0f};
         vela::graphics::AttachmentSlot depth = clearedSlot(k_sceneDepthAttachment, k_depthFormat);
 
         if (m_state->sceneSamples > 1)
         {
             multisample(color, k_sceneColorMsaaAttachment, m_state->sceneSamples);
             multisample(ambient, k_sceneAmbientMsaaAttachment, m_state->sceneSamples);
+            multisample(velocity, k_sceneVelocityMsaaAttachment, m_state->sceneSamples);
             multisample(depth, k_sceneDepthMsaaAttachment, m_state->sceneSamples);
         }
 
         vela::graphics::PassDescription description{};
         description.colorOutputs.push_back(color);
         description.colorOutputs.push_back(ambient);
+        description.colorOutputs.push_back(velocity);
         description.depthOutput = depth;
         description.inputs.push_back({std::string(k_shadowMapAttachment), vela::graphics::InputUsage::Sampled});
         description.inputs.push_back({std::string(k_environmentAttachment), vela::graphics::InputUsage::Sampled});
+        description.inputs.push_back({std::string(k_reflectionColorAttachment), vela::graphics::InputUsage::Sampled});
 
         return description;
     }
@@ -293,21 +314,14 @@ namespace lockstep::render
         recorder.bindAttachment(k_shadowAtlasSlot, std::string(k_shadowMapAttachment), shadowCompareSampler());
         recorder.bindAttachment(k_environmentSlot, std::string(k_environmentAttachment));
         recorder.bindTexture(k_brdfLutSlot, m_state->environment.brdfLut);
+        recorder.bindAttachment(k_planarReflectionSlot, std::string(k_reflectionColorAttachment));
 
         auto drawList = [this, &recorder](const std::vector<uint32_t>& list)
         {
             for (const uint32_t index : list)
             {
                 const DrawItem& item = m_state->draws[index];
-
-                if (item.material->shading == Shading::Unlit)
-                {
-                    recorder.draw(*item.mesh, item.material->material, item.model);
-                    continue;
-                }
-
-                const PbrDrawConstants constants{.model = item.model, .factors = item.material->factors};
-                recorder.draw(*item.mesh, item.material->material, constants);
+                recordSceneDraw(recorder, item, item.isReflector ? PbrView::ReflectorSurface : PbrView::Camera);
             }
         };
 

@@ -15,7 +15,7 @@ namespace game
     namespace math = lockstep::math;
 
     // Bytes an encoded PlayerCommand takes.
-    inline constexpr std::size_t k_playerCommandBytes{12};
+    inline constexpr std::size_t k_playerCommandBytes{13};
 
     // What one player wants to do this tick. The client sends it to the host every tick; the host
     // builds its own player's from local input. The host simulates both players from these.
@@ -25,6 +25,7 @@ namespace game
     // shotCount:  shots fired so far, wrapping at 256. The host fires once per increase, so a lost
     //             or repeated message neither drops nor doubles a shot (up to 255 at a time).
     // bulletTime: true while the player holds bullet-time.
+    // interactCount: interact presses (E) so far, wrapping at 256; counted like `shotCount`.
     struct PlayerCommand
     {
         math::Vec2 move{0.0f, 0.0f};
@@ -32,16 +33,20 @@ namespace game
         float pitch{0.0f};
         uint8_t shotCount{0};
         bool bulletTime{false};
+        uint8_t interactCount{0};
     };
 
-    // The local player's look and shot counter, kept between ticks to build PlayerCommands.
-    // yaw, pitch: accumulated mouse look, in radians.
-    // shotCount:  shots fired so far, wrapping at 256.
+    // The local player's look, shot and interact counters, kept between ticks to build
+    // PlayerCommands.
+    // yaw, pitch:    accumulated mouse look, in radians.
+    // shotCount:     shots fired so far, wrapping at 256.
+    // interactCount: interact presses so far, wrapping at 256.
     struct LocalControls
     {
         float yaw{0.0f};
         float pitch{0.0f};
         uint8_t shotCount{0};
+        uint8_t interactCount{0};
     };
 
     // Settings for turning device input into commands.
@@ -54,7 +59,8 @@ namespace game
     };
 
     // Builds this tick's command from local input: WASD to move, mouse to look, left mouse to
-    // fire, Space for bullet-time. Look and fire only count while the cursor is captured.
+    // fire, E to interact, Space for bullet-time. Look, fire and interact only count while the
+    // cursor is captured.
     // controls:        the local look and shot counter, updated in place.
     // settings:        sensitivity and pitch limit.
     // input:           this tick's input.

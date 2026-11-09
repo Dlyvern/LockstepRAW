@@ -37,6 +37,9 @@ namespace lockstep::render
         constexpr std::string_view k_environmentPassName{"environment"};
         constexpr std::string_view k_shadowPassName{"shadow"};
         constexpr std::string_view k_scenePassName{"scene"};
+        constexpr std::string_view k_reflectionPassName{"reflection"};
+        constexpr float k_minReflectionScale{0.25f};
+        constexpr float k_maxReflectionScale{1.0f};
         constexpr const char* k_engineName{"Lockstep"};
 
         Result<vela::core::Context> createPresentingContext(vela::core::Window& window,
@@ -81,9 +84,32 @@ namespace lockstep::render
             return samples;
         }
 
+        uint32_t requestedSamples(AntiAliasingMode mode)
+        {
+            switch (mode)
+            {
+                case AntiAliasingMode::Msaa2x:
+                {
+                    return 2;
+                }
+                case AntiAliasingMode::Msaa4x:
+                {
+                    return 4;
+                }
+                case AntiAliasingMode::Off:
+                case AntiAliasingMode::Fxaa:
+                case AntiAliasingMode::Taa:
+                {
+                    return 1;
+                }
+            }
+
+            return 1;
+        }
+
         Status updateSceneSamples(RendererState& state)
         {
-            const uint32_t samples = supportedSamples(state, state.settings.antiAliasing.msaaSamples);
+            const uint32_t samples = supportedSamples(state, requestedSamples(state.settings.antiAliasing.mode));
 
             if (samples == state.sceneSamples)
             {
@@ -96,14 +122,37 @@ namespace lockstep::render
             if (auto redescribed = state.graph->redescribePass(std::string(k_scenePassName)); !redescribed)
             {
                 state.sceneSamples = previous;
-                state.settings.antiAliasing.msaaSamples = previous;
+                state.settings.antiAliasing.mode = AntiAliasingMode::Off;
                 return toError(redescribed.error());
             }
 
             return {};
         }
 
-        void updateAspectRatio(RendererState& state)
+        Status updateReflectionScale(RendererState& state)
+        {
+            float& requested = state.settings.reflections.resolutionScale;
+            requested = std::clamp(requested, k_minReflectionScale, k_maxReflectionScale);
+
+            if (requested == state.reflectionScale)
+            {
+                return {};
+            }
+
+            const float previous = state.reflectionScale;
+            state.reflectionScale = requested;
+
+            if (auto redescribed = state.graph->redescribePass(std::string(k_reflectionPassName)); !redescribed)
+            {
+                state.reflectionScale = previous;
+                requested = previous;
+                return toError(redescribed.error());
+            }
+
+            return {};
+        }
+
+        vela::graphics::Extent2D updateAspectRatio(RendererState& state)
         {
             int width = 0;
             int height = 0;
@@ -112,7 +161,17 @@ namespace lockstep::render
             if (width > 0 && height > 0)
             {
                 state.aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+                return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
             }
+
+            return {};
+        }
+
+        void writeCameraMotion(RendererState& state)
+        {
+            GpuFrameLighting& lighting = state.prepared.lighting;
+            lighting.viewProjection = state.temporal.viewProjection;
+            lighting.previousViewProjection = state.temporal.previousViewProjection;
         }
 
         Result<MaterialShaders> loadMaterialShaders()
@@ -177,6 +236,13 @@ namespace lockstep::render
                 return shadowPass.error();
             }
 
+            auto reflectionPass = ReflectionPass::create(state);
+
+            if (!reflectionPass)
+            {
+                return reflectionPass.error();
+            }
+
             auto scenePass = LitScenePass::create(state);
 
             if (!scenePass)
@@ -191,6 +257,12 @@ namespace lockstep::render
             }
 
             if (auto added = addFramePass(graph.value(), k_shadowPassName, std::move(shadowPass).value()); !added)
+            {
+                return added;
+            }
+
+            if (auto added = addFramePass(graph.value(), k_reflectionPassName, std::move(reflectionPass).value());
+                !added)
             {
                 return added;
             }
@@ -270,7 +342,7 @@ namespace lockstep::render
             return built.error();
         }
 
-        updateAspectRatio(*state);
+        static_cast<void>(updateAspectRatio(*state));
 
         return Renderer(std::move(state));
     }
@@ -293,6 +365,12 @@ namespace lockstep::render
 
     void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform)
     {
+        submit(mesh, material, transform, k_defaultRenderLayer);
+    }
+
+    void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform,
+        RenderLayers layers)
+    {
         const MeshRecord* record = m_state->meshes.find(mesh);
         const MaterialRecord* materialRecord = m_state->materials.find(material);
 
@@ -304,12 +382,24 @@ namespace lockstep::render
             return;
         }
 
+        const math::Mat4 model = math::toMatrix(transform);
         m_state->draws.push_back({
             .mesh = &record->mesh,
             .material = materialRecord,
-            .model = math::toMatrix(transform),
+            .model = model,
+            .previousModel = model,
             .worldBounds = math::transformBounds(record->bounds, transform),
-            .cameraDistance = 0.0f});
+            .cameraDistance = 0.0f,
+            .layers = layers,
+            .isReflector = false});
+    }
+
+    void Renderer::submitReflector(const PlanarReflector& reflector)
+    {
+        if (m_state->reflectors.size() < k_maxPlanarReflectors)
+        {
+            m_state->reflectors.push_back(reflector);
+        }
     }
 
     void Renderer::submitLight(const DirectionalLight& light)
@@ -362,7 +452,7 @@ namespace lockstep::render
     Status Renderer::render()
     {
         RendererState& state = *m_state;
-        updateAspectRatio(state);
+        const vela::graphics::Extent2D extent = updateAspectRatio(state);
 
         for (RegisteredPass& registered : state.passes)
         {
@@ -370,9 +460,14 @@ namespace lockstep::render
         }
 
         state.view = toViewMatrix(state.camera);
-        state.projection = toProjectionMatrix(state.camera, state.aspectRatio);
+        state.unjitteredProjection = toProjectionMatrix(state.camera, state.aspectRatio);
+        state.projection = state.unjitteredProjection;
+        state.projection = beginTemporalFrame(state, extent.width, extent.height);
         state.prepared = prepareLighting(state.lights, state.settings, state.camera, state.aspectRatio);
-        buildDrawLists(state, state.projection * state.view);
+        writeCameraMotion(state);
+        assignPreviousModels(state);
+        buildDrawLists(state, state.temporal.viewProjection);
+        prepareReflection(state);
         state.graph->setView(state.view, state.projection);
 
         Status frame = updateShadowMaterials(state);
@@ -380,6 +475,11 @@ namespace lockstep::render
         if (frame)
         {
             frame = updateSceneSamples(state);
+        }
+
+        if (frame)
+        {
+            frame = updateReflectionScale(state);
         }
 
         if (frame)
@@ -406,9 +506,11 @@ namespace lockstep::render
             .submitted = static_cast<uint32_t>(state.draws.size()),
             .visible = static_cast<uint32_t>(state.drawLists.opaque.size() + state.drawLists.blended.size()),
             .shadowDraws = shadowDraws};
+        endTemporalFrame(state);
         state.draws.clear();
         state.drawLists.clear();
         state.lights.clear();
+        state.reflectors.clear();
         ++state.frameIndex;
 
         return frame;

@@ -23,6 +23,7 @@ namespace game
         constexpr std::string_view k_sceneFlag{"--scene"};
         constexpr std::string_view k_scaleFlag{"--scene-scale"};
         constexpr std::array<std::string_view, 2> k_spawnNodeNames{"PlayerStart", "Spawn"};
+        constexpr std::array<std::string_view, k_playerCount> k_playerStartNames{"PlayerStart_1", "PlayerStart_2"};
         constexpr math::Vec3 k_down{0.0f, -1.0f, 0.0f};
         constexpr float k_dropHeight{1.5f};
         constexpr float k_dropDistance{20.0f};
@@ -264,6 +265,14 @@ namespace game
         LevelSpawns spawns{};
         spawns.pawns[0] = dropNear(physics, base - right * k_pawnSpacing);
         spawns.pawns[1] = dropNear(physics, base + right * k_pawnSpacing);
+
+        for (std::size_t pawn = 0; pawn < k_playerCount; ++pawn)
+        {
+            if (const std::optional<math::Transform> start = assets::findNode(level.scene, k_playerStartNames[pawn]))
+            {
+                spawns.pawns[pawn] = dropNear(physics, start->position);
+            }
+        }
         spawns.enemy = dropNear(physics, base + forward * k_enemyDistance);
 
         std::clog << "Game: level spawn at (" << base.x << ", " << base.y << ", " << base.z << ")"

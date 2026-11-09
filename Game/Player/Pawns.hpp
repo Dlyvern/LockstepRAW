@@ -55,6 +55,7 @@ namespace game
     // command:        the newest command of the player.
     // hasCommand:     false until the first command arrived after the player joined.
     // processedShots: the command shot counter the host already fired for.
+    // processedInteracts: the command interact counter the host already handled.
     // motion:         vertical speed and grounding.
     // life:           counts spawns (wrapping), so the client can tell a respawn from a move.
     // isJoined:       the player is in the game (alive or waiting to respawn).
@@ -69,6 +70,7 @@ namespace game
         PlayerCommand command{};
         bool hasCommand{false};
         uint8_t processedShots{0};
+        uint8_t processedInteracts{0};
         PawnMotion motion{};
         uint8_t life{0};
         bool isJoined{false};

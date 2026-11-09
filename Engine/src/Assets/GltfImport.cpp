@@ -131,11 +131,15 @@ namespace lockstep::assets
             return &context.meshParts.emplace(&mesh, std::move(parts)).first->second;
         }
 
-        Status addNode(ImportContext& context, const cgltf_node& node, const math::Transform& transform)
+        Status addNode(ImportContext& context, const PlacedNode& placed)
         {
-            if (node.name != nullptr && node.name[0] != '\0')
+            const cgltf_node& node = *placed.node;
+            const math::Transform& transform = placed.transform;
+
+            if (hasSceneNode(node))
             {
-                context.scene.nodes.push_back(SceneNode{.name = node.name, .transform = transform});
+                context.scene.nodes.push_back(SceneNode{.name = node.name, .transform = transform,
+                    .parent = placed.parentNode});
             }
 
             if (node.mesh == nullptr)
@@ -155,7 +159,7 @@ namespace lockstep::assets
                 const SceneMesh& mesh = context.scene.meshes[part];
                 const math::Aabb worldBounds = math::transformBounds(mesh.localBounds, transform);
                 context.scene.instances.push_back(SceneInstance{.mesh = part, .transform = transform,
-                    .worldBounds = worldBounds});
+                    .worldBounds = worldBounds, .node = placed.instanceNode()});
                 math::expand(context.scene.bounds, worldBounds);
                 context.scene.stats.triangleCount += mesh.triangleCount;
             }
@@ -172,7 +176,7 @@ namespace lockstep::assets
                     context.scene.lights.push_back(toSceneLight(*placed.node->light, placed));
                 }
 
-                if (auto added = addNode(context, *placed.node, placed.transform); !added)
+                if (auto added = addNode(context, placed); !added)
                 {
                     return added;
                 }

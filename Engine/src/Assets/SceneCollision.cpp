@@ -2,6 +2,7 @@
 
 #include "Lockstep/Physics/PhysicsWorld.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <vector>
 
@@ -74,6 +75,7 @@ namespace lockstep::assets
                 }
 
                 collision.bodies.insert(collision.bodies.end(), bodies.value().begin(), bodies.value().end());
+                collision.instances.insert(collision.instances.end(), instances.begin(), instances.end());
 
                 for (const uint32_t instance : instances)
                 {
@@ -128,6 +130,7 @@ namespace lockstep::assets
             }
 
             collision.bodies.push_back(body.value());
+            collision.instances.push_back(static_cast<uint32_t>(index));
             collision.triangleCount += mesh.collisionIndices.size() / 3;
         }
 
@@ -135,6 +138,65 @@ namespace lockstep::assets
         collision.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         return collision;
+    }
+
+    std::optional<uint32_t> findBodyInstance(const SceneCollision& collision, physics::BodyId body)
+    {
+        const auto found = std::find(collision.bodies.begin(), collision.bodies.end(), body);
+
+        if (found == collision.bodies.end())
+        {
+            return std::nullopt;
+        }
+
+        return collision.instances[static_cast<std::size_t>(found - collision.bodies.begin())];
+    }
+
+    std::optional<physics::BodyId> findInstanceBody(const SceneCollision& collision, uint32_t instance)
+    {
+        const auto found = std::find(collision.instances.begin(), collision.instances.end(), instance);
+
+        if (found == collision.instances.end())
+        {
+            return std::nullopt;
+        }
+
+        return collision.bodies[static_cast<std::size_t>(found - collision.instances.begin())];
+    }
+
+    void setInstanceTransform(Scene& scene, const SceneCollision& collision, physics::PhysicsWorld& physics,
+        uint32_t instance, const math::Transform& transform)
+    {
+        if (instance >= scene.instances.size())
+        {
+            return;
+        }
+
+        SceneInstance& placed = scene.instances[instance];
+        placed.transform = transform;
+        placed.worldBounds = math::transformBounds(scene.meshes[placed.mesh].localBounds, transform);
+
+        if (const std::optional<physics::BodyId> body = findInstanceBody(collision, instance))
+        {
+            physics.setTransform(*body, transform);
+        }
+    }
+
+    bool removeInstanceCollider(SceneCollision& collision, physics::PhysicsWorld& physics, uint32_t instance)
+    {
+        const auto found = std::find(collision.instances.begin(), collision.instances.end(), instance);
+
+        if (found == collision.instances.end())
+        {
+            return false;
+        }
+
+        const auto offset = found - collision.instances.begin();
+        physics.destroyBody(collision.bodies[static_cast<std::size_t>(offset)]);
+        collision.bodies.erase(collision.bodies.begin() + offset);
+        collision.instances.erase(found);
+
+        return true;
     }
 
     void destroySceneCollision(physics::PhysicsWorld& physics, SceneCollision& collision)

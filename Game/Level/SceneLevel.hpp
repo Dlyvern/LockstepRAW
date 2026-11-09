@@ -80,7 +80,8 @@ namespace game
         lockstep::render::Renderer& renderer, lockstep::physics::PhysicsWorld& physics,
         const lockstep::assets::FileSystem& files);
 
-    // Finds spawn points: at a node named "PlayerStart" or "Spawn" if the scene has one, else on
+    // Finds spawn points: Player1 and Player2 at "PlayerStart_1" and "PlayerStart_2" when the scene
+    // has them; otherwise beside a node named "PlayerStart" or "Spawn" if the scene has one, else on
     // the ground near the centre of the scene's bounds: the lowest floor with room for a player
     // above it (not a roof or the underside of a floor slab), probed on a small grid around the
     // centre because the ground may have holes (under buildings).

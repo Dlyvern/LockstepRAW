@@ -24,10 +24,17 @@
 //                      the final GPU format (render::TextureDescription layout)
 //   collision (.col):  CookedCollisionHeader, then PhysX's serialized triangle mesh
 //   level (scene):     written by writeCookedLevel(): the materials, meshes, instances, nodes and
-//                      lights of one scene, and the virtual paths of its other files
+//                      lights of one scene, and the virtual paths of its other files; versioned
+//                      by k_levelVersion
 namespace lockstep::assets
 {
     inline constexpr uint32_t k_cookedVersion{1};
+
+    // Version of level files, separate from k_cookedVersion so mesh, texture and collision files
+    // stay valid when only the level layout changes. Version 2 added SceneNode::parent and
+    // SceneInstance::node; version 1 levels still load, without that hierarchy.
+    inline constexpr uint32_t k_levelVersion{2};
+    inline constexpr uint32_t k_levelVersionWithoutHierarchy{1};
     inline constexpr std::array<char, 4> k_meshMagic{'L', 'M', 'S', 'H'};
     inline constexpr std::array<char, 4> k_textureMagic{'L', 'T', 'E', 'X'};
     inline constexpr std::array<char, 4> k_collisionMagic{'L', 'C', 'O', 'L'};

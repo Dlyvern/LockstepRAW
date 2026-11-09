@@ -151,15 +151,56 @@ namespace lockstep::render
         bool dither{true};
     };
 
+    // How edges are anti-aliased.
+    // Off:    nothing.
+    // Fxaa:   FXAA on the tonemapped image (cheap, softens edges, cannot fix sub-pixel shimmer).
+    // Msaa2x, Msaa4x: multisampled lit scene pass (geometry edges only, costs fill rate and
+    //         memory), lowered to what the GPU supports.
+    // Taa:    temporal anti-aliasing: the projection is jittered by a sub-pixel offset every frame
+    //         and the tonemapped image is accumulated over frames, reprojected with per-pixel
+    //         motion vectors, then sharpened. Also smooths shading and sub-pixel geometry.
+    enum class AntiAliasingMode : uint8_t
+    {
+        Off = 0,
+        Fxaa,
+        Msaa2x,
+        Msaa4x,
+        Taa
+    };
+
     // Anti-aliasing of the final image.
-    // fxaa:        run FXAA on the tonemapped image.
-    // msaaSamples: samples per pixel of the lit scene pass (colour, ambient and depth), resolved
-    //              before post-processing: 1 (off), 2, 4 or 8, lowered to what the GPU supports.
-    //              A change rebuilds the frame's attachments.
+    // mode:            the technique; changing to or from an MSAA mode rebuilds the frame's
+    //                  attachments.
+    // historyWeight:   TAA: share of the accumulated history kept each frame while the image is
+    //                  still, 0 to 1; higher is smoother and slower to react.
+    // motionWeight:    TAA: history share at fast motion (see motionPixels); lower reduces blur and
+    //                  ghosting on movement.
+    // motionPixels:    TAA: screen motion in pixels per frame at which motionWeight applies fully.
+    // sharpness:       TAA: strength of the sharpening applied after accumulation, 0 to 1.
+    // jitter:          TAA: jitter the projection (off shows the history alone, for debugging).
     struct AntiAliasingSettings
     {
-        bool fxaa{true};
-        uint32_t msaaSamples{1};
+        AntiAliasingMode mode{AntiAliasingMode::Taa};
+        float historyWeight{0.9f};
+        float motionWeight{0.8f};
+        float motionPixels{24.0f};
+        float sharpness{0.35f};
+        bool jitter{true};
+    };
+
+    // Planar reflections (mirrors) of the reflectors Game submits: the nearest visible one is
+    // rendered each frame from the mirrored camera into a reduced-resolution texture and
+    // composited on its surface.
+    // enabled:         render and composite them.
+    // resolutionScale: size of the reflection texture relative to the window, 0.25 to 1. A change
+    //                  rebuilds its attachments.
+    // maxDistance:     reflectors farther from the camera than this, in metres, are not rendered
+    //                  (their surface falls back to the environment reflection).
+    struct PlanarReflectionSettings
+    {
+        bool enabled{true};
+        float resolutionScale{0.5f};
+        float maxDistance{8.0f};
     };
 
     // CPU-side visibility.
@@ -182,6 +223,7 @@ namespace lockstep::render
         BloomSettings bloom{};
         TonemapSettings tonemap{};
         AntiAliasingSettings antiAliasing{};
+        PlanarReflectionSettings reflections{};
         CullingSettings culling{};
     };
 } //namespace lockstep::render

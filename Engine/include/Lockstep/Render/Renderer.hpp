@@ -9,6 +9,7 @@
 #include "Lockstep/Render/PresentMode.hpp"
 #include "Lockstep/Render/RenderSettings.hpp"
 #include "Lockstep/Render/Resources.hpp"
+#include "Lockstep/Render/Views.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -34,13 +35,18 @@ namespace lockstep::render
         PresentMode presentMode{k_defaultPresentMode};
     };
 
+    // Most planar reflectors kept per frame (see Renderer::submitReflector()).
+    inline constexpr uint32_t k_maxPlanarReflectors{8};
+
     // Owns the GPU context, the render scene and the render graph, plus every GPU resource
     // created through it. It draws into a platform::Window it does not own. Each frame:
     // setCamera(), submit() what is visible, submitLight() the lights, then render(). Lit
     // materials are glTF metallic-roughness PBR. The frame is: the procedural sky into an
     // environment atlas (image-based lighting), cascaded sun shadows (plus one spot light) into a
-    // shadow atlas, a forward HDR scene pass (frustum-culled, opaque front to back, sky, blended back
-    // to front), SSAO, bloom, tonemapping and FXAA; Engine overlays (dev tools) draw on top of the
+    // shadow atlas, the nearest planar reflector's mirrored view, a forward HDR scene pass
+    // (frustum-culled, opaque front to back, sky, blended back to front; also writes motion
+    // vectors), SSAO, bloom, tonemapping, then anti-aliasing (TAA, FXAA or MSAA, see
+    // AntiAliasingSettings) and dithering; Engine overlays (dev tools) draw on top of the
     // final image. Destroying the Renderer waits for the GPU to go idle first.
     class Renderer
     {
@@ -107,11 +113,27 @@ namespace lockstep::render
         // camera: camera position, orientation and lens.
         void setCamera(const Camera& camera);
 
-        // Queues one draw for the next render(). Invalid handles are ignored (and assert in debug).
+        // Queues one draw on k_defaultRenderLayer for the next render(). Invalid handles are
+        // ignored (and assert in debug).
         // mesh:      the mesh to draw.
         // material:  the material to draw it with.
         // transform: world placement of the mesh.
         void submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform);
+
+        // Queues one draw on chosen render layers for the next render(). Draws are matched to the
+        // previous frame by mesh, material and submission order among draws of that pair, which
+        // gives moving draws their motion vectors (TAA); keep the submission order stable.
+        // mesh:      the mesh to draw.
+        // material:  the material to draw it with.
+        // transform: world placement of the mesh.
+        // layers:    the layers it is on; views that share none of them skip it.
+        void submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform, RenderLayers layers);
+
+        // Queues a planar reflector (a mirror) for the next render(). Up to k_maxPlanarReflectors
+        // are kept per frame; the nearest visible one within RenderSettings::reflections.maxDistance
+        // is rendered, the others show the environment reflection.
+        // reflector: the mirror's mesh instance and what its reflection shows.
+        void submitReflector(const PlanarReflector& reflector);
 
         // Sets the directional light for the next render(). Without a call there is none that frame.
         // light: the light.

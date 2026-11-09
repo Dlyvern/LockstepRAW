@@ -135,9 +135,10 @@ namespace lockstep::cooker
         {
             const cgltf_node& node = *placed.node;
 
-            if (node.name != nullptr && node.name[0] != '\0')
+            if (assets::hasSceneNode(node))
             {
-                builder.scene.nodes.push_back(assets::SceneNode{.name = node.name, .transform = placed.transform});
+                builder.scene.nodes.push_back(assets::SceneNode{.name = node.name, .transform = placed.transform,
+                    .parent = placed.parentNode});
             }
 
             if (node.light != nullptr)
@@ -155,7 +156,7 @@ namespace lockstep::cooker
                 const math::Aabb worldBounds = math::transformBounds(builder.scene.meshes[part].geometry.bounds,
                     placed.transform);
                 builder.scene.instances.push_back(assets::SceneInstance{.mesh = part, .transform = placed.transform,
-                    .worldBounds = worldBounds});
+                    .worldBounds = worldBounds, .node = placed.instanceNode()});
                 math::expand(builder.scene.bounds, worldBounds);
             }
         }

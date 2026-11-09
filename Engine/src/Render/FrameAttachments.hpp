@@ -15,18 +15,33 @@ namespace lockstep::render
     // color:         HDR direct light, emissive, sky and transparent surfaces (lit scene pass).
     // ambient:       HDR environment / ambient light of opaque surfaces, darkened later by SSAO.
     // depth:         the scene depth buffer.
-    // *Msaa:         multisampled colour, ambient and depth of the lit scene pass when MSAA is on,
+    // velocity:      per-pixel motion of the lit scene: xy screen motion since last frame in uv
+    //                units (current minus previous), z the surface's view depth last frame (0 when
+    //                unknown), for TAA.
+    // reflection*:   the planar reflection view: colour (lit, ambient included) and the
+    //                ambient, velocity and depth targets it needs to share the lit pass's
+    //                pipelines; reduced resolution.
+    // *Msaa:         multisampled colour, ambient, velocity and depth of the lit scene pass when MSAA is on,
     //                resolved into color, ambient and depth (depth takes sample zero).
     // occlusion:     raw SSAO, half resolution.
     // occlusionBlur: depth-aware blurred SSAO, half resolution; what composition reads.
     // bloomDown*/bloomUp*: the bloom mip chain; bloomUp1 is the result.
     // ldr:           the tonemapped image, linear, before anti-aliasing.
+    // taaHistory:    the TAA result, kept across frames (persistent, double-buffered by Vela):
+    //                rgb the accumulated image, a this pixel's view depth (0 marks invalid).
     // display:       the anti-aliased, dithered image that is presented; Engine overlays draw on it.
     inline constexpr std::string_view k_environmentAttachment{"environment"};
     inline constexpr std::string_view k_shadowMapAttachment{"shadowMap"};
     inline constexpr std::string_view k_sceneColorAttachment{"color"};
     inline constexpr std::string_view k_sceneAmbientAttachment{"ambient"};
     inline constexpr std::string_view k_sceneDepthAttachment{"depth"};
+    inline constexpr std::string_view k_sceneVelocityAttachment{"velocity"};
+    inline constexpr std::string_view k_sceneVelocityMsaaAttachment{"velocityMsaa"};
+    inline constexpr std::string_view k_reflectionColorAttachment{"reflectionColor"};
+    inline constexpr std::string_view k_reflectionAmbientAttachment{"reflectionAmbient"};
+    inline constexpr std::string_view k_reflectionVelocityAttachment{"reflectionVelocity"};
+    inline constexpr std::string_view k_reflectionDepthAttachment{"reflectionDepth"};
+    inline constexpr std::string_view k_taaHistoryAttachment{"taaHistory"};
     inline constexpr std::string_view k_sceneColorMsaaAttachment{"colorMsaa"};
     inline constexpr std::string_view k_sceneAmbientMsaaAttachment{"ambientMsaa"};
     inline constexpr std::string_view k_sceneDepthMsaaAttachment{"depthMsaa"};

@@ -10,9 +10,14 @@ const float k_minRoughness = 0.045;
 const vec3 k_cascadeTints[4] = vec3[](vec3(1.0, 0.3, 0.3), vec3(0.3, 1.0, 0.3), vec3(0.3, 0.5, 1.0),
     vec3(1.0, 1.0, 0.3));
 
+const float k_reflectionView = 1.0;
+const float k_reflectorSurface = 2.0;
+const float k_reflectorAlignment = 0.995;
+
 layout(push_constant) uniform DrawConstants
 {
     mat4 model;
+    mat4 previousModel;
     vec4 baseColorFactor;
     vec4 emissiveNormalScale;
     vec4 surface;
@@ -36,14 +41,18 @@ layout(set = 1, binding = 4) uniform sampler2D emissiveTexture;
 layout(set = 2, binding = 0) uniform sampler2DShadow shadowAtlas;
 layout(set = 2, binding = 1) uniform sampler2D environmentAtlas;
 layout(set = 2, binding = 2) uniform sampler2D brdfLut;
+layout(set = 2, binding = 3) uniform sampler2D planarReflection;
 
 layout(location = 0) in vec3 inWorldPosition;
 layout(location = 1) in vec2 inUv;
 layout(location = 2) in vec3 inNormal;
 layout(location = 3) in vec4 inTangent;
+layout(location = 4) in vec4 inCurrentClip;
+layout(location = 5) in vec4 inPreviousClip;
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outAmbient;
+layout(location = 2) out vec4 outVelocity;
 
 struct Surface
 {
@@ -231,8 +240,43 @@ vec3 perturbedNormal(vec3 normal, vec3 position)
     return normalize(mat3(tangent, bitangent, normal) * sampled);
 }
 
+// The planar reflection seen at this surface point: the reflection view projects the point into
+// its texture. Faces that are not parallel to the mirror plane (a frame's bevels) get none.
+// Returns rgb radiance and a weight in [0, 1].
+vec4 planarReflectionAt(vec3 position, vec3 normal)
+{
+    if (frame.reflectionCamera.w <= 0.0)
+    {
+        return vec4(0.0);
+    }
+
+    float alignment = dot(normal, frame.reflectionPlane.xyz);
+
+    if (alignment < k_reflectorAlignment)
+    {
+        return vec4(0.0);
+    }
+
+    vec4 clip = frame.reflectionViewProjection * vec4(position, 1.0);
+    vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+    vec3 radiance = textureLod(planarReflection, uv, 0.0).rgb * frame.reflectionTint.rgb;
+    float weight = smoothstep(k_reflectorAlignment, 1.0, alignment);
+
+    return vec4(radiance, weight);
+}
+
+vec4 motionVector()
+{
+    vec2 current = inCurrentClip.xy / inCurrentClip.w;
+    vec2 previous = inPreviousClip.xy / inPreviousClip.w;
+
+    return vec4((current - previous) * 0.5, max(inPreviousClip.w, 0.0), 0.0);
+}
+
 void main()
 {
+    bool isReflectionView = draw.flags.z == k_reflectionView;
+    vec3 cameraPosition = isReflectionView ? frame.reflectionCamera.xyz : camera.position.xyz;
     vec4 baseColor = texture(baseColorTexture, inUv) * draw.baseColorFactor;
     bool isMasked = draw.surface.w >= 0.0;
     bool isBlended = draw.flags.y > 0.5;
@@ -242,8 +286,8 @@ void main()
         discard;
     }
 
-    float cameraDistance = length(camera.position.xyz - inWorldPosition);
-    vec3 toCamera = (camera.position.xyz - inWorldPosition) / max(cameraDistance, 1e-4);
+    float cameraDistance = length(cameraPosition - inWorldPosition);
+    vec3 toCamera = (cameraPosition - inWorldPosition) / max(cameraDistance, 1e-4);
     vec3 geometryNormal = normalize(inNormal);
 
     if (draw.flags.x > 0.5 && !gl_FrontFacing)
@@ -329,6 +373,19 @@ void main()
 
     vec3 color = direct + emissive;
 
+    if (draw.flags.z == k_reflectorSurface)
+    {
+        vec4 planar = planarReflectionAt(inWorldPosition, surface.normal);
+        vec2 scaleBias = texture(brdfLut, vec2(surface.nDotV, roughness)).rg;
+        vec3 specularColor = surface.f0 * scaleBias.x + scaleBias.y;
+
+        if (planar.a > 0.0)
+        {
+            ambient *= 1.0 - planar.a * specularColor;
+            color += planar.rgb * specularColor * planar.a;
+        }
+    }
+
     if (frame.shadowParams.w > 0.5 && cascade >= 0)
     {
         color *= k_cascadeTints[cascade];
@@ -343,10 +400,12 @@ void main()
         ambient *= 1.0 - fog;
     }
 
-    if (isBlended)
+    outVelocity = motionVector();
+
+    if (isBlended || isReflectionView)
     {
-        outColor = vec4(color + ambient, baseColor.a);
-        outAmbient = vec4(0.0, 0.0, 0.0, baseColor.a);
+        outColor = vec4(color + ambient, isBlended ? baseColor.a : 1.0);
+        outAmbient = vec4(0.0, 0.0, 0.0, isBlended ? baseColor.a : 1.0);
         return;
     }
 

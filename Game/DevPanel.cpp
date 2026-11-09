@@ -3,6 +3,7 @@
 #if LOCKSTEP_DEV_TOOLS
 
 #include "GameState.hpp"
+#include "Level/RoomDevPanel.hpp"
 #include "Simulation/HostSimulation.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
@@ -169,8 +170,9 @@ namespace game
                 hostSection(state, engine);
             }
 
+            roomDevSection(state);
             ImGui::Separator();
-            ImGui::TextDisabled("WASD move, mouse look, left click fire");
+            ImGui::TextDisabled("WASD move, mouse look, left click fire, E use");
             ImGui::TextDisabled("Hold Space for bullet-time (either player)");
             ImGui::TextDisabled("Click to capture the mouse, Esc releases it");
         }

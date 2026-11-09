@@ -34,21 +34,67 @@ namespace lockstep::assets
 
     std::optional<math::Transform> findNode(const Scene& scene, std::string_view name)
     {
-        for (const SceneNode& node : scene.nodes)
+        if (const std::optional<uint32_t> index = findNodeIndex(scene, name))
         {
-            if (matchesName(node.name, name))
+            return scene.nodes[*index].transform;
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<uint32_t> findNodeIndex(const Scene& scene, std::string_view name)
+    {
+        for (std::size_t index = 0; index < scene.nodes.size(); ++index)
+        {
+            if (matchesName(scene.nodes[index].name, name))
             {
-                return node.transform;
+                return static_cast<uint32_t>(index);
             }
         }
 
         return std::nullopt;
     }
 
+    bool isNodeInSubtree(const Scene& scene, uint32_t node, uint32_t root)
+    {
+        while (node < scene.nodes.size())
+        {
+            if (node == root)
+            {
+                return true;
+            }
+
+            const uint32_t parent = scene.nodes[node].parent;
+            node = parent < node ? parent : k_noNode;
+        }
+
+        return false;
+    }
+
+    std::vector<uint32_t> subtreeInstances(const Scene& scene, uint32_t root)
+    {
+        std::vector<uint32_t> instances;
+
+        for (std::size_t index = 0; index < scene.instances.size(); ++index)
+        {
+            if (isNodeInSubtree(scene, scene.instances[index].node, root))
+            {
+                instances.push_back(static_cast<uint32_t>(index));
+            }
+        }
+
+        return instances;
+    }
+
     void submitScene(render::Renderer& renderer, const Scene& scene)
     {
         for (const SceneInstance& instance : scene.instances)
         {
+            if (!instance.isVisible)
+            {
+                continue;
+            }
+
             const SceneMesh& mesh = scene.meshes[instance.mesh];
             renderer.submit(mesh.mesh, mesh.material, instance.transform);
         }

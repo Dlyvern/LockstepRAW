@@ -17,6 +17,21 @@ layout(location = 0) in vec4 inFarPoint;
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outAmbient;
+layout(location = 2) out vec4 outVelocity;
+
+// Screen motion of a direction at infinity: only the camera's rotation moves it.
+vec4 skyMotion(vec3 direction)
+{
+    vec4 current = frame.viewProjection * vec4(direction, 0.0);
+    vec4 previous = frame.previousViewProjection * vec4(direction, 0.0);
+
+    if (current.w <= 0.0 || previous.w <= 0.0)
+    {
+        return vec4(0.0);
+    }
+
+    return vec4((current.xy / current.w - previous.xy / previous.w) * 0.5, 0.0, 0.0);
+}
 
 void main()
 {
@@ -32,4 +47,5 @@ void main()
 
     outColor = vec4(radiance, 1.0);
     outAmbient = vec4(0.0);
+    outVelocity = skyMotion(direction);
 }

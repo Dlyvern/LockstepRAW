@@ -1,7 +1,9 @@
 #ifndef LOCKSTEP_GAME_GAME_STATE_HPP
 #define LOCKSTEP_GAME_GAME_STATE_HPP
 
+#include "Echo/EchoRecording.hpp"
 #include "Enemies/Enemy.hpp"
+#include "Level/ApartmentRoom.hpp"
 #include "Level/Arena.hpp"
 #include "Level/SceneLevel.hpp"
 #include "Player/Pawns.hpp"
@@ -27,11 +29,13 @@ namespace lockstep::app
         // worldScale:      World time scale without bullet-time.
         // bulletTimeScale: World time scale while either player holds bullet-time.
         // spawnPoints:     foot positions where Player1's and Player2's pawns (re)spawn.
+        // hasEnemy:        the host spawns the enemy (off in the apartment room).
         struct Settings
         {
             float worldScale{1.0f};
             float bulletTimeScale{0.2f};
             std::array<math::Vec3, game::k_playerCount> spawnPoints{{{-2.0f, 0.0f, 8.0f}, {2.0f, 0.0f, 8.0f}}};
+            bool hasEnemy{true};
             game::ControlSettings controls{};
             game::PawnSettings pawns{};
             game::EnemySettings enemy{};
@@ -75,6 +79,8 @@ namespace lockstep::app
         game::LightingState lighting{};
         game::Arena arena{};
         std::optional<game::SceneLevel> level{};
+        std::optional<game::ApartmentRoom> room{};
+        std::optional<game::EchoPlayback> echo{};
         game::FlyCamera flyCamera{};
         Settings settings{};
         Local local{};

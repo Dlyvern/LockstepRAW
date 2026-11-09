@@ -2,8 +2,15 @@ add_executable(LockstepGame
     main.cpp
     Game.cpp
     DevPanel.cpp
+    Echo/EchoRecording.cpp
     Enemies/Enemy.cpp
+    Interaction/Interactables.cpp
+    Interaction/NodeMotion.cpp
+    Level/ApartmentRoom.cpp
+    Level/ApartmentRules.cpp
     Level/Arena.cpp
+    Level/RoomDevPanel.cpp
+    Level/RoomState.cpp
     Level/SceneLevel.cpp
     Player/Pawns.cpp
     Player/PlayerCommand.cpp
@@ -12,8 +19,10 @@ add_executable(LockstepGame
     Presentation/FlyCamera.cpp
     Presentation/Lighting.cpp
     Presentation/MaterialShowcase.cpp
+    Presentation/Mirrors.cpp
     Presentation/Visuals.cpp
     Simulation/HostSimulation.cpp
+    Simulation/RoomSimulation.cpp
     Weapons/Hitscan.cpp
     Weapons/LagCompensation.cpp
 )

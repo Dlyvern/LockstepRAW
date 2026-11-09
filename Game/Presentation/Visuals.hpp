@@ -33,6 +33,8 @@ namespace game
     // crosshair:    the aim dot.
     // healthFull:  a health pip that is still filled.
     // healthEmpty: a health pip that was lost.
+    // prompt:      the marks around the aim dot while something usable is in reach.
+    // ghost:       Echo ghost pawns.
     struct Visuals
     {
         lockstep::render::MeshHandle cube{};
@@ -44,6 +46,8 @@ namespace game
         lockstep::render::MaterialHandle crosshair{};
         lockstep::render::MaterialHandle healthFull{};
         lockstep::render::MaterialHandle healthEmpty{};
+        lockstep::render::MaterialHandle prompt{};
+        lockstep::render::MaterialHandle ghost{};
     };
 
     // Creates the game's meshes and materials.
@@ -72,6 +76,14 @@ namespace game
     // eye:       the camera position.
     // direction: unit look direction.
     void drawCrosshair(lockstep::render::Renderer& renderer, const Visuals& visuals, const math::Vec3& eye,
+        const math::Vec3& direction);
+
+    // Queues four marks around the aim dot: something usable is in reach (press E).
+    // renderer:  the renderer.
+    // visuals:   the game's meshes and materials.
+    // eye:       the camera position.
+    // direction: unit look direction.
+    void drawInteractPrompt(lockstep::render::Renderer& renderer, const Visuals& visuals, const math::Vec3& eye,
         const math::Vec3& direction);
 
     // Queues the local player's health as a row of pips at the bottom of the view.

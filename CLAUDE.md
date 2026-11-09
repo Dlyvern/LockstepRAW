@@ -68,7 +68,11 @@ for it.
 - **Render pipeline:** Engine builds its own graph instead of Vela's `forwardGraph`: shadow map
   -> lit HDR scene (RGBA16F) -> tonemap -> overlays (dev tools draw after tonemapping). Default
   material is lit (Lambert + Blinn-Phong + ambient); unlit stays for HUD elements. Game submits
-  lights every frame via `Renderer::submitLight`. The Engine-internal `RenderPass` interface is
+  lights every frame via `Renderer::submitLight`. Anti-aliasing modes Off / FXAA / MSAA 2x/4x /
+  TAA; default TAA (jitter, per-pixel velocity, variance clipping, sharpening). Planar mirrors:
+  Game registers reflector instances (`Renderer::submitReflector`); render layers
+  (`Lockstep/Render/Views.hpp`) control what each view sees, e.g. the local pawn is drawn only in
+  mirrors (`k_mirrorOnlyLayer`). The Engine-internal `RenderPass` interface is
   how Engine passes plug in; Game can't add passes yet.
 - **Materials and assets:** art direction is realistic (Trepang2-like). The material model is
   glTF 2.0 metallic-roughness, defined in `Lockstep/Render/PbrMaterial.hpp` (`PbrVertex` with
@@ -100,6 +104,16 @@ for it.
   No encryption. Content lives in `Content/` inside the project but is git-ignored for now:
   `Content/source/<area>/` (`.blend`, glTF exports, extracted prop packs in
   `Content/source/props/`) and `Content/cooked/` (cooker output, paks).
+- **Interactions:** glTF node names drive gameplay: `Interact_*` nodes are usable (look within
+  2 m + E, host-authoritative, state replicated), `PlayerStart_1/2` are spawns, `Toy_*` are
+  physics toys, `CarSpot` marks the car. Moving parts are child objects of an `Interact_*` empty
+  placed on the hinge/pivot. In Blender, every object belongs to exactly one collection (the same
+  as its parent), or linked instancing duplicates it. Cooked levels are format version 2 (node
+  hierarchy); recook after cooker changes. The Echo recorder saves both players' movement and
+  interactions (`--echo-play <file>` replays it).
+- **Levels:** `Content/source/apartment/` (the flat) is linked into
+  `Content/source/district/district.blend` (building, stairs, street, park, car) at second-floor
+  height; export the district by making the linked instances real, exporting, and reloading.
 - **Game-specific shaders/materials:** not designed yet; decide when the first one is needed.
 - **Physics: PhysX 5.6.1** (submodule `external/physx/PhysX`), built exactly as in Velix:
   `external/physx/CMakeLists.txt` runs `external/physx/scripts/build_physx_{linux.sh,windows.bat}`
@@ -186,8 +200,8 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
   1. `vela_compile_shaders` can't stage shaders of a static library for the executables
      linking it (Engine works around it with `lockstep_stage_engine_shaders`).
   2. `vela_compile_shaders` doesn't restage on shader-only edits and doesn't track `#include`.
-  3. Attachments don't persist contents between frames, and a pass can't render into a
-     persistent `Texture` (the sky IBL atlas is rebuilt every frame).
+  3. A pass can't render into a persistent `Texture` (the sky IBL atlas is rebuilt every
+     frame). Persistent attachments + `InputUsage::History` exist since a601b8d (used by TAA).
   4. No cubemap, array or per-mip attachments.
   5. No `PassRecorder::setViewport` (only scissor).
   6. Only 4 pass-input slots.
@@ -195,3 +209,7 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
      lands in that frame; check before asking).
   8. A depth prepass read by SSAO and then loaded by the lit pass forms a graph cycle.
   9. `ComputeRecorder` can't write images and only takes `Mat4` constants.
+  10. No RG16F / R16F formats (TAA velocity uses RGBA16F, half wasted).
+  11. One camera UBO per graph (the mirror view reads its matrix from the Engine lighting buffer).
+  12. PBR push constants are 192 B, above Vulkan's guaranteed 128 B minimum (fine on current
+      NVIDIA/AMD/Intel, which allow 256 B).

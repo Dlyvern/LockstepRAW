@@ -28,6 +28,9 @@ namespace lockstep::assets
     // SceneMesh::collisionShape of a mesh without a cooked collision shape.
     inline constexpr uint32_t k_noCollisionShape{0xFFFFFFFFu};
 
+    // SceneNode::parent and SceneInstance::node when there is no such node.
+    inline constexpr uint32_t k_noNode{0xFFFFFFFFu};
+
     // One drawable part of an imported scene: a glTF mesh primitive uploaded as a GPU mesh, and
     // the material it is drawn with. Several instances may share it.
     // mesh:               the GPU mesh, owned by the Renderer.
@@ -54,22 +57,33 @@ namespace lockstep::assets
 
     // One placed copy of a SceneMesh.
     // mesh:        index into Scene::meshes.
-    // transform:   world placement (import scale included).
+    // transform:   world placement (import scale included). Game may change it at runtime
+    //              (setInstanceTransform() in SceneCollision.hpp also moves the collider).
     // worldBounds: the mesh's local bounds moved by `transform`, for culling.
+    // node:        index into Scene::nodes of the glTF node holding the mesh, or of its nearest
+    //              named ancestor when that node has no name; k_noNode if there is none (also for
+    //              levels cooked before the format kept the hierarchy).
+    // isVisible:   submitScene() skips the instance while false. Not stored; starts true.
     struct SceneInstance
     {
         uint32_t mesh{0};
         math::Transform transform{};
         math::Aabb worldBounds{};
+        uint32_t node{k_noNode};
+        bool isVisible{true};
     };
 
-    // A named glTF node, kept so Game can find markers such as a player start.
+    // A named glTF node, kept so Game can find markers such as a player start, and objects it
+    // moves or hides as a whole (the instances under a node, see isNodeInSubtree()).
     // name:      the node's name as authored.
     // transform: world placement (import scale included).
+    // parent:    index into Scene::nodes of the nearest named ancestor, or k_noNode for none.
+    //            Unnamed glTF nodes in between are skipped, so this is always an earlier node.
     struct SceneNode
     {
         std::string name;
         math::Transform transform{};
+        uint32_t parent{k_noNode};
     };
 
     // Kind of a SceneLight (glTF KHR_lights_punctual).
@@ -225,7 +239,27 @@ namespace lockstep::assets
     // Returns: the first matching node's world transform, or nothing.
     [[nodiscard]] std::optional<math::Transform> findNode(const Scene& scene, std::string_view name);
 
-    // Submits every instance of the scene for the next render().
+    // Finds a named node like findNode(), by its index.
+    // scene:   the scene.
+    // name:    the name to look for, matched as in findNode().
+    // Returns: the index into Scene::nodes of the first matching node, or nothing.
+    [[nodiscard]] std::optional<uint32_t> findNodeIndex(const Scene& scene, std::string_view name);
+
+    // Tells whether a node is `root` or one of its descendants.
+    // scene:   the scene.
+    // node:    index into Scene::nodes, or k_noNode (never in a subtree).
+    // root:    index into Scene::nodes.
+    // Returns: true if walking up from `node` through SceneNode::parent reaches `root`.
+    [[nodiscard]] bool isNodeInSubtree(const Scene& scene, uint32_t node, uint32_t root);
+
+    // Lists the instances under a node.
+    // scene:   the scene.
+    // root:    index into Scene::nodes.
+    // Returns: indices into Scene::instances of every instance whose node is in the subtree of
+    //          `root`, in order.
+    [[nodiscard]] std::vector<uint32_t> subtreeInstances(const Scene& scene, uint32_t root);
+
+    // Submits every visible instance of the scene for the next render().
     // renderer: the renderer the scene was imported with.
     // scene:    the scene.
     void submitScene(render::Renderer& renderer, const Scene& scene);

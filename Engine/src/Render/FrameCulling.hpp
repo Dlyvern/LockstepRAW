@@ -27,7 +27,8 @@ namespace lockstep::render
 
     // Fills the state's draw lists from its submitted draws and prepared lighting: visible opaque
     // draws front to back, visible blended draws back to front, and per shadow atlas tile the
-    // draws casting into it. Respects RenderSettings::culling.
+    // draws casting into it. Only draws on the camera's render layers take part. Respects
+    // RenderSettings::culling.
     // state:          the renderer state, with draws, prepared lighting and camera set.
     // viewProjection: the camera's world-to-clip matrix.
     void buildDrawLists(RendererState& state, const math::Mat4& viewProjection);

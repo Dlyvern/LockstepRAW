@@ -3,6 +3,8 @@
 #include "DevPanel.hpp"
 #include "GameState.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Simulation/RoomSimulation.hpp"
+#include "Presentation/Mirrors.hpp"
 
 #include <Lockstep/Assets/Scene.hpp>
 #include <Lockstep/Net/Replication.hpp>
@@ -53,7 +55,7 @@ namespace game
             if (!launch)
             {
                 state.arena = buildArena();
-                return {};
+                return startRoom(state, engine, LevelSpawns{});
             }
 
             auto level = loadSceneLevel(*launch, engine.renderer, engine.physics, engine.files);
@@ -68,7 +70,7 @@ namespace game
             state.settings.spawnPoints = spawns.pawns;
             state.settings.enemy.spawnPoint = spawns.enemy;
 
-            return {};
+            return startRoom(state, engine, spawns);
         }
 
         lockstep::Result<GameState*> init(EngineContext& engine)
@@ -118,6 +120,11 @@ namespace game
         {
             for (const std::vector<std::byte>& message : engine.session.received())
             {
+                if (receiveRoomMessage(state, message))
+                {
+                    continue;
+                }
+
                 if (const std::optional<PlayerStatuses> statuses = decodePlayerStatuses(message))
                 {
                     const PlayerStatus& before = state.local.statuses[k_clientPawn];
@@ -164,6 +171,7 @@ namespace game
         void fixedTick(GameState& state, EngineContext& engine, const TickInfo& tick)
         {
             state.lastTick = tick.tick;
+            stepEcho(state);
             const platform::Input idle{};
             const bool isFlying = state.flyCamera.isActive;
             state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls,
@@ -179,6 +187,8 @@ namespace game
                 {
                     logError("input not sent", sent.error());
                 }
+
+                runRoomClientTick(state, engine);
 
                 return;
             }
@@ -300,6 +310,17 @@ namespace game
                 lockstep::assets::submitScene(engine.renderer, state.level->scene);
             }
 
+            if (state.echo)
+            {
+                for (const std::optional<math::Transform>& ghost : echoGhostTransforms(*state.echo, frameInfo.alpha))
+                {
+                    if (ghost)
+                    {
+                        engine.renderer.submit(state.visuals.cube, state.visuals.ghost, *ghost);
+                    }
+                }
+            }
+
             updateLighting(state.lighting, frameInfo.input, frameInfo.frameSeconds);
             submitArenaLights(engine.renderer, state.lighting);
 
@@ -316,6 +337,8 @@ namespace game
 
             const bool isClient = engine.session.role() == net::Role::Client;
             const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
+            presentMirrors(engine.renderer, state.level ? &state.level->scene : nullptr, state.visuals, localPawn,
+                isClient ? world::EntityOwner::Player2 : world::EntityOwner::Player1);
             const View view = localPawn
                 ? View{.eye = eyePosition(*localPawn),
                     .direction = lookDirection(state.local.command.yaw, state.local.command.pitch)}
@@ -331,6 +354,11 @@ namespace game
             if (localPawn)
             {
                 drawCrosshair(engine.renderer, state.visuals, view.eye, view.direction);
+
+                if (state.room && state.room->prompt[0] != '\0')
+                {
+                    drawInteractPrompt(engine.renderer, state.visuals, view.eye, view.direction);
+                }
             }
 
             if (status.isJoined)

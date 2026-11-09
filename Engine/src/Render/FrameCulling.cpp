@@ -97,6 +97,12 @@ namespace lockstep::render
         for (uint32_t index = 0; index < state.draws.size(); ++index)
         {
             DrawItem& item = state.draws[index];
+
+            if ((item.layers & state.camera.layers) == 0)
+            {
+                continue;
+            }
+
             item.cameraDistance = math::length((item.worldBounds.min + item.worldBounds.max) * 0.5f - state.camera.position);
 
             if (!cull || intersects(cameraFrustum, item.worldBounds))

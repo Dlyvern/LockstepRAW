@@ -16,6 +16,12 @@ struct LocalLight
 layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameLighting
 {
     mat4 shadowTileViewProjection[k_maxShadowTiles];
+    mat4 viewProjection;
+    mat4 previousViewProjection;
+    mat4 reflectionViewProjection;
+    vec4 reflectionCamera;
+    vec4 reflectionPlane;
+    vec4 reflectionTint;
     vec4 cascadeTexelSize;
     vec4 ambient;
     vec4 sunDirection;

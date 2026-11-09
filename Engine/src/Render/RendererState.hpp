@@ -13,6 +13,8 @@
 
 #include "EnvironmentResources.hpp"
 #include "FrameLighting.hpp"
+#include "PlanarReflections.hpp"
+#include "TemporalAntiAliasing.hpp"
 #include "RenderPass.hpp"
 #include "RenderPassAdapter.hpp"
 #include "ResourcePool.hpp"
@@ -91,15 +93,22 @@ namespace lockstep::render
     };
 
     // One submitted draw, valid until the end of the frame's render().
+    // previousModel:  the model matrix of the matching draw last frame (see assignPreviousModels()),
+    //                 or `model` when there was none; gives motion vectors.
     // worldBounds:    the mesh bounds in world space.
     // cameraDistance: distance from the camera to the bounds' centre, for sorting.
+    // layers:         the render layers it is on.
+    // isReflector:    it is the surface of this frame's rendered planar reflection.
     struct DrawItem
     {
         const vela::graphics::Mesh* mesh{nullptr};
         const MaterialRecord* material{nullptr};
         math::Mat4 model{1.0f};
+        math::Mat4 previousModel{1.0f};
         math::Aabb worldBounds{};
         float cameraDistance{0.0f};
+        RenderLayers layers{k_defaultRenderLayer};
+        bool isReflector{false};
     };
 
     // Indices into RendererState::draws chosen for one frame.
@@ -203,6 +212,7 @@ namespace lockstep::render
         std::optional<vela::graphics::Material> shadowMaterial;
         float shadowMaterialBias{0.0f};
         uint32_t sceneSamples{1};
+        float reflectionScale{0.5f};
 
         std::vector<RegisteredPass> passes;
         uint32_t passNameCounter{0};
@@ -210,7 +220,10 @@ namespace lockstep::render
         std::vector<DrawItem> draws;
         FrameDrawLists drawLists;
         FrameLights lights;
+        std::vector<PlanarReflector> reflectors;
         PreparedLighting prepared;
+        PreparedReflection reflection;
+        TemporalState temporal;
         RenderSettings settings{};
         FrameStats lastFrame{};
         uint32_t frameIndex{0};
@@ -221,6 +234,7 @@ namespace lockstep::render
         float aspectRatio{1.0f};
         math::Mat4 view{1.0f};
         math::Mat4 projection{1.0f};
+        math::Mat4 unjitteredProjection{1.0f};
     };
 
     // Engine-internal access to a Renderer's state, for Engine modules that extend rendering

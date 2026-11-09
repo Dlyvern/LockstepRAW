@@ -52,6 +52,7 @@ add_library(LockstepEngine STATIC
     src/Render/FrameLighting.cpp
     src/Render/FramePasses.cpp
     src/Render/PbrResources.cpp
+    src/Render/PlanarReflections.cpp
     src/Render/PostPasses.cpp
     src/Render/PresentMode.cpp
     src/Render/Renderer.cpp
@@ -63,6 +64,7 @@ add_library(LockstepEngine STATIC
     src/Render/ShadowMaterials.cpp
     src/Render/Shapes.cpp
     src/Render/SkyModel.cpp
+    src/Render/TemporalAntiAliasing.cpp
     src/Render/TextureLayout.cpp
     src/Render/VelaConversions.cpp
     src/World/Entities.cpp
@@ -148,6 +150,7 @@ set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_down.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_up.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tonemap.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/taa.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fxaa.frag
 )
 

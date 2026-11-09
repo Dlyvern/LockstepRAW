@@ -3,6 +3,7 @@
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
 #include "RendererState.hpp"
+#include "TemporalAntiAliasing.hpp"
 #include "VelaConversions.hpp"
 
 #include <Vela/Graphics/RenderGraph.hpp>
@@ -50,18 +51,26 @@ namespace lockstep::render
             uint32_t view;
         };
 
+        enum class OutputFilter : uint32_t
+        {
+            None = 0,
+            Fxaa,
+            TemporalSharpen
+        };
+
         struct OutputConstants
         {
             float inverseSize[2];
-            float enabled;
+            OutputFilter filter;
             float dither;
             uint32_t frameIndex;
+            float sharpness;
         };
 
         static_assert(sizeof(ProjectionConstants) == 32);
         static_assert(sizeof(BloomConstants) == 16);
         static_assert(sizeof(TonemapConstants) == 16);
-        static_assert(sizeof(OutputConstants) == 20);
+        static_assert(sizeof(OutputConstants) == 24);
 
         vela::graphics::AttachmentSlot colorSlot(std::string_view name, vela::graphics::TextureFormat format,
             float scale, float clearValue)
@@ -75,6 +84,29 @@ namespace lockstep::render
             slot.scale = scale;
 
             return slot;
+        }
+
+        OutputFilter outputFilter(AntiAliasingMode mode)
+        {
+            switch (mode)
+            {
+                case AntiAliasingMode::Fxaa:
+                {
+                    return OutputFilter::Fxaa;
+                }
+                case AntiAliasingMode::Taa:
+                {
+                    return OutputFilter::TemporalSharpen;
+                }
+                case AntiAliasingMode::Off:
+                case AntiAliasingMode::Msaa2x:
+                case AntiAliasingMode::Msaa4x:
+                {
+                    return OutputFilter::None;
+                }
+            }
+
+            return OutputFilter::None;
         }
 
         float bloomScale(uint32_t level)
@@ -102,30 +134,18 @@ namespace lockstep::render
         }
 
         Status addPass(vela::graphics::RenderGraph& graph, RendererState& state, std::string_view fragmentShader,
-            vela::graphics::AttachmentSlot output, std::vector<std::string> inputs, FullscreenPass::Recorder recorder)
+            vela::graphics::AttachmentSlot output, const std::vector<std::string>& inputs,
+            FullscreenPass::Recorder recorder)
         {
-            vela::graphics::RenderState renderState{};
-            renderState.depthTest = false;
-            renderState.depthWrite = false;
+            std::vector<vela::graphics::PassInput> sampled;
 
-            auto material = createBuiltinMaterial(state.context, k_fullscreenVertexShader, fragmentShader,
-                vela::graphics::VertexLayout{}, renderState);
-
-            if (!material)
+            for (const std::string& input : inputs)
             {
-                return material.error();
+                sampled.push_back({input, vela::graphics::InputUsage::Sampled});
             }
 
-            const std::string name = output.name;
-            auto pass = std::make_unique<FullscreenPass>(std::move(output), std::move(inputs),
-                std::move(material).value(), std::move(recorder));
-
-            if (auto added = graph.addPass(name, std::move(pass)); !added)
-            {
-                return toError(added.error());
-            }
-
-            return {};
+            return addFullscreenPass(graph, state, fragmentShader, std::move(output), std::move(sampled),
+                std::move(recorder));
         }
 
         Status addOcclusionPasses(vela::graphics::RenderGraph& graph, RendererState& state)
@@ -228,23 +248,58 @@ namespace lockstep::render
                 return added;
             }
 
+            if (auto added = addTemporalPass(graph, state); !added)
+            {
+                return added;
+            }
+
             return addPass(graph, state, k_fxaaShader, colorSlot(k_displayAttachment, k_displayFormat, 1.0f, 0.0f),
-                {std::string(k_ldrAttachment)},
+                {std::string(k_ldrAttachment), std::string(k_taaHistoryAttachment)},
                 [&state](vela::graphics::PassRecorder& recorder)
                 {
                     const vela::graphics::Extent2D extent = recorder.extent();
+                    const AntiAliasingSettings& antiAliasing = state.settings.antiAliasing;
 
                     recorder.setConstants(OutputConstants{
                         .inverseSize = {1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height)},
-                        .enabled = state.settings.antiAliasing.fxaa ? 1.0f : 0.0f,
+                        .filter = outputFilter(antiAliasing.mode),
                         .dither = state.settings.tonemap.dither ? k_ditherAmplitude : 0.0f,
-                        .frameIndex = state.frameIndex});
+                        .frameIndex = state.frameIndex,
+                        .sharpness = antiAliasing.sharpness});
                     return true;
                 });
         }
     } //namespace
 
-    FullscreenPass::FullscreenPass(vela::graphics::AttachmentSlot output, std::vector<std::string> inputs,
+    Status addFullscreenPass(vela::graphics::RenderGraph& graph, RendererState& state, std::string_view fragmentShader,
+        vela::graphics::AttachmentSlot output, std::vector<vela::graphics::PassInput> inputs,
+        FullscreenPass::Recorder recorder)
+    {
+        vela::graphics::RenderState renderState{};
+        renderState.depthTest = false;
+        renderState.depthWrite = false;
+
+        auto material = createBuiltinMaterial(state.context, k_fullscreenVertexShader, fragmentShader,
+            vela::graphics::VertexLayout{}, renderState);
+
+        if (!material)
+        {
+            return material.error();
+        }
+
+        const std::string name = output.name;
+        auto pass = std::make_unique<FullscreenPass>(std::move(output), std::move(inputs),
+            std::move(material).value(), std::move(recorder));
+
+        if (auto added = graph.addPass(name, std::move(pass)); !added)
+        {
+            return toError(added.error());
+        }
+
+        return {};
+    }
+
+    FullscreenPass::FullscreenPass(vela::graphics::AttachmentSlot output, std::vector<vela::graphics::PassInput> inputs,
         vela::graphics::Material&& material, Recorder recorder)
         : m_output(std::move(output)),
           m_inputs(std::move(inputs)),
@@ -258,10 +313,7 @@ namespace lockstep::render
         vela::graphics::PassDescription description{};
         description.colorOutputs.push_back(m_output);
 
-        for (const std::string& input : m_inputs)
-        {
-            description.inputs.push_back({input, vela::graphics::InputUsage::Sampled});
-        }
+        description.inputs = m_inputs;
 
         return description;
     }
@@ -272,7 +324,7 @@ namespace lockstep::render
 
         for (uint32_t slot = 0; slot < m_inputs.size(); ++slot)
         {
-            recorder.bindAttachment(slot, m_inputs[slot]);
+            recorder.bindAttachment(slot, m_inputs[slot].name);
         }
 
         if (m_recorder(recorder))

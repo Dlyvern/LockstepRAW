@@ -2,7 +2,6 @@
 
 #include <cstring>
 #include <optional>
-#include <utility>
 
 namespace lockstep::assets
 {
@@ -73,23 +72,38 @@ namespace lockstep::assets
         }
     } //namespace
 
+    bool hasSceneNode(const cgltf_node& node) noexcept
+    {
+        return node.name != nullptr && node.name[0] != '\0';
+    }
+
     std::vector<PlacedNode> placeNodes(const cgltf_data& document, float scale, ImportWarnings& warnings)
     {
+        struct PendingNode
+        {
+            const cgltf_node* node{nullptr};
+            math::Mat4 parentWorld{};
+            uint32_t parentNode{k_noNode};
+        };
+
         std::vector<PlacedNode> placed;
-        std::vector<std::pair<const cgltf_node*, math::Mat4>> pending;
+        std::vector<PendingNode> pending;
+        uint32_t sceneNodeCount = 0;
         const math::Mat4 root = math::scale(math::Mat4{1.0f}, math::Vec3{scale, scale, scale});
         const std::vector<const cgltf_node*> roots = rootNodes(document);
 
         for (auto node = roots.rbegin(); node != roots.rend(); ++node)
         {
-            pending.emplace_back(*node, root);
+            pending.push_back(PendingNode{.node = *node, .parentWorld = root, .parentNode = k_noNode});
         }
 
         while (!pending.empty())
         {
-            const auto [node, parent] = pending.back();
+            const PendingNode current = pending.back();
             pending.pop_back();
-            const math::Mat4 world = parent * localMatrix(*node);
+            const cgltf_node* node = current.node;
+            const math::Mat4 world = current.parentWorld * localMatrix(*node);
+            uint32_t childParent = current.parentNode;
 
             if (node->skin != nullptr)
             {
@@ -98,7 +112,10 @@ namespace lockstep::assets
 
             if (const std::optional<math::Transform> transform = toTransform(world))
             {
-                placed.push_back(PlacedNode{.node = node, .transform = *transform});
+                const uint32_t sceneNode = hasSceneNode(*node) ? sceneNodeCount++ : k_noNode;
+                placed.push_back(PlacedNode{.node = node, .transform = *transform, .sceneNode = sceneNode,
+                    .parentNode = current.parentNode});
+                childParent = placed.back().instanceNode();
             }
             else if (node->mesh != nullptr)
             {
@@ -107,7 +124,8 @@ namespace lockstep::assets
 
             for (cgltf_size child = node->children_count; child > 0; --child)
             {
-                pending.emplace_back(node->children[child - 1], world);
+                pending.push_back(PendingNode{.node = node->children[child - 1], .parentWorld = world,
+                    .parentNode = childParent});
             }
         }
 

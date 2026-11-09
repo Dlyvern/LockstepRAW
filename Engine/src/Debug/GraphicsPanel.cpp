@@ -151,19 +151,42 @@ namespace lockstep::debug
             ImGui::SliderFloat("Max amount", &fog.maxAmount, 0.0f, 1.0f, "%.2f");
         }
 
-        void drawMsaa(render::AntiAliasingSettings& antiAliasing)
+        void drawAntiAliasing(render::AntiAliasingSettings& antiAliasing)
         {
-            int choice = 0;
-
-            while (choice < 3 && (2u << choice) <= antiAliasing.msaaSamples)
+            if (!header("Anti-aliasing"))
             {
-                ++choice;
+                return;
             }
 
-            if (ImGui::Combo("MSAA (scene)", &choice, "Off\0" "2x\0" "4x\0" "8x\0"))
+            int mode = static_cast<int>(antiAliasing.mode);
+
+            if (ImGui::Combo("Mode", &mode, "Off\0" "FXAA\0" "MSAA 2x\0" "MSAA 4x\0" "TAA\0"))
             {
-                antiAliasing.msaaSamples = 1u << choice;
+                antiAliasing.mode = static_cast<render::AntiAliasingMode>(mode);
             }
+
+            if (antiAliasing.mode != render::AntiAliasingMode::Taa)
+            {
+                return;
+            }
+
+            ImGui::SliderFloat("History (still)", &antiAliasing.historyWeight, 0.5f, 0.98f, "%.3f");
+            ImGui::SliderFloat("History (moving)", &antiAliasing.motionWeight, 0.0f, 0.98f, "%.3f");
+            ImGui::SliderFloat("Motion for full falloff (px)", &antiAliasing.motionPixels, 1.0f, 64.0f, "%.1f");
+            ImGui::SliderFloat("Sharpness", &antiAliasing.sharpness, 0.0f, 1.0f, "%.2f");
+            ImGui::Checkbox("Jitter", &antiAliasing.jitter);
+        }
+
+        void drawReflections(render::PlanarReflectionSettings& reflections)
+        {
+            if (!header("Planar reflections"))
+            {
+                return;
+            }
+
+            ImGui::Checkbox("Mirrors", &reflections.enabled);
+            ImGui::SliderFloat("Resolution scale", &reflections.resolutionScale, 0.25f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Max distance (m)", &reflections.maxDistance, 1.0f, 30.0f, "%.1f");
         }
 
         void drawPostProcessing(render::RenderSettings& settings)
@@ -182,8 +205,6 @@ namespace lockstep::debug
             ImGui::Separator();
             ImGui::Checkbox("Bloom", &settings.bloom.enabled);
             ImGui::SliderFloat("Bloom strength", &settings.bloom.strength, 0.0f, k_maxBloomStrength, "%.3f");
-            ImGui::Checkbox("FXAA", &settings.antiAliasing.fxaa);
-            drawMsaa(settings.antiAliasing);
             ImGui::Checkbox("Frustum culling", &settings.culling.frustumCulling);
         }
 
@@ -239,6 +260,8 @@ namespace lockstep::debug
             ImGui::Text("Lights: %u local (%u dropped), sun %s", frame.local, frame.dropped,
                 frame.hasDirectional ? "yes" : "no");
             ImGui::Text("Shadows: %u cascades%s", frame.cascades, frame.spotShadow ? " + spot" : "");
+            ImGui::Text("Mirror: %s, %u draws", renderer.reflection.active ? "rendered" : "none",
+                static_cast<uint32_t>(renderer.reflection.opaque.size() + renderer.reflection.blended.size()));
             drawPassTimings(panel, passTimings);
             ImGui::Separator();
 
@@ -247,6 +270,8 @@ namespace lockstep::debug
             drawSky(settings.sky, settings.ibl);
             drawShadows(settings.shadows);
             drawPostProcessing(settings);
+            drawAntiAliasing(settings.antiAliasing);
+            drawReflections(settings.reflections);
             drawTonemap(settings.tonemap);
             drawFog(settings.fog);
         }

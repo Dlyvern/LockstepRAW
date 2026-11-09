@@ -12,14 +12,31 @@
 
 namespace lockstep::assets
 {
-    // A node of the scene tree with its world placement.
-    // node:      the glTF node.
-    // transform: world transform, import scale included.
+    // A node of the scene tree with its world placement and where it lands in Scene::nodes.
+    // Importers append a SceneNode for every placed node with a name (hasSceneNode()), in visit
+    // order, so the indices below match Scene::nodes.
+    // node:       the glTF node.
+    // transform:  world transform, import scale included.
+    // sceneNode:  its index in Scene::nodes, or k_noNode if it has no name.
+    // parentNode: index in Scene::nodes of its nearest named placed ancestor, or k_noNode.
     struct PlacedNode
     {
         const cgltf_node* node{nullptr};
         math::Transform transform{};
+        uint32_t sceneNode{k_noNode};
+        uint32_t parentNode{k_noNode};
+
+        // Returns: the node a mesh instance of this node belongs to: the node itself if named,
+        //          else its nearest named ancestor.
+        [[nodiscard]] uint32_t instanceNode() const noexcept
+        {
+            return sceneNode != k_noNode ? sceneNode : parentNode;
+        }
     };
+
+    // node:    a glTF node.
+    // Returns: true if it has a non-empty name, so importers keep it as a SceneNode.
+    [[nodiscard]] bool hasSceneNode(const cgltf_node& node) noexcept;
 
     // Walks the default scene's node tree depth-first, children in order, and places every node.
     // Nodes whose world matrix has a zero scale are left out (with a warning if they hold a

@@ -31,6 +31,14 @@ namespace lockstep::render
     // The per-frame lighting block the lit, sky and environment shaders read from their storage
     // buffer (std430). The layout must match shaders/frame_lighting.glsl.
     // shadowTileViewProjection: world to atlas clip space of each shadow atlas tile.
+    // viewProjection:    the camera's world to clip matrix without TAA jitter (motion vectors).
+    // previousViewProjection: last frame's viewProjection (equal to it on the first frame).
+    // reflectionViewProjection: world to clip of the planar reflection view (mirrored camera,
+    //                    oblique near plane on the mirror, horizontally flipped).
+    // reflectionCamera:  xyz the mirrored camera position, w 1 if a reflection is rendered.
+    // reflectionPlane:   xyz the mirror's world normal (towards the camera), w minus its offset
+    //                    (dot(xyz, p) + w is the signed distance of p).
+    // reflectionTint:    rgb multiplier on the reflection.
     // cascadeTexelSize:  world size of a shadow texel per cascade.
     // ambient:           rgb flat ambient light.
     // sunDirection:      xyz direction sunlight travels, w 1 if there is a sun.
@@ -50,6 +58,12 @@ namespace lockstep::render
     struct GpuFrameLighting
     {
         math::Mat4 shadowTileViewProjection[k_maxShadowTiles]{};
+        math::Mat4 viewProjection{1.0f};
+        math::Mat4 previousViewProjection{1.0f};
+        math::Mat4 reflectionViewProjection{1.0f};
+        float reflectionCamera[4];
+        float reflectionPlane[4];
+        float reflectionTint[4];
         float cascadeTexelSize[4];
         float ambient[4];
         float sunDirection[4];
@@ -72,7 +86,7 @@ namespace lockstep::render
     };
 
     static_assert(sizeof(GpuLocalLight) == 64);
-    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 64 + 18 * 16 + k_maxLocalLights * 64);
+    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 64 + 3 * 64 + 21 * 16 + k_maxLocalLights * 64);
 
     // The lights submitted for one frame.
     // directional: the directional light, if one was submitted.

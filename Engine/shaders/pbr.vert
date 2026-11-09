@@ -1,8 +1,17 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#define FRAME_LIGHTING_BINDING 5
+#include "frame_lighting.glsl"
+
+// draw.flags.z: 0 the camera view, 1 the planar reflection view, 2 the camera view of the
+// rendered planar reflector's surface.
+const float k_reflectionView = 1.0;
 
 layout(push_constant) uniform DrawConstants
 {
     mat4 model;
+    mat4 previousModel;
     vec4 baseColorFactor;
     vec4 emissiveNormalScale;
     vec4 surface;
@@ -26,6 +35,8 @@ layout(location = 0) out vec3 outWorldPosition;
 layout(location = 1) out vec2 outUv;
 layout(location = 2) out vec3 outNormal;
 layout(location = 3) out vec4 outTangent;
+layout(location = 4) out vec4 outCurrentClip;
+layout(location = 5) out vec4 outPreviousClip;
 
 void main()
 {
@@ -36,6 +47,9 @@ void main()
     outUv = inUv;
     outNormal = transpose(inverse(linear)) * inNormal;
     outTangent = vec4(linear * inTangent.xyz, inTangent.w);
+    outCurrentClip = frame.viewProjection * worldPosition;
+    outPreviousClip = frame.previousViewProjection * (draw.previousModel * vec4(inPosition, 1.0));
 
-    gl_Position = camera.viewProjection * worldPosition;
+    gl_Position = draw.flags.z == k_reflectionView ? frame.reflectionViewProjection * worldPosition
+        : camera.viewProjection * worldPosition;
 }

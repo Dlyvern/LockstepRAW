@@ -11,6 +11,7 @@ namespace lockstep::assets
         constexpr std::size_t k_minimumMeshBytes{41};
         constexpr std::size_t k_minimumInstanceBytes{68};
         constexpr std::size_t k_minimumNodeBytes{44};
+        constexpr std::size_t k_hierarchyIndexBytes{sizeof(uint32_t)};
         constexpr std::size_t k_minimumLightBytes{73};
 
         Error levelError(std::string_view path, std::string_view what)
@@ -212,7 +213,16 @@ namespace lockstep::assets
 
             for (const SceneInstance& instance : level.instances)
             {
-                if (instance.mesh >= level.meshes.size())
+                if (instance.mesh >= level.meshes.size()
+                    || (instance.node != k_noNode && instance.node >= level.nodes.size()))
+                {
+                    return false;
+                }
+            }
+
+            for (std::size_t index = 0; index < level.nodes.size(); ++index)
+            {
+                if (level.nodes[index].parent != k_noNode && level.nodes[index].parent >= index)
                 {
                     return false;
                 }
@@ -234,7 +244,7 @@ namespace lockstep::assets
     {
         BinaryWriter writer;
         writer.write(k_levelMagic);
-        writer.write(k_cookedVersion);
+        writer.write(k_levelVersion);
 
         writer.write(static_cast<uint32_t>(level.textures.size()));
 
@@ -271,6 +281,7 @@ namespace lockstep::assets
             writer.write(instance.mesh);
             writeTransform(writer, instance.transform);
             writeBounds(writer, instance.worldBounds);
+            writer.write(instance.node);
         }
 
         writer.write(static_cast<uint32_t>(level.nodes.size()));
@@ -279,6 +290,7 @@ namespace lockstep::assets
         {
             writer.writeString(node.name);
             writeTransform(writer, node.transform);
+            writer.write(node.parent);
         }
 
         writer.write(static_cast<uint32_t>(level.lights.size()));
@@ -304,28 +316,42 @@ namespace lockstep::assets
             return levelError(path, "not a cooked level");
         }
 
-        if (version != k_cookedVersion)
+        if (version != k_levelVersion && version != k_levelVersionWithoutHierarchy)
         {
             return levelError(path, "format version " + std::to_string(version) + " is not supported (expected "
-                + std::to_string(k_cookedVersion) + "); re-cook it");
+                + std::to_string(k_levelVersion) + "); re-cook it");
         }
 
+        const bool hasHierarchy = version == k_levelVersion;
+        const std::size_t hierarchyBytes = hasHierarchy ? k_hierarchyIndexBytes : 0;
         CookedLevel level{};
         const auto readString = [](BinaryReader& source, std::string& text) { source.readString(text); };
         readArray(reader, level.textures, k_minimumStringBytes, readString);
         readArray(reader, level.materials, k_minimumMaterialBytes, readMaterial);
         readArray(reader, level.meshes, k_minimumMeshBytes, readMesh);
         readArray(reader, level.collisionShapes, k_minimumStringBytes, readString);
-        readArray(reader, level.instances, k_minimumInstanceBytes, [](BinaryReader& source, SceneInstance& instance)
+        readArray(reader, level.instances, k_minimumInstanceBytes + hierarchyBytes,
+            [hasHierarchy](BinaryReader& source, SceneInstance& instance)
         {
             source.read(instance.mesh);
             readTransform(source, instance.transform);
             readBounds(source, instance.worldBounds);
+
+            if (hasHierarchy)
+            {
+                source.read(instance.node);
+            }
         });
-        readArray(reader, level.nodes, k_minimumNodeBytes, [](BinaryReader& source, SceneNode& node)
+        readArray(reader, level.nodes, k_minimumNodeBytes + hierarchyBytes,
+            [hasHierarchy](BinaryReader& source, SceneNode& node)
         {
             source.readString(node.name);
             readTransform(source, node.transform);
+
+            if (hasHierarchy)
+            {
+                source.read(node.parent);
+            }
         });
         readArray(reader, level.lights, k_minimumLightBytes, readLight);
         readBounds(reader, level.bounds);

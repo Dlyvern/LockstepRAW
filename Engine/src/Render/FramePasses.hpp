@@ -17,6 +17,29 @@ namespace vela::core
 namespace lockstep::render
 {
     struct RendererState;
+    struct DrawItem;
+
+    // Which view a PBR draw renders for (pbr.vert / pbr.frag DrawConstants flags.z).
+    // Camera:           the camera view.
+    // Reflection:       the planar reflection view (mirrored camera; writes lit colour only).
+    // ReflectorSurface: the camera view of the rendered planar reflector, which composites the
+    //                   reflection texture.
+    enum class PbrView : uint32_t
+    {
+        Camera = 0,
+        Reflection,
+        ReflectorSurface
+    };
+
+    // Records one scene draw: unlit draws push their model matrix, lit draws the full PBR
+    // constants (model, previous model, factors, view).
+    // recorder: the pass's recorder.
+    // item:     the draw.
+    // view:     the view it is drawn for (lit draws only).
+    void recordSceneDraw(vela::graphics::PassRecorder& recorder, const DrawItem& item, PbrView view);
+
+    // Returns: the sampler the lit shaders read the shadow atlas through (hardware comparison).
+    [[nodiscard]] vela::graphics::SamplerDescription shadowCompareSampler();
 
     // Loads two staged shaders and creates a material from them.
     // context:      the GPU context.
@@ -87,7 +110,8 @@ namespace lockstep::render
     // The forward scene pass: clears the HDR targets and depth, draws visible opaque draws front to
     // back, the sky behind them, then alpha-blended draws back to front. Lit materials write direct
     // light to the colour target and environment light to the ambient target (so SSAO can darken
-    // only the latter); unlit materials and the sky write colour only.
+    // only the latter); unlit materials and the sky write colour only. Lit materials and the sky
+    // also write motion vectors; the planar reflector's surface composites the reflection texture.
     class LitScenePass final : public vela::graphics::Pass
     {
     public:
@@ -97,9 +121,9 @@ namespace lockstep::render
         // Returns: the pass, or an error if a shader is missing or the material failed.
         [[nodiscard]] static Result<std::unique_ptr<LitScenePass>> create(RendererState& state);
 
-        // Returns: colour, ambient and depth outputs (cleared; multisampled and resolved into
-        //          them when RendererState::sceneSamples > 1); the shadow atlas and environment
-        //          atlas as sampled inputs.
+        // Returns: colour, ambient, velocity and depth outputs (cleared; multisampled and resolved
+        //          into them when RendererState::sceneSamples > 1); the shadow atlas, environment
+        //          atlas and planar reflection as sampled inputs.
         [[nodiscard]] vela::graphics::PassDescription describe() const override;
 
         // Draws the frame's draw lists and the sky.

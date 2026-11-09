@@ -42,12 +42,17 @@ namespace game
         constexpr Colour k_solidColour{120, 117, 112};
         constexpr Colour k_healthFullColour{220, 40, 40};
         constexpr Colour k_healthEmptyColour{35, 35, 40};
+        constexpr Colour k_promptColour{255, 210, 120};
+        constexpr Colour k_ghostColour{170, 200, 255};
+        constexpr float k_promptMarkSize{0.003f};
+        constexpr float k_promptMarkOffset{0.012f};
 
         constexpr render::MaterialDescription k_floorLook{.specular = 0.35f, .shininess = 40.0f};
         constexpr render::MaterialDescription k_concreteLook{.specular = 0.12f, .shininess = 12.0f};
         constexpr render::MaterialDescription k_pawnLook{.specular = 0.3f, .shininess = 32.0f, .emissive = 0.02f};
         constexpr render::MaterialDescription k_enemyLook{.specular = 0.4f, .shininess = 48.0f, .emissive = 0.3f};
         constexpr render::MaterialDescription k_hudLook{.shading = render::Shading::Unlit};
+        constexpr render::MaterialDescription k_ghostLook{.specular = 0.1f, .shininess = 8.0f, .emissive = 0.6f};
 
         void appendPixel(std::vector<std::byte>& pixels, const Colour& colour)
         {
@@ -120,14 +125,16 @@ namespace game
         }
 
         Visuals visuals{.cube = cube.value(), .floor = floor.value()};
-        const std::array<std::tuple<render::MaterialHandle*, Colour, render::MaterialDescription>, 7> solids{{
+        const std::array<std::tuple<render::MaterialHandle*, Colour, render::MaterialDescription>, 9> solids{{
             {&visuals.solid, k_solidColour, k_concreteLook},
             {&visuals.player1, k_player1Colour, k_pawnLook},
             {&visuals.player2, k_player2Colour, k_pawnLook},
             {&visuals.enemy, k_enemyColour, k_enemyLook},
             {&visuals.crosshair, k_crosshairColour, k_hudLook},
             {&visuals.healthFull, k_healthFullColour, k_hudLook},
-            {&visuals.healthEmpty, k_healthEmptyColour, k_hudLook}}};
+            {&visuals.healthEmpty, k_healthEmptyColour, k_hudLook},
+            {&visuals.prompt, k_promptColour, k_hudLook},
+            {&visuals.ghost, k_ghostColour, k_ghostLook}}};
 
         for (const auto& [material, colour, look] : solids)
         {
@@ -176,6 +183,22 @@ namespace game
         renderer.submit(visuals.cube, visuals.crosshair, {
             .position = eye + direction * k_crosshairDistance,
             .scale = {k_crosshairSize, k_crosshairSize, k_crosshairSize}});
+    }
+
+    void drawInteractPrompt(render::Renderer& renderer, const Visuals& visuals, const math::Vec3& eye,
+        const math::Vec3& direction)
+    {
+        const math::Vec3 right = math::normalize(math::cross(direction, k_worldUp));
+        const math::Vec3 up = math::cross(right, direction);
+        const math::Vec3 centre = eye + direction * k_crosshairDistance;
+        const std::array<math::Vec3, 4> offsets{right, -right, up, -up};
+
+        for (const math::Vec3& offset : offsets)
+        {
+            renderer.submit(visuals.cube, visuals.prompt, {
+                .position = centre + offset * k_promptMarkOffset,
+                .scale = {k_promptMarkSize, k_promptMarkSize, k_promptMarkSize}});
+        }
     }
 
     void drawHealth(render::Renderer& renderer, const Visuals& visuals, const math::Vec3& eye,
