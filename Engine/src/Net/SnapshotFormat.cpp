@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <utility>
 
 namespace lockstep::net
 {
@@ -12,6 +13,8 @@ namespace lockstep::net
     {
         constexpr size_t k_entityStateBytes{52};
         constexpr uint8_t k_ownerCount{static_cast<uint8_t>(world::EntityOwner::Player2) + 1};
+        constexpr double k_viewTickScale{256.0};
+        constexpr uint8_t k_hasValue{1};
 
         void writeVec3(ByteWriter& writer, const math::Vec3& vector)
         {
@@ -82,6 +85,10 @@ namespace lockstep::net
         writer.writeU64(snapshot.tick);
         writer.writeF32(snapshot.worldScale.scale);
         writer.writeU64(snapshot.worldScale.tick);
+        writer.writeU8(snapshot.ackInputTick ? k_hasValue : 0);
+        writer.writeU64(snapshot.ackInputTick.value_or(0));
+        writer.writeU8(static_cast<uint8_t>(snapshot.clientState.size()));
+        writer.writeBytes(snapshot.clientState);
         writer.writeU32(static_cast<uint32_t>(snapshot.entities.size()));
 
         for (const EntityState& entity : snapshot.entities)
@@ -109,6 +116,23 @@ namespace lockstep::net
         snapshot.tick = reader.readU64();
         snapshot.worldScale.scale = reader.readF32();
         snapshot.worldScale.tick = reader.readU64();
+        const uint8_t hasAck = reader.readU8();
+        const uint64_t ackInputTick = reader.readU64();
+        const uint8_t clientStateSize = reader.readU8();
+
+        if (clientStateSize > k_maxClientStateBytes)
+        {
+            return std::nullopt;
+        }
+
+        const std::span<const std::byte> clientState = reader.readBytes(clientStateSize);
+        snapshot.clientState.assign(clientState.begin(), clientState.end());
+
+        if (hasAck == k_hasValue)
+        {
+            snapshot.ackInputTick = ackInputTick;
+        }
+
         const uint32_t count = reader.readU32();
 
         if (!reader.isValid() || !std::isfinite(snapshot.worldScale.scale) || snapshot.worldScale.scale < 0.0f
@@ -139,29 +163,66 @@ namespace lockstep::net
         return snapshot;
     }
 
-    std::vector<std::byte> encodeInput(uint64_t tick, std::span<const std::byte> input)
+    std::vector<std::byte> encodeInputs(std::span<const InputMessage> inputs)
     {
         ByteWriter writer(MessageKind::Input);
-        writer.writeU64(tick);
-        writer.writeBytes(input);
+        writer.writeU8(static_cast<uint8_t>(inputs.size()));
+
+        for (const InputMessage& input : inputs)
+        {
+            writer.writeU64(input.tick);
+            writer.writeU8(input.viewTick ? k_hasValue : 0);
+            writer.writeU64(static_cast<uint64_t>(std::max(input.viewTick.value_or(0.0), 0.0) * k_viewTickScale));
+            writer.writeU8(static_cast<uint8_t>(input.bytes.size()));
+            writer.writeBytes(input.bytes);
+        }
 
         return writer.take();
     }
 
-    std::optional<InputMessage> decodeInput(std::span<const std::byte> message)
+    std::optional<std::vector<InputMessage>> decodeInputs(std::span<const std::byte> message)
     {
         ByteReader reader(message);
-        InputMessage input{};
-        input.tick = reader.readU64();
+        const uint8_t count = reader.readU8();
 
-        if (!reader.isValid() || reader.remaining() > k_maxInputBytes)
+        if (!reader.isValid() || count == 0 || count > k_maxInputsPerMessage)
         {
             return std::nullopt;
         }
 
-        const std::span<const std::byte> bytes = reader.readBytes(reader.remaining());
-        input.bytes.assign(bytes.begin(), bytes.end());
+        std::vector<InputMessage> inputs;
+        inputs.reserve(count);
 
-        return input;
+        for (uint8_t index = 0; index < count; ++index)
+        {
+            InputMessage input{};
+            input.tick = reader.readU64();
+            const uint8_t hasViewTick = reader.readU8();
+            const uint64_t viewTick = reader.readU64();
+            const uint8_t size = reader.readU8();
+
+            const bool isOrdered = inputs.empty() || input.tick > inputs.back().tick;
+
+            if (!reader.isValid() || size > k_maxInputBytes || !isOrdered)
+            {
+                return std::nullopt;
+            }
+
+            if (hasViewTick == k_hasValue)
+            {
+                input.viewTick = static_cast<double>(viewTick) / k_viewTickScale;
+            }
+
+            const std::span<const std::byte> bytes = reader.readBytes(size);
+            input.bytes.assign(bytes.begin(), bytes.end());
+            inputs.push_back(std::move(input));
+        }
+
+        if (!reader.isValid() || reader.remaining() != 0)
+        {
+            return std::nullopt;
+        }
+
+        return inputs;
     }
 } //namespace lockstep::net

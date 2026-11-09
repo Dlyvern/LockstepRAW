@@ -5,10 +5,11 @@
 
 namespace lockstep::render
 {
-    // An Engine-side render pass that draws on top of the rendered scene, before the frame is
-    // presented. Engine-internal: implementations record with Vela directly, but never see Vela's
-    // attachment model. The Renderer decides which attachment the pass draws into (today: the
-    // scene's color output, loaded and stored) and runs passes in the order they were added.
+    // An Engine-side render pass that draws on top of the finished frame, before it is presented.
+    // Engine-internal: implementations record with Vela directly, but never see Vela's attachment
+    // model. The Renderer decides which attachment the pass draws into (today: the tonemapped
+    // display image, loaded and stored, so overlays are not affected by exposure or fog) and runs
+    // passes in the order they were added.
     // That order is not declared to Vela: it relies on Vela's graph sort keeping insertion order
     // between passes that write the same attachment (see Vela gaps in CLAUDE.md).
     class RenderPass
@@ -24,7 +25,7 @@ namespace lockstep::render
         }
 
         // Records the pass's draw commands. The color target is already bound, the viewport covers
-        // it, and it holds the scene rendered so far. There is no depth attachment.
+        // it, and it holds the tonemapped frame drawn so far. There is no depth attachment.
         // recorder: Vela's recorder for this pass.
         virtual void record(vela::graphics::PassRecorder& recorder) = 0;
     };

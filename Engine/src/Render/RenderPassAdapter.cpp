@@ -12,8 +12,8 @@ namespace lockstep::render
     vela::graphics::PassDescription RenderPassAdapter::describe() const
     {
         vela::graphics::AttachmentSlot colorSlot{};
-        colorSlot.name = std::string(k_sceneColorAttachment);
-        colorSlot.format = k_sceneColorFormat;
+        colorSlot.name = std::string(k_displayAttachment);
+        colorSlot.format = k_displayFormat;
         colorSlot.load = vela::graphics::LoadOp::Load;
         colorSlot.store = vela::graphics::StoreOp::Store;
 

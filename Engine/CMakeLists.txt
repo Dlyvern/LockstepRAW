@@ -4,17 +4,26 @@ add_library(LockstepEngine STATIC
     src/Core/Result.cpp
     src/Core/Transform.cpp
     src/Core/VelaError.cpp
+    src/Net/InputBuffer.cpp
     src/Net/Network.cpp
     src/Net/Replication.cpp
+    src/Net/ReplicationInputs.cpp
     src/Net/Session.cpp
     src/Net/SessionConnection.cpp
     src/Net/SessionLaunch.cpp
     src/Net/SnapshotBuffer.cpp
     src/Net/SnapshotFormat.cpp
     src/Net/WireFormat.cpp
+    src/Physics/PhysicsBodies.cpp
+    src/Physics/PhysicsControllers.cpp
+    src/Physics/PhysicsQueries.cpp
+    src/Physics/PhysicsWorld.cpp
+    src/Physics/PhysXErrorReporter.cpp
     src/Platform/Input.cpp
     src/Platform/VelaInput.cpp
     src/Platform/Window.cpp
+    src/Render/FrameLighting.cpp
+    src/Render/FramePasses.cpp
     src/Render/Renderer.cpp
     src/Render/RendererResources.cpp
     src/Render/RenderPassAdapter.cpp
@@ -42,6 +51,7 @@ if(LOCKSTEP_DEV_TOOLS)
     target_sources(LockstepEngine PRIVATE
         src/Debug/DevTools.cpp
         src/Debug/EnginePanel.cpp
+        src/Debug/GraphicsPanel.cpp
         src/Debug/ImGuiInput.cpp
         src/Debug/ImGuiOverlayPass.cpp
         src/Debug/NetPanel.cpp
@@ -72,11 +82,20 @@ target_link_libraries(LockstepEngine
 # GameNetworkingSockets stays private: only Engine/src/Net includes it.
 target_link_libraries(LockstepEngine PRIVATE GameNetworkingSockets::static)
 
+# PhysX stays private: only Engine/src/Physics includes it.
+target_link_libraries(LockstepEngine PRIVATE physx)
+
 # Shaders the Engine loads at runtime from "<exe dir>/shaders". A static library has no runtime
 # directory of its own, so each executable that links the Engine stages them for itself.
 set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/unlit.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/unlit.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lit.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lit.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fullscreen.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tonemap.frag
 )
 
 if(LOCKSTEP_DEV_TOOLS)
@@ -98,4 +117,21 @@ function(lockstep_stage_engine_shaders TARGET)
     endforeach()
 
     vela_compile_shaders(TARGET ${TARGET} SOURCES ${RELATIVE_SOURCES})
+
+    lockstep_stage_engine_runtime(${TARGET})
+endfunction()
+
+# Copies the runtime libraries the Engine needs next to TARGET's executable: the PhysX DLLs on
+# Windows (PhysX_64, PhysXCommon_64, PhysXFoundation_64, PhysXCooking_64), as Velix does.
+function(lockstep_stage_engine_runtime TARGET)
+    if(WIN32 AND PHYSX_RUNTIME_DLLS)
+        foreach(RUNTIME_DLL IN LISTS PHYSX_RUNTIME_DLLS)
+            get_filename_component(RUNTIME_DLL_NAME "${RUNTIME_DLL}" NAME)
+            add_custom_command(TARGET ${TARGET} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${RUNTIME_DLL}" "$<TARGET_FILE_DIR:${TARGET}>/${RUNTIME_DLL_NAME}"
+                COMMENT "Staging ${RUNTIME_DLL_NAME} for ${TARGET}"
+            )
+        endforeach()
+    endif()
 endfunction()

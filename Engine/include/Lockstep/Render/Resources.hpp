@@ -69,10 +69,29 @@ namespace lockstep::render
         TextureFilter filter{TextureFilter::Linear};
     };
 
-    // Everything needed to create an unlit textured material.
+    // How a material responds to light.
+    // Lit:   diffuse + specular from the frame's lights, ambient, shadows and fog. For the world.
+    // Unlit: shows the albedo as is; no lights, shadows or fog, and casts no shadow. For HUD
+    //        elements and debug shapes.
+    enum class Shading : uint8_t
+    {
+        Lit = 0,
+        Unlit
+    };
+
+    // Everything needed to create a textured material.
+    // albedo:    the base colour texture.
+    // shading:   lit or unlit.
+    // specular:  strength of specular highlights (lit only), 0 for matte.
+    // shininess: Blinn-Phong exponent (lit only); higher is a tighter, glossier highlight.
+    // emissive:  how much of the albedo glows by itself regardless of lights (lit only), 0 for none.
     struct MaterialDescription
     {
-        TextureHandle albedo;
+        TextureHandle albedo{};
+        Shading shading{Shading::Lit};
+        float specular{0.2f};
+        float shininess{24.0f};
+        float emissive{0.0f};
     };
 } //namespace lockstep::render
 

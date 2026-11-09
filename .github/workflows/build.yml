@@ -33,8 +33,20 @@ jobs:
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
             libprotobuf-dev protobuf-compiler libssl-dev
 
+      # PhysX is built by external/physx/CMakeLists.txt during configure when its libs are missing.
+      - name: Get PhysX submodule commit
+        id: physx-rev
+        shell: bash
+        run: echo "rev=$(git rev-parse HEAD:external/physx/PhysX)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache PhysX Linux binaries
+        uses: actions/cache@v4
+        with:
+          path: external/physx/lib/linux/checked
+          key: physx-linux-checked-${{ steps.physx-rev.outputs.rev }}-${{ hashFiles('external/physx/scripts/build_physx_linux.sh') }}
+
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOCKSTEP_DEV_TOOLS=ON
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOCKSTEP_DEV_TOOLS=ON -DPHYSX_BUILD_TYPE=checked
 
       - name: Build
         run: cmake --build build --parallel
@@ -49,7 +61,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     env:
-      VCPKG_TRIPLET: x64-windows-static-md
+      VCPKG_TRIPLET: x64-windows-static
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
     steps:
       - name: Checkout
@@ -59,6 +71,11 @@ jobs:
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Python (PhysX project generation)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
       - name: Install Vulkan SDK
         shell: pwsh
@@ -82,12 +99,30 @@ jobs:
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
             protobuf:$env:VCPKG_TRIPLET openssl:$env:VCPKG_TRIPLET
 
+      - name: Get PhysX submodule commit
+        id: physx-rev
+        shell: bash
+        run: echo "rev=$(git rev-parse HEAD:external/physx/PhysX)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache PhysX Windows binaries
+        id: physx-windows-cache
+        uses: actions/cache@v4
+        with:
+          path: external/physx/lib/windows/checked
+          key: physx-windows-vc17-checked-${{ steps.physx-rev.outputs.rev }}-${{ hashFiles('external/physx/scripts/build_physx_windows.bat') }}
+
+      - name: Build PhysX
+        if: steps.physx-windows-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call external\physx\scripts\build_physx_windows.bat checked
+
       - name: Configure
         shell: pwsh
         run: |
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DLOCKSTEP_DEV_TOOLS=ON `
+            -DPHYSX_BUILD_TYPE=checked `
             -DVulkan_ROOT="$env:VULKAN_SDK" `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"

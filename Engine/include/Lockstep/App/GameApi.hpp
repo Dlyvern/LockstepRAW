@@ -22,6 +22,11 @@ namespace lockstep::net
     class Session;
 } //namespace lockstep::net
 
+namespace lockstep::physics
+{
+    class PhysicsWorld;
+} //namespace lockstep::physics
+
 namespace lockstep::world
 {
     class Entities;
@@ -40,6 +45,8 @@ namespace lockstep::app
     //              plays offline. Game may send and read its own messages through it.
     // replication: host-to-client entity and World-scale replication, and the client's per-tick
     //              input message to the host.
+    // physics:     rigid bodies, raycasts and character controllers. Stepped by the run loop
+    //              with the World delta before each fixedTick.
     struct EngineContext
     {
         platform::Window& window;
@@ -48,6 +55,7 @@ namespace lockstep::app
         world::Entities& entities;
         net::Session& session;
         net::Replication& replication;
+        physics::PhysicsWorld& physics;
     };
 
     // What one fixed simulation tick gets.

@@ -29,3 +29,7 @@ set(ENABLE_ICE OFF CACHE BOOL "" FORCE)
 set(USE_STEAMWEBRTC OFF CACHE BOOL "" FORCE)
 set(USE_CRYPTO "OpenSSL" CACHE STRING "" FORCE)
 add_subdirectory(GameNetworkingSockets SYSTEM)
+
+# PhysX: prebuilt once by external/physx/scripts into external/physx/lib/<os>/<type> (same setup
+# as Velix). Exposes the INTERFACE target `physx`; on Windows also PHYSX_RUNTIME_DLLS.
+add_subdirectory(physx)

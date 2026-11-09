@@ -19,6 +19,13 @@ namespace lockstep::net
     // Most bytes a client's per-tick input message may have.
     inline constexpr std::size_t k_maxInputBytes{64};
 
+    // Most bytes of Game state the host may attach to a snapshot for the client's prediction.
+    inline constexpr std::size_t k_maxClientStateBytes{64};
+
+    // How many of its newest unacknowledged inputs a client sends with every input message, so
+    // that a lost packet loses no input.
+    inline constexpr std::size_t k_inputRedundancy{8};
+
     // How many ticks behind the newest host snapshot a client renders replicated entities by
     // default (100 ms at 60 Hz): enough to ride out a lost snapshot or two.
     inline constexpr float k_defaultInterpolationDelayTicks{6.0f};
@@ -46,13 +53,30 @@ namespace lockstep::net
         uint16_t archetype{0};
     };
 
-    // The newest input message the host received from the client.
-    // tick:  the client's tick the input belongs to.
-    // bytes: the input as Game encoded it.
+    // One client input the host applies this tick.
+    // tick:       the client's tick the input belongs to.
+    // viewTick:   the host tick (fractional) the client was showing its interpolated entities at
+    //             when it made the input, for lag compensation; nothing before it showed any.
+    // bytes:      the input as Game encoded it.
+    // isRepeated: the input of `tick` was lost; the previous input stands in for it.
     struct RemoteInput
     {
         uint64_t tick{0};
+        std::optional<double> viewTick;
         std::span<const std::byte> bytes;
+        bool isRepeated{false};
+    };
+
+    // What the newest snapshot told the client about its own inputs.
+    // hostTick:    the host tick of the snapshot.
+    // inputTick:   the newest client input tick the host had applied by then; nothing if none.
+    // clientState: the Game state the host attached for the client's prediction, as of
+    //              `hostTick` (see Replication::setClientState()); empty if none.
+    struct InputAck
+    {
+        uint64_t hostTick{0};
+        std::optional<uint64_t> inputTick;
+        std::span<const std::byte> clientState;
     };
 
     // Replication counters and clocks, for the dev tools.
@@ -64,6 +88,18 @@ namespace lockstep::net
     // newestSnapshotTick: host tick of the newest snapshot the client holds.
     // renderTick:         host tick (fractional) the client currently shows.
     // mirroredEntities:   entities the client mirrors.
+    // ackedInputTick:     host: newest client input tick applied; client: newest one the host
+    //                     acknowledged.
+    // inputBufferDepth:   host: client ticks buffered ahead; client: inputs sent but not yet
+    //                     acknowledged.
+    // inputsRepeated:     host: lost inputs replaced by the previous one.
+    // inputsStarved:      host: ticks the client's input had not arrived yet (its pawn waited).
+    // inputsSkipped:      host: inputs dropped because the buffer held too many.
+    // viewLagTicks:       host: how many ticks behind the host the client's view was for its
+    //                     newest input (what lag compensation rewinds).
+    // corrections:        client: prediction corrections Game recorded.
+    // lastCorrection:     client: size of the newest correction, in metres.
+    // largestCorrection:  client: largest correction, in metres.
     struct ReplicationStats
     {
         uint64_t snapshotsSent{0};
@@ -74,10 +110,19 @@ namespace lockstep::net
         std::optional<uint64_t> newestSnapshotTick;
         std::optional<double> renderTick;
         std::size_t mirroredEntities{0};
+        std::optional<uint64_t> ackedInputTick;
+        std::size_t inputBufferDepth{0};
+        uint64_t inputsRepeated{0};
+        uint64_t inputsStarved{0};
+        uint64_t inputsSkipped{0};
+        std::optional<double> viewLagTicks;
+        uint64_t corrections{0};
+        float lastCorrection{0.0f};
+        float largestCorrection{0.0f};
     };
 
     // Host-authoritative replication of World entities and the World time scale over a Session,
-    // plus a small per-tick input message from the client to the host.
+    // plus the client's per-tick inputs to the host and the hooks for client-side prediction.
     //
     // Host: after every tick it sends a full snapshot (unreliable) of every entity that is not
     // client-only: host EntityId, archetype, time domain, owner and transform, plus the World
@@ -90,8 +135,17 @@ namespace lockstep::net
     // The sample drives local mirror entities: created, moved (as their current transform, so
     // FrameInfo::alpha blending stays smooth) and destroyed to match the host. It also sets the
     // World time scale, so on a connected client Game must not set it. Entities the client
-    // created itself are never touched; nothing is sent upstream except the input message.
+    // created itself are never touched; nothing is sent upstream except inputs.
     // When the connection ends, the mirror entities are destroyed.
+    //
+    // Inputs: the client stamps each tick's input with its tick and the host tick it shows, and
+    // sends it together with its newest unacknowledged inputs (up to k_inputRedundancy), so a
+    // lost packet loses nothing. The host puts them back in order in a small buffer and hands
+    // Game one per tick through remoteInputs(): none while the next one is late (the pawn
+    // waits), the previous one in place of a lost one, two per tick while the buffer is too
+    // deep. Each snapshot acknowledges the newest input applied and carries Game's state for the
+    // client's prediction (setClientState()), which the client reads through inputAck() to
+    // reconcile its prediction.
     //
     // The run loop calls sendTick() after GameApi::fixedTick and receiveTick() after
     // Session::pump(); Game does not call them.
@@ -119,17 +173,36 @@ namespace lockstep::net
         // Returns:   success, or an error if `entity` is not alive.
         [[nodiscard]] Status setArchetype(world::EntityId entity, uint16_t archetype);
 
-        // Client: sets this tick's input message. Call during GameApi::fixedTick; it is sent
-        // stamped with the tick when the tick ends, then cleared. Ignored unless connected as a
+        // Client: sets this tick's input. Call during GameApi::fixedTick; it is sent stamped with
+        // the tick and the shown host tick when the tick ends. Ignored unless connected as a
         // client.
         // input:   the input as Game encodes it, at most k_maxInputBytes.
         // Returns: success, or an error if `input` is too large.
         [[nodiscard]] Status setLocalInput(std::span<const std::byte> input);
 
-        // Host: the newest input from the client.
-        // Returns: the input with the highest client tick received on the current connection,
-        //          or nothing. The bytes stay valid until the next receiveTick().
-        [[nodiscard]] std::optional<RemoteInput> remoteInput() const;
+        // Host: the client inputs to apply this tick, oldest first, each client tick exactly
+        // once. Game must apply all of them during this fixedTick: the next snapshot
+        // acknowledges the last one as applied.
+        // Returns: usually one input, none while the next is late, two while catching up. Valid
+        //          until the next receiveTick().
+        [[nodiscard]] std::span<const RemoteInput> remoteInputs() const;
+
+        // Host: sets Game's state of the client's predicted objects (such as its pawn's position
+        // and speed) after this tick's inputs, sent with this tick's snapshot. Call during
+        // GameApi::fixedTick, after applying remoteInputs(). Ignored unless connected as a host.
+        // state:   the state as Game encodes it, at most k_maxClientStateBytes.
+        // Returns: success, or an error if `state` is too large.
+        [[nodiscard]] Status setClientState(std::span<const std::byte> state);
+
+        // Client: the acknowledgement of the newest snapshot that arrived in the last
+        // receiveTick(), if it is newer than every snapshot before. Read it in fixedTick to
+        // reconcile the prediction.
+        // Returns: the acknowledgement, valid until the next receiveTick(), or nothing.
+        [[nodiscard]] std::optional<InputAck> inputAck() const;
+
+        // Client: records a prediction correction for the dev tools.
+        // distance: how far the prediction was off, in metres.
+        void recordCorrection(float distance);
 
         // Client: the entities mirrored from the host.
         // Returns: one entry per mirrored entity, valid until the next receiveTick().

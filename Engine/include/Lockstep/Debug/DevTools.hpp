@@ -12,6 +12,11 @@ namespace lockstep::net
     class Session;
 } //namespace lockstep::net
 
+namespace lockstep::physics
+{
+    class PhysicsWorld;
+} //namespace lockstep::physics
+
 namespace lockstep::platform
 {
     class Window;
@@ -26,8 +31,8 @@ namespace lockstep::debug
 {
     struct DevToolsState;
 
-    // The in-game ImGui dev tools overlay: an engine stats panel plus any panels Game draws with
-    // ImGui. F1 toggles it; it starts visible in debug builds and hidden otherwise.
+    // The in-game ImGui dev tools overlay: an engine stats panel, a graphics panel (renderer
+    // feature toggles and tunables) plus any panels Game draws with ImGui. F1 toggles it; it starts visible in debug builds and hidden otherwise.
     //
     // Each frame: window.pollEvents(), then beginFrame(), then Game's own ImGui calls (inside
     // `#if LOCKSTEP_DEV_TOOLS`, and only while isVisible()), then renderer.render(), which draws
@@ -64,8 +69,8 @@ namespace lockstep::debug
         DevTools& operator=(const DevTools&) = delete;
 
         // Feeds the window events of the last window.pollEvents() to ImGui, toggles visibility
-        // on F1, and while visible starts the ImGui frame and draws the engine panel. Call once
-        // per frame, after window.pollEvents() and before any Game ImGui call.
+        // on F1, and while visible starts the ImGui frame and draws the engine and graphics
+        // panels. Call once per frame, after window.pollEvents() and before any Game ImGui call.
         // deltaTime: seconds since the previous frame.
         void beginFrame(float deltaTime);
 
@@ -77,6 +82,13 @@ namespace lockstep::debug
         // session:     the session to show and control.
         // replication: the session's replication, to show and tune.
         void drawNetPanel(net::Network& network, net::Session& session, net::Replication& replication);
+
+        // Adds a Physics section to the Engine panel: body and controller counts, the last step's
+        // simulated time, substeps and wall time, and PhysX error and warning counts. Does
+        // nothing while the overlay is hidden. Call once per frame, after beginFrame() and before
+        // renderer.render().
+        // physics: the physics world to report on.
+        void drawPhysicsSection(const physics::PhysicsWorld& physics);
 
         // Returns: true if the last beginFrame() showed the overlay. This does not mean an ImGui
         //          frame is open: Game ImGui calls are only valid while this is true AND between

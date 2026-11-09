@@ -38,6 +38,10 @@ namespace lockstep
             {
                 return "NetworkFailure";
             }
+            case ErrorCode::PhysicsFailure:
+            {
+                return "PhysicsFailure";
+            }
         }
 
         return "Unknown";

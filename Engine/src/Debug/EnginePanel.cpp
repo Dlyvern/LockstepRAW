@@ -1,5 +1,7 @@
 #include "EnginePanel.hpp"
 
+#include "Lockstep/Physics/PhysicsWorld.hpp"
+
 #include <imgui.h>
 
 #include <cstdint>
@@ -50,6 +52,26 @@ namespace lockstep::debug
             ImGui::Separator();
             ImGui::Text("Validation messages %u", renderer.context.getValidationMessageCount());
             ImGui::TextDisabled("F1 toggles the dev tools");
+        }
+
+        ImGui::End();
+    }
+
+    void drawPhysicsSection(const physics::PhysicsWorld& physics)
+    {
+        const physics::PhysicsStats stats = physics.stats();
+
+        if (ImGui::Begin("Engine", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Physics");
+            ImGui::Text("Bodies      %u", stats.bodyCount);
+            ImGui::Text("Controllers %u", stats.controllerCount);
+            ImGui::Text("Step        %.2f ms (%u x %.2f ms sim)", stats.lastStepMilliseconds, stats.lastSubsteps,
+                stats.lastSubsteps > 0
+                    ? static_cast<double>(stats.lastStepSeconds * k_millisecondsPerSecond) / stats.lastSubsteps
+                    : 0.0);
+            ImGui::Text("PhysX errors %u, warnings %u", stats.errorCount, stats.warningCount);
         }
 
         ImGui::End();

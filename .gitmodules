@@ -7,3 +7,6 @@
 [submodule "external/GameNetworkingSockets"]
 	path = external/GameNetworkingSockets
 	url = https://github.com/ValveSoftware/GameNetworkingSockets.git
+[submodule "external/physx/PhysX"]
+	path = external/physx/PhysX
+	url = https://github.com/NVIDIA-Omniverse/PhysX.git

@@ -19,7 +19,8 @@ namespace lockstep
         OutOfMemory,
         AssetLoadFailed,
         GpuFailure,
-        NetworkFailure
+        NetworkFailure,
+        PhysicsFailure
     };
 
     // A failure: what kind it was and a human-readable explanation.

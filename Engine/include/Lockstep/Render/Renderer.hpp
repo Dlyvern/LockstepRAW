@@ -4,6 +4,8 @@
 #include "Lockstep/Core/Transform.hpp"
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Render/Camera.hpp"
+#include "Lockstep/Render/Lighting.hpp"
+#include "Lockstep/Render/RenderSettings.hpp"
 #include "Lockstep/Render/Resources.hpp"
 
 #include <cstdint>
@@ -29,8 +31,10 @@ namespace lockstep::render
 
     // Owns the GPU context, the render scene and the render graph, plus every GPU resource
     // created through it. It draws into a platform::Window it does not own. Each frame:
-    // setCamera(), submit() what is visible, then render(). Destroying the Renderer waits for the
-    // GPU to go idle first.
+    // setCamera(), submit() what is visible, submitLight() the lights, then render(). The frame is
+    // a shadow pass, a forward lit scene pass into an HDR target (with fog) and a tonemapping
+    // pass; Engine overlays (dev tools) draw on top of the tonemapped image. Destroying the
+    // Renderer waits for the GPU to go idle first.
     class Renderer
     {
     public:
@@ -64,8 +68,9 @@ namespace lockstep::render
         //              upload failed.
         [[nodiscard]] Result<TextureHandle> createTexture(const TextureDescription& description);
 
-        // Creates an unlit textured material.
-        // description: the albedo texture, which must have been created by this renderer.
+        // Creates a textured material, lit or unlit.
+        // description: the albedo texture, which must have been created by this renderer, and the
+        //              shading parameters.
         // Returns:     a handle to the material, or an error if the texture handle is invalid or the
         //              pipeline could not be created.
         [[nodiscard]] Result<MaterialHandle> createMaterial(const MaterialDescription& description);
@@ -79,6 +84,27 @@ namespace lockstep::render
         // material:  the material to draw it with.
         // transform: world placement of the mesh.
         void submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform);
+
+        // Sets the directional light for the next render(). Without a call there is none that frame.
+        // light: the light.
+        void submitLight(const DirectionalLight& light);
+
+        // Queues a point light for the next render(). Dropped once k_maxLocalLights point and spot
+        // lights are queued.
+        // light: the light.
+        void submitLight(const PointLight& light);
+
+        // Queues a spot light for the next render(). Dropped once k_maxLocalLights point and spot
+        // lights are queued.
+        // light: the light.
+        void submitLight(const SpotLight& light);
+
+        // Returns: the feature switches and tunables (lighting, shadows, fog, tonemapping). Changes
+        //          apply from the next render(). The dev tools edit the same settings.
+        [[nodiscard]] RenderSettings& settings();
+
+        // Returns: the feature switches and tunables, read-only.
+        [[nodiscard]] const RenderSettings& settings() const;
 
         // Renders and presents everything submitted since the last render(), then clears the
         // submission list.

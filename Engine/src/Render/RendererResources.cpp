@@ -22,6 +22,9 @@ namespace lockstep::render
         static_assert(offsetof(Vertex, uv) == offsetof(vela::graphics::StaticVertex, uv));
         static_assert(offsetof(Vertex, normal) == offsetof(vela::graphics::StaticVertex, normal));
 
+        constexpr uint32_t k_albedoSlot{0};
+        constexpr uint32_t k_lightingSlot{1};
+
         vela::graphics::VertexLayout unlitVertexLayout()
         {
             return vela::graphics::VertexLayout
@@ -30,6 +33,19 @@ namespace lockstep::render
                 {
                     {0, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(Vertex, position))},
                     {1, vela::graphics::VertexAttributeFormat::Float2, static_cast<uint32_t>(offsetof(Vertex, uv))}
+                }
+            };
+        }
+
+        vela::graphics::VertexLayout litVertexLayout()
+        {
+            return vela::graphics::VertexLayout
+            {
+                sizeof(Vertex),
+                {
+                    {0, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(Vertex, position))},
+                    {1, vela::graphics::VertexAttributeFormat::Float2, static_cast<uint32_t>(offsetof(Vertex, uv))},
+                    {2, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(Vertex, normal))}
                 }
             };
         }
@@ -89,11 +105,14 @@ namespace lockstep::render
             return Error{ErrorCode::InvalidHandle, "createMaterial: albedo texture handle is invalid"};
         }
 
+        const bool isLit = description.shading == Shading::Lit;
+        const MaterialShaders& shaders = m_state->shaders;
+
         auto material = vela::graphics::Material::create(m_state->context,
         {
-            .vertexShader = m_state->unlitVertexShader,
-            .fragmentShader = m_state->unlitFragmentShader,
-            .vertexLayout = unlitVertexLayout()
+            .vertexShader = isLit ? shaders.litVertex : shaders.unlitVertex,
+            .fragmentShader = isLit ? shaders.litFragment : shaders.unlitFragment,
+            .vertexLayout = isLit ? litVertexLayout() : unlitVertexLayout()
         });
 
         if (!material)
@@ -101,11 +120,22 @@ namespace lockstep::render
             return toError(material.error());
         }
 
-        if (auto bound = material.value().setTexture(0, *albedo); !bound)
+        if (auto bound = material.value().setTexture(k_albedoSlot, *albedo); !bound)
         {
             return toError(bound.error());
         }
 
-        return m_state->materials.add(std::move(material).value());
+        if (isLit)
+        {
+            if (auto bound = material.value().setStorageBuffer(k_lightingSlot, m_state->lightBuffer); !bound)
+            {
+                return toError(bound.error());
+            }
+        }
+
+        return m_state->materials.add(MaterialRecord{
+            .material = std::move(material).value(),
+            .shading = description.shading,
+            .surface = {description.specular, description.shininess, description.emissive, 0.0f}});
     }
 } //namespace lockstep::render

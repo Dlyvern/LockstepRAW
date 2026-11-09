@@ -31,22 +31,32 @@ namespace lockstep::net
     };
 
     // The replicated world state of one host tick.
-    // tick:       the host tick it was taken after.
-    // worldScale: the World time scale and the tick it took effect.
-    // entities:   every replicated entity, sorted by entityKey() of hostEntity.
+    // tick:          the host tick it was taken after.
+    // worldScale:    the World time scale and the tick it took effect.
+    // ackInputTick:  the newest client input tick the host applied up to this tick, if any.
+    // clientState:   Game's state for the client's prediction as of this tick, at most
+    //                k_maxClientStateBytes.
+    // entities:      every replicated entity, sorted by entityKey() of hostEntity.
     struct Snapshot
     {
         uint64_t tick{0};
         ReplicatedTimeScale worldScale{};
+        std::optional<uint64_t> ackInputTick;
+        std::vector<std::byte> clientState;
         std::vector<EntityState> entities;
     };
 
+    // Most inputs one Input message carries (the newest unacknowledged ones).
+    inline constexpr std::size_t k_maxInputsPerMessage{16};
+
     // A client's input of one tick.
-    // tick:  the client tick.
-    // bytes: the Game-encoded input, at most k_maxInputBytes.
+    // tick:     the client tick.
+    // viewTick: the host tick (fractional) the client showed when it made the input, if any.
+    // bytes:    the Game-encoded input, at most k_maxInputBytes.
     struct InputMessage
     {
         uint64_t tick{0};
+        std::optional<double> viewTick;
         std::vector<std::byte> bytes;
     };
 
@@ -58,14 +68,14 @@ namespace lockstep::net
     // message: a received message of kind Snapshot.
     [[nodiscard]] std::optional<Snapshot> decodeSnapshot(std::span<const std::byte> message);
 
-    // Returns: the Input message for one tick.
-    // tick:    the client tick.
-    // input:   the Game-encoded input, at most k_maxInputBytes.
-    [[nodiscard]] std::vector<std::byte> encodeInput(uint64_t tick, std::span<const std::byte> input);
+    // Returns: the Input message carrying `inputs`.
+    // inputs:  one to k_maxInputsPerMessage inputs, oldest first, with increasing ticks.
+    [[nodiscard]] std::vector<std::byte> encodeInputs(std::span<const InputMessage> inputs);
 
-    // Returns: the input in `message`, or nothing if it is malformed.
+    // Returns: the inputs in `message`, oldest first, or nothing if it is malformed (also when
+    //          the ticks do not increase).
     // message: a received message of kind Input.
-    [[nodiscard]] std::optional<InputMessage> decodeInput(std::span<const std::byte> message);
+    [[nodiscard]] std::optional<std::vector<InputMessage>> decodeInputs(std::span<const std::byte> message);
 } //namespace lockstep::net
 
 #endif //LOCKSTEP_NET_SNAPSHOT_FORMAT_HPP

@@ -11,6 +11,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # ImGui dev tools (inspectors, time-scale sliders, net stats). Off for shipping builds.
 option(LOCKSTEP_DEV_TOOLS "Build the in-game ImGui dev tools" ON)
 
+# Static C runtime on MSVC (/MT, /MTd), as Velix does: PhysX's Windows preset is built with it,
+# and every library linked into the game must use the same runtime.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 add_subdirectory(external)
 
 # Dependency rule: Game -> Engine -> external. Never the other way.

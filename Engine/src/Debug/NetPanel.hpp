@@ -21,7 +21,9 @@ namespace lockstep::debug
 
     // Draws the "Net" ImGui window: host / connect / disconnect controls, connection state,
     // ping, packet loss, data rates, heartbeat ticks, sliders for simulated lag and loss,
-    // replication counters, the replicated World scale and the interpolation delay slider.
+    // replication counters, input buffer depth and gaps, acknowledged input tick, rewind (host)
+    // and prediction corrections (client), the replicated World scale and the interpolation
+    // delay slider.
     // Must be called inside an ImGui frame.
     // panel:       the panel's remembered state.
     // network:     the networking library, for the simulated conditions.

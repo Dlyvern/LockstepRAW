@@ -1,85 +1,29 @@
 #include "Game.hpp"
 
-#include <Lockstep/Core/Math.hpp>
-#include <Lockstep/Core/Transform.hpp>
+#include "DevPanel.hpp"
+#include "GameState.hpp"
+#include "Simulation/HostSimulation.hpp"
+
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
+#include <Lockstep/Physics/PhysicsWorld.hpp>
 #include <Lockstep/Platform/Input.hpp>
 #include <Lockstep/Platform/Window.hpp>
 #include <Lockstep/Render/Renderer.hpp>
-#include <Lockstep/Render/Shapes.hpp>
 #include <Lockstep/World/Entities.hpp>
 #include <Lockstep/World/TimeDomains.hpp>
 
-#if LOCKSTEP_DEV_TOOLS
-    #include <imgui.h>
-#endif
-
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
-
-namespace lockstep::app
-{
-    struct GameState
-    {
-        struct Resources
-        {
-            render::MeshHandle cube{};
-            render::MaterialHandle material{};
-        };
-
-        struct Settings
-        {
-            float cubeTurnRate{1.0f};
-            float worldScale{1.0f};
-            float bulletTimeScale{0.2f};
-        };
-
-        struct Visual
-        {
-            world::EntityId entity{};
-            render::MeshHandle mesh{};
-            render::MaterialHandle material{};
-        };
-
-        struct Simulation
-        {
-            world::EntityId cube{};
-            float cubeAngle{0.0f};
-            uint64_t lastTick{0};
-            bool isLocalBulletTime{false};
-            bool isRemoteBulletTime{false};
-        };
-
-        struct Presentation
-        {
-            float cameraYaw{0.0f};
-            float cameraPitch{0.32f};
-            float cameraDistance{3.16f};
-        };
-
-        Resources resources;
-        Settings settings;
-        Simulation simulation;
-        Presentation presentation;
-        std::vector<Visual> visuals;
-    };
-} //namespace lockstep::app
 
 namespace game
 {
     namespace
     {
-        namespace math = lockstep::math;
         namespace net = lockstep::net;
         namespace platform = lockstep::platform;
-        namespace render = lockstep::render;
         namespace world = lockstep::world;
 
         using lockstep::app::EngineContext;
@@ -87,151 +31,114 @@ namespace game
         using lockstep::app::GameState;
         using lockstep::app::TickInfo;
 
-        constexpr uint32_t k_checkerSize{256};
-        constexpr uint32_t k_checkerCellSize{32};
-        constexpr math::Vec3 k_cubeAxis{1.0f, 1.0f, 0.0f};
-        constexpr float k_mouseLookSensitivity{0.003f};
-        constexpr float k_maxCameraPitch{1.4f};
-        constexpr uint16_t k_cubeArchetype{1};
-        constexpr std::byte k_bulletTimeInputBit{0x01};
+        constexpr math::Vec3 k_lobbyEye{0.0f, 6.0f, 18.0f};
+        constexpr math::Vec3 k_lobbyLook{0.0f, -0.3f, -1.0f};
 
-        std::vector<std::byte> makeCheckerboard()
+        void logError(const char* what, const lockstep::Error& error)
         {
-            std::vector<std::byte> pixels;
-            pixels.reserve(static_cast<std::size_t>(k_checkerSize) * k_checkerSize * 4);
-
-            for (uint32_t y = 0; y < k_checkerSize; ++y)
-            {
-                for (uint32_t x = 0; x < k_checkerSize; ++x)
-                {
-                    const bool light = ((x / k_checkerCellSize) + (y / k_checkerCellSize)) % 2 == 0;
-                    const std::byte red = light ? std::byte{230} : std::byte{40};
-                    const std::byte green = light ? std::byte{220} : std::byte{30};
-                    const std::byte blue = light ? std::byte{200} : std::byte{60};
-
-                    pixels.insert(pixels.end(), {red, green, blue, std::byte{255}});
-                }
-            }
-
-            return pixels;
-        }
-
-        lockstep::Result<GameState::Resources> createResources(render::Renderer& renderer)
-        {
-            const render::MeshData cubeData = render::shapes::cube();
-            auto cube = renderer.createMesh(cubeData.vertices, cubeData.indices);
-
-            if (!cube)
-            {
-                return cube.error();
-            }
-
-            const std::vector<std::byte> checkerPixels = makeCheckerboard();
-            auto checker = renderer.createTexture({
-                .pixels = checkerPixels,
-                .width = k_checkerSize,
-                .height = k_checkerSize,
-                .filter = render::TextureFilter::Nearest});
-
-            if (!checker)
-            {
-                return checker.error();
-            }
-
-            auto material = renderer.createMaterial({.albedo = checker.value()});
-
-            if (!material)
-            {
-                return material.error();
-            }
-
-            return GameState::Resources{.cube = cube.value(), .material = material.value()};
+            std::clog << "Game: " << what << ": " << error.message << '\n';
         }
 
         lockstep::Result<GameState*> init(EngineContext& engine)
         {
-            auto resources = createResources(engine.renderer);
+            auto visuals = createVisuals(engine.renderer);
 
-            if (!resources)
+            if (!visuals)
             {
-                return resources.error();
+                return visuals.error();
             }
 
             auto state = std::make_unique<GameState>();
-            state->resources = resources.value();
+            state->visuals = visuals.value();
+            applyArenaLook(engine.renderer);
+            state->arena = buildArena();
 
             if (engine.session.role() == net::Role::Client)
             {
+                if (auto created = createArenaBodies(state->arena, engine.physics); !created)
+                {
+                    return created.error();
+                }
+
                 return state.release();
             }
 
-            auto cube = engine.entities.create({.domain = world::TimeDomain::World});
-
-            if (!cube)
+            if (auto started = startHostSimulation(*state, engine); !started)
             {
-                return cube.error();
+                return started.error();
             }
-
-            if (auto tagged = engine.replication.setArchetype(cube.value(), k_cubeArchetype); !tagged)
-            {
-                return tagged.error();
-            }
-
-            state->simulation.cube = cube.value();
-            state->visuals.push_back({
-                .entity = cube.value(),
-                .mesh = state->resources.cube,
-                .material = state->resources.material});
 
             return state.release();
         }
 
-        bool isRemoteBulletTime(const net::Replication& replication)
+        void receiveStatuses(GameState& state, const EngineContext& engine)
         {
-            const std::optional<net::RemoteInput> input = replication.remoteInput();
-            return input && !input->bytes.empty() && (input->bytes.front() & k_bulletTimeInputBit) != std::byte{0};
+            for (const std::vector<std::byte>& message : engine.session.received())
+            {
+                if (const std::optional<PlayerStatuses> statuses = decodePlayerStatuses(message))
+                {
+                    const PlayerStatus& before = state.local.statuses[k_clientPawn];
+                    const PlayerStatus& after = (*statuses)[k_clientPawn];
+
+                    if (after.isDead && !before.isDead)
+                    {
+                        std::clog << "Game: you died\n";
+                    }
+                    else if (after.health != before.health)
+                    {
+                        std::clog << "Game: health " << after.health << '\n';
+                    }
+
+                    state.local.statuses = *statuses;
+                }
+            }
         }
 
-        void updateBulletTime(GameState& state, EngineContext& engine, const TickInfo& tick)
+        void predictLocalPawn(GameState& state, EngineContext& engine, uint64_t tick, const PlayerCommand& command)
         {
-            GameState::Simulation& simulation = state.simulation;
-            simulation.isLocalBulletTime = tick.input.isKeyDown(platform::Key::Space);
+            Prediction& prediction = state.local.prediction;
+
+            if (engine.session.state() != net::ConnectionState::Connected)
+            {
+                clearPrediction(prediction, engine.entities, engine.physics);
+                return;
+            }
+
+            const float delta = engine.timeDomains.delta(world::TimeDomain::Player);
+
+            if (const std::optional<net::InputAck> ack = engine.replication.inputAck())
+            {
+                if (const std::optional<float> error = reconcilePrediction(prediction, engine.entities, engine.physics,
+                        *ack, state.settings.pawns, delta))
+                {
+                    engine.replication.recordCorrection(*error);
+                }
+            }
+
+            predictPawn(prediction, engine.entities, engine.physics, tick, command, state.settings.pawns, delta);
+        }
+
+        void fixedTick(GameState& state, EngineContext& engine, const TickInfo& tick)
+        {
+            state.lastTick = tick.tick;
+            state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls, tick.input,
+                engine.window.isCursorCaptured());
 
             if (engine.session.role() == net::Role::Client)
             {
-                const std::byte input = simulation.isLocalBulletTime ? k_bulletTimeInputBit : std::byte{0};
+                receiveStatuses(state, engine);
+                const auto encoded = encodeCommand(state.local.command);
+                predictLocalPawn(state, engine, tick.tick, decodeCommand(encoded).value_or(state.local.command));
 
-                if (auto sent = engine.replication.setLocalInput(std::span(&input, 1)); !sent)
+                if (auto sent = engine.replication.setLocalInput(encoded); !sent)
                 {
-                    std::clog << "Game: " << sent.error().message << '\n';
+                    logError("input not sent", sent.error());
                 }
 
                 return;
             }
 
-            simulation.isRemoteBulletTime = isRemoteBulletTime(engine.replication);
-            const bool isBulletTime = simulation.isLocalBulletTime || simulation.isRemoteBulletTime;
-            engine.timeDomains.setScale(world::TimeDomain::World,
-                isBulletTime ? state.settings.bulletTimeScale : state.settings.worldScale);
-        }
-
-        void fixedTick(GameState& state, EngineContext& engine, const TickInfo& tick)
-        {
-            updateBulletTime(state, engine, tick);
-
-            GameState::Simulation& simulation = state.simulation;
-            simulation.lastTick = tick.tick;
-
-            world::Entity* cube = engine.entities.find(simulation.cube);
-
-            if (cube == nullptr)
-            {
-                return;
-            }
-
-            simulation.cubeAngle += state.settings.cubeTurnRate * engine.timeDomains.delta(cube->domain());
-            simulation.cubeAngle = std::fmod(simulation.cubeAngle, 2.0f * math::k_pi);
-            cube->transform().rotation = math::angleAxis(simulation.cubeAngle, k_cubeAxis);
+            runHostTick(state, engine);
         }
 
         void updateCursorCapture(platform::Window& window, const platform::Input& input)
@@ -253,47 +160,107 @@ namespace game
             }
         }
 
-        render::Camera orbitCamera(GameState::Presentation& presentation, const platform::Input& input, bool isMouseLook)
+        void presentHost(GameState& state, EngineContext& engine, float alpha, std::optional<math::Transform>& localPawn)
         {
-            if (isMouseLook)
+            const world::EntityId localEntity = state.simulation.pawns[k_hostPawn].entity;
+
+            for (const Pawn& pawn : state.simulation.pawns)
             {
-                const math::Vec2 delta = input.mouseDelta();
-                presentation.cameraYaw -= delta.x * k_mouseLookSensitivity;
-                presentation.cameraPitch = math::clamp(presentation.cameraPitch + delta.y * k_mouseLookSensitivity,
-                    -k_maxCameraPitch, k_maxCameraPitch);
+                const world::Entity* entity = engine.entities.find(pawn.entity);
+
+                if (entity == nullptr)
+                {
+                    continue;
+                }
+
+                const math::Transform transform = entity->interpolatedTransform(alpha);
+
+                if (pawn.entity == localEntity)
+                {
+                    localPawn = transform;
+                    continue;
+                }
+
+                drawEntity(engine.renderer, state.visuals, Archetype::Pawn, entity->owner(), transform);
             }
 
-            const float horizontal = std::cos(presentation.cameraPitch) * presentation.cameraDistance;
-            const math::Vec3 position{horizontal * std::sin(presentation.cameraYaw),
-                std::sin(presentation.cameraPitch) * presentation.cameraDistance,
-                horizontal * std::cos(presentation.cameraYaw)};
-
-            return render::Camera{.position = position, .target = {0.0f, 0.0f, 0.0f}};
+            if (const world::Entity* enemy = engine.entities.find(state.simulation.enemy.entity))
+            {
+                drawEntity(engine.renderer, state.visuals, Archetype::Enemy, enemy->owner(),
+                    enemy->interpolatedTransform(alpha));
+            }
         }
 
-        void frame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
+        void presentClient(GameState& state, EngineContext& engine, float alpha, std::optional<math::Transform>& localPawn)
         {
-            updateCursorCapture(engine.window, frameInfo.input);
-
-            engine.renderer.setCamera(orbitCamera(state.presentation, frameInfo.input, engine.window.isCursorCaptured()));
-
-            for (const GameState::Visual& visual : state.visuals)
-            {
-                if (const world::Entity* entity = engine.entities.find(visual.entity))
-                {
-                    engine.renderer.submit(visual.mesh, visual.material, entity->interpolatedTransform(frameInfo.alpha));
-                }
-            }
+            localPawn = predictedTransform(state.local.prediction, engine.entities, alpha);
 
             for (const net::MirroredEntity& mirrored : engine.replication.mirrored())
             {
                 const world::Entity* entity = engine.entities.find(mirrored.entity);
 
-                if (entity != nullptr && mirrored.archetype == k_cubeArchetype)
+                if (entity == nullptr)
                 {
-                    engine.renderer.submit(state.resources.cube, state.resources.material,
-                        entity->interpolatedTransform(frameInfo.alpha));
+                    continue;
                 }
+
+                const auto archetype = static_cast<Archetype>(mirrored.archetype);
+                const math::Transform transform = entity->interpolatedTransform(alpha);
+
+                if (archetype == Archetype::Pawn && entity->owner() == world::EntityOwner::Player2)
+                {
+                    continue;
+                }
+
+                drawEntity(engine.renderer, state.visuals, archetype, entity->owner(), transform);
+            }
+        }
+
+        void frame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
+        {
+            updateCursorCapture(engine.window, frameInfo.input);
+            drawArena(engine.renderer, state.visuals, state.arena);
+            updateLighting(state.lighting, frameInfo.input, frameInfo.frameSeconds);
+            submitArenaLights(engine.renderer, state.lighting);
+
+            std::optional<math::Transform> localPawn;
+
+            if (engine.session.role() == net::Role::Client)
+            {
+                presentClient(state, engine, frameInfo.alpha, localPawn);
+            }
+            else
+            {
+                presentHost(state, engine, frameInfo.alpha, localPawn);
+            }
+
+            const bool isClient = engine.session.role() == net::Role::Client;
+            const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
+
+            if (!localPawn)
+            {
+                const math::Vec3 lobbyDirection = math::normalize(k_lobbyLook);
+                engine.renderer.setCamera(firstPersonCamera(k_lobbyEye, lobbyDirection));
+                submitLocalFlashlight(engine.renderer, state.lighting, k_lobbyEye, lobbyDirection);
+
+                if (status.isJoined)
+                {
+                    drawHealth(engine.renderer, state.visuals, k_lobbyEye, lobbyDirection, status,
+                        state.settings.pawns.maxHealth);
+                }
+
+                return;
+            }
+
+            const math::Vec3 eye = eyePosition(*localPawn);
+            const math::Vec3 direction = lookDirection(state.local.command.yaw, state.local.command.pitch);
+            engine.renderer.setCamera(firstPersonCamera(eye, direction));
+            submitLocalFlashlight(engine.renderer, state.lighting, eye, direction);
+            drawCrosshair(engine.renderer, state.visuals, eye, direction);
+
+            if (status.isJoined)
+            {
+                drawHealth(engine.renderer, state.visuals, eye, direction, status, state.settings.pawns.maxHealth);
             }
         }
 
@@ -301,41 +268,6 @@ namespace game
         {
             std::unique_ptr<GameState> owned(state);
         }
-
-#if LOCKSTEP_DEV_TOOLS
-        constexpr float k_maxCubeTurnRate{10.0f};
-        constexpr float k_maxWorldScale{2.0f};
-        constexpr float k_panelMargin{10.0f};
-
-        void devToolsPanels(GameState& state, EngineContext& engine)
-        {
-            const ImVec2 topRight{ImGui::GetIO().DisplaySize.x - k_panelMargin, k_panelMargin};
-            ImGui::SetNextWindowPos(topRight, ImGuiCond_FirstUseEver, ImVec2{1.0f, 0.0f});
-
-            if (ImGui::Begin("Game", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-            {
-                const world::TimeDomains& domains = engine.timeDomains;
-
-                ImGui::SliderFloat("Cube turn rate (rad/s)", &state.settings.cubeTurnRate, 0.0f, k_maxCubeTurnRate);
-                ImGui::SliderFloat("World scale", &state.settings.worldScale, 0.0f, k_maxWorldScale);
-                ImGui::SliderFloat("Bullet-time scale", &state.settings.bulletTimeScale, 0.0f, 1.0f);
-                ImGui::Separator();
-                ImGui::Text("Tick        %llu", static_cast<unsigned long long>(state.simulation.lastTick));
-                ImGui::Text("Player      x%.2f  %.2f s", domains.scale(world::TimeDomain::Player),
-                    domains.elapsed(world::TimeDomain::Player));
-                ImGui::Text("World       x%.2f  %.2f s", domains.scale(world::TimeDomain::World),
-                    domains.elapsed(world::TimeDomain::World));
-                ImGui::Text("Entities    %zu", engine.entities.count());
-                ImGui::Text("Bullet-time local %s, remote %s", state.simulation.isLocalBulletTime ? "on" : "off",
-                    state.simulation.isRemoteBulletTime ? "on" : "off");
-                ImGui::Separator();
-                ImGui::TextDisabled("Hold Space for bullet-time (either player)");
-                ImGui::TextDisabled("Click to capture the mouse, Esc releases it");
-            }
-
-            ImGui::End();
-        }
-#endif
     } //namespace
 
     lockstep::app::GameApi gameApi()

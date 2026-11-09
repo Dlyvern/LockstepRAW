@@ -32,6 +32,10 @@ namespace lockstep::debug
     {
     }
 
+    void DevTools::drawPhysicsSection(const physics::PhysicsWorld&)
+    {
+    }
+
     bool DevTools::isVisible() const
     {
         return false;

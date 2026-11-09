@@ -5,6 +5,7 @@
 #include "Lockstep/Net/Network.hpp"
 #include "Lockstep/Net/Replication.hpp"
 #include "Lockstep/Net/Session.hpp"
+#include "Lockstep/Physics/PhysicsWorld.hpp"
 #include "Lockstep/World/Entities.hpp"
 #include "Lockstep/World/TimeDomains.hpp"
 
@@ -94,6 +95,7 @@ namespace lockstep::app
             {
                 loop.engine.timeDomains.advance(tickSeconds);
                 loop.engine.entities.beginTick();
+                loop.engine.physics.step(loop.engine.timeDomains.delta(world::TimeDomain::World));
                 loop.game.fixedTick(loop.state, loop.engine,
                     TickInfo{.tick = loop.ticksCompleted, .tickSeconds = tickSeconds, .input = loop.tickInput});
                 loop.replication.sendTick(loop.ticksCompleted);
@@ -123,6 +125,7 @@ namespace lockstep::app
 
                 runTicks(loop, loop.timestep.advance(frameSeconds));
                 loop.devTools.drawNetPanel(loop.network, loop.session, loop.replication);
+                loop.devTools.drawPhysicsSection(loop.engine.physics);
 
                 if (loop.devTools.isVisible() && loop.game.devToolsPanels != nullptr)
                 {
@@ -187,6 +190,13 @@ namespace lockstep::app
             return started;
         }
 
+        auto physics = physics::PhysicsWorld::create();
+
+        if (!physics)
+        {
+            return physics.error();
+        }
+
         world::TimeDomains timeDomains;
         world::Entities entities;
         net::Replication replication(session, entities, timeDomains);
@@ -196,7 +206,8 @@ namespace lockstep::app
             .timeDomains = timeDomains,
             .entities = entities,
             .session = session,
-            .replication = replication};
+            .replication = replication,
+            .physics = physics.value()};
 
         auto state = game.init(engine);
 

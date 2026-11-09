@@ -27,10 +27,11 @@ namespace lockstep::app
         net::SessionLaunch session{};
     };
 
-    // Creates the window, renderer, dev tools, network session, time domains, entity store and
-    // replication, then runs Game until the window closes. Each frame: poll input, run as many
-    // fixed ticks as wall time allows (each advancing the time domains, moving every entity's
-    // current transform to its previous one, calling GameApi::fixedTick, then sending
+    // Creates the window, renderer, dev tools, network session, physics world, time domains,
+    // entity store and replication, then runs Game until the window closes. Each frame: poll
+    // input, run as many fixed ticks as wall time allows (each advancing the time domains, moving
+    // every entity's current transform to its previous one, stepping physics with the World
+    // delta, calling GameApi::fixedTick, then sending
     // replication, pumping the network session and applying what arrived), draw
     // dev panels, call GameApi::frame with
     // the interpolation alpha, then render. While the dev tools want the keyboard or mouse, Game

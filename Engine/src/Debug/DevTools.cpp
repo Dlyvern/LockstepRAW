@@ -1,6 +1,7 @@
 #include "Lockstep/Debug/DevTools.hpp"
 
 #include "EnginePanel.hpp"
+#include "GraphicsPanel.hpp"
 #include "ImGuiInput.hpp"
 #include "ImGuiOverlayPass.hpp"
 #include "NetPanel.hpp"
@@ -117,6 +118,7 @@ namespace lockstep::debug
         bool isVisibleRequested{k_visibleByDefault};
         bool isShown{false};
         NetPanelState netPanel;
+        GraphicsPanelState graphicsPanel;
     };
 
     Result<DevTools> DevTools::create(render::Renderer& renderer, platform::Window& window)
@@ -199,6 +201,7 @@ namespace lockstep::debug
         updateDisplay(io, window, deltaTime);
         m_state->overlay->beginFrame();
         drawEnginePanel(*m_state->renderer);
+        drawGraphicsPanel(m_state->graphicsPanel, *m_state->renderer);
     }
 
     void DevTools::drawNetPanel(net::Network& network, net::Session& session, net::Replication& replication)
@@ -210,6 +213,17 @@ namespace lockstep::debug
 
         ImGui::SetCurrentContext(m_state->imguiContext);
         debug::drawNetPanel(m_state->netPanel, network, session, replication);
+    }
+
+    void DevTools::drawPhysicsSection(const physics::PhysicsWorld& physics)
+    {
+        if (!isVisible())
+        {
+            return;
+        }
+
+        ImGui::SetCurrentContext(m_state->imguiContext);
+        debug::drawPhysicsSection(physics);
     }
 
     bool DevTools::isVisible() const

@@ -93,10 +93,25 @@ namespace lockstep::debug
             ImGui::TextUnformatted("Replication");
             ImGui::Text("World scale x%.2f since tick %llu", worldScale.scale, static_cast<unsigned long long>(worldScale.tick));
 
+            if (stats.ackedInputTick)
+            {
+                ImGui::Text("Acked input tick %llu", static_cast<unsigned long long>(*stats.ackedInputTick));
+            }
+
             if (session.role() == net::Role::Host)
             {
                 ImGui::Text("Snapshots   %llu sent", static_cast<unsigned long long>(stats.snapshotsSent));
                 ImGui::Text("Inputs      %llu received", static_cast<unsigned long long>(stats.inputsReceived));
+                ImGui::Text("Input buffer %zu ticks", stats.inputBufferDepth);
+                ImGui::Text("Input gaps  %llu repeated, %llu waited, %llu skipped",
+                    static_cast<unsigned long long>(stats.inputsRepeated), static_cast<unsigned long long>(stats.inputsStarved),
+                    static_cast<unsigned long long>(stats.inputsSkipped));
+
+                if (stats.viewLagTicks)
+                {
+                    ImGui::Text("Rewind      %.0f ms (client view lag)", *stats.viewLagTicks * k_millisecondsPerTick);
+                }
+
                 return;
             }
 
@@ -107,7 +122,10 @@ namespace lockstep::debug
 
             ImGui::Text("Snapshots   %llu received, %zu buffered", static_cast<unsigned long long>(stats.snapshotsReceived),
                 stats.bufferedSnapshots);
-            ImGui::Text("Inputs      %llu sent", static_cast<unsigned long long>(stats.inputsSent));
+            ImGui::Text("Inputs      %llu sent, %zu unacked", static_cast<unsigned long long>(stats.inputsSent),
+                stats.inputBufferDepth);
+            ImGui::Text("Corrections %llu  last %.3f m  max %.3f m", static_cast<unsigned long long>(stats.corrections),
+                stats.lastCorrection, stats.largestCorrection);
             ImGui::Text("Mirrored    %zu entities", stats.mirroredEntities);
 
             if (stats.newestSnapshotTick && stats.renderTick)

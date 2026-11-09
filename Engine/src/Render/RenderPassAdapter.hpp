@@ -1,22 +1,16 @@
 #ifndef LOCKSTEP_RENDER_RENDER_PASS_ADAPTER_HPP
 #define LOCKSTEP_RENDER_RENDER_PASS_ADAPTER_HPP
 
+#include "FrameAttachments.hpp"
 #include "RenderPass.hpp"
 
 #include <Vela/Graphics/Pass.hpp>
-#include <Vela/Graphics/RenderTypes.hpp>
-
-#include <string_view>
 
 namespace lockstep::render
 {
-    // Name and format of the color attachment Vela's built-in scene pass renders into. Engine
-    // passes draw on top of it, so their slot must match it exactly.
-    inline constexpr std::string_view k_sceneColorAttachment{"color"};
-    inline constexpr vela::graphics::TextureFormat k_sceneColorFormat{vela::graphics::TextureFormat::RGBA16Float};
-
-    // The Vela pass the render graph owns for one Engine RenderPass. It declares the scene color
-    // attachment as its only output (load and store) and forwards recording to the Engine pass.
+    // The Vela pass the render graph owns for one Engine RenderPass. It declares the tonemapped
+    // display attachment as its only output (load and store) and forwards recording to the
+    // Engine pass.
     // Vela cannot remove a pass from a graph, so removing an Engine pass detaches it here instead:
     // a detached adapter stays in the graph and records nothing.
     class RenderPassAdapter final : public vela::graphics::Pass
@@ -26,7 +20,7 @@ namespace lockstep::render
         // pass: the Engine pass to forward to. Owned by the RendererState, not by the adapter.
         explicit RenderPassAdapter(RenderPass& pass);
 
-        // Returns: the scene color attachment as the only output, loaded and stored.
+        // Returns: the display attachment as the only output, loaded and stored.
         [[nodiscard]] vela::graphics::PassDescription describe() const override;
 
         // Records the attached Engine pass, or nothing once detached.

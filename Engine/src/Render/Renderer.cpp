@@ -1,18 +1,22 @@
 #include "Lockstep/Render/Renderer.hpp"
 
+#include "FrameAttachments.hpp"
+#include "FramePasses.hpp"
 #include "RendererState.hpp"
 #include "ShaderLoader.hpp"
 #include "VelaConversions.hpp"
 
 #include "Platform/WindowState.hpp"
 
-#include <Vela/Builtins/ForwardGraph.hpp>
 #include <Vela/Core/ContextPreferences.hpp>
 
 #include <algorithm>
 #include <cassert>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace lockstep::render
 {
@@ -20,6 +24,11 @@ namespace lockstep::render
     {
         constexpr std::string_view k_unlitVertexShader{"unlit.vert.spv"};
         constexpr std::string_view k_unlitFragmentShader{"unlit.frag.spv"};
+        constexpr std::string_view k_litVertexShader{"lit.vert.spv"};
+        constexpr std::string_view k_litFragmentShader{"lit.frag.spv"};
+        constexpr std::string_view k_shadowPassName{"shadow"};
+        constexpr std::string_view k_scenePassName{"scene"};
+        constexpr std::string_view k_tonemapPassName{"tonemap"};
         constexpr const char* k_engineName{"Lockstep"};
         constexpr std::string_view k_enginePassPrefix{"engine-pass-"};
 
@@ -34,14 +43,93 @@ namespace lockstep::render
                 state.aspectRatio = static_cast<float>(width) / static_cast<float>(height);
             }
         }
+
+        Result<MaterialShaders> loadMaterialShaders()
+        {
+            MaterialShaders shaders;
+            const std::pair<std::string_view, std::vector<uint32_t>*> files[]{
+                {k_unlitVertexShader, &shaders.unlitVertex},
+                {k_unlitFragmentShader, &shaders.unlitFragment},
+                {k_litVertexShader, &shaders.litVertex},
+                {k_litFragmentShader, &shaders.litFragment}};
+
+            for (const auto& [fileName, target] : files)
+            {
+                auto loaded = loadShader(fileName);
+
+                if (!loaded)
+                {
+                    return loaded.error();
+                }
+
+                *target = std::move(loaded).value();
+            }
+
+            return shaders;
+        }
+
+        Status addFramePass(vela::graphics::RenderGraph& graph, std::string_view name,
+            std::unique_ptr<vela::graphics::Pass> pass)
+        {
+            if (auto added = graph.addPass(std::string(name), std::move(pass)); !added)
+            {
+                return toError(added.error());
+            }
+
+            return {};
+        }
+
+        Status buildFrameGraph(RendererState& state)
+        {
+            auto graph = vela::graphics::RenderGraph::create(state.context);
+
+            if (!graph)
+            {
+                return toError(graph.error());
+            }
+
+            auto shadowPass = ShadowPass::create(state);
+
+            if (!shadowPass)
+            {
+                return shadowPass.error();
+            }
+
+            auto tonemapPass = TonemapPass::create(state);
+
+            if (!tonemapPass)
+            {
+                return tonemapPass.error();
+            }
+
+            if (auto added = addFramePass(graph.value(), k_shadowPassName, std::move(shadowPass).value()); !added)
+            {
+                return added;
+            }
+
+            if (auto added = addFramePass(graph.value(), k_scenePassName, std::make_unique<LitScenePass>(state)); !added)
+            {
+                return added;
+            }
+
+            if (auto added = addFramePass(graph.value(), k_tonemapPassName, std::move(tonemapPass).value()); !added)
+            {
+                return added;
+            }
+
+            graph.value().setPresentSource(std::string(k_displayAttachment));
+            state.graph.emplace(std::move(graph).value());
+
+            return {};
+        }
     } //namespace
 
-    RendererState::RendererState(vela::core::Window& window, vela::core::Context&& context,
-        std::vector<uint32_t>&& unlitVertex, std::vector<uint32_t>&& unlitFragment)
+    RendererState::RendererState(vela::core::Window& window, vela::core::Context&& context, MaterialShaders&& shaders,
+        vela::graphics::DynamicBuffer&& lightBuffer)
         : window(window),
           context(std::move(context)),
-          unlitVertexShader(std::move(unlitVertex)),
-          unlitFragmentShader(std::move(unlitFragment))
+          shaders(std::move(shaders)),
+          lightBuffer(std::move(lightBuffer))
     {
     }
 
@@ -97,18 +185,11 @@ namespace lockstep::render
 
     Result<Renderer> Renderer::create(platform::Window& window, const RendererDescription& description)
     {
-        auto unlitVertex = loadShader(k_unlitVertexShader);
+        auto shaders = loadMaterialShaders();
 
-        if (!unlitVertex)
+        if (!shaders)
         {
-            return unlitVertex.error();
-        }
-
-        auto unlitFragment = loadShader(k_unlitFragmentShader);
-
-        if (!unlitFragment)
-        {
-            return unlitFragment.error();
+            return shaders.error();
         }
 
         vela::core::Window& velaWindow = platform::windowState(window).window;
@@ -130,17 +211,22 @@ namespace lockstep::render
             return toError(attached.error());
         }
 
-        auto state = std::make_unique<RendererState>(velaWindow, std::move(context).value(),
-            std::move(unlitVertex).value(), std::move(unlitFragment).value());
+        auto lightBuffer = vela::graphics::DynamicBuffer::create(context.value(),
+            vela::graphics::DynamicBuffer::Usage::Storage, sizeof(GpuFrameLighting));
 
-        auto graph = vela::builtins::forwardGraph(state->context, state->scene);
-
-        if (!graph)
+        if (!lightBuffer)
         {
-            return toError(graph.error());
+            return toError(lightBuffer.error());
         }
 
-        state->graph.emplace(std::move(graph).value());
+        auto state = std::make_unique<RendererState>(velaWindow, std::move(context).value(),
+            std::move(shaders).value(), std::move(lightBuffer).value());
+
+        if (auto built = buildFrameGraph(*state); !built)
+        {
+            return built.error();
+        }
+
         updateAspectRatio(*state);
 
         return Renderer(std::move(state));
@@ -165,17 +251,54 @@ namespace lockstep::render
     void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform)
     {
         const vela::graphics::Mesh* velaMesh = m_state->meshes.find(mesh);
-        const vela::graphics::Material* velaMaterial = m_state->materials.find(material);
+        const MaterialRecord* record = m_state->materials.find(material);
 
         assert(velaMesh != nullptr && "submit: invalid mesh handle");
-        assert(velaMaterial != nullptr && "submit: invalid material handle");
+        assert(record != nullptr && "submit: invalid material handle");
 
-        if (velaMesh == nullptr || velaMaterial == nullptr)
+        if (velaMesh == nullptr || record == nullptr)
         {
             return;
         }
 
-        m_state->scene.add(*velaMesh, *velaMaterial, math::toMatrix(transform));
+        m_state->draws.push_back({.mesh = velaMesh, .material = record, .model = math::toMatrix(transform)});
+    }
+
+    void Renderer::submitLight(const DirectionalLight& light)
+    {
+        m_state->lights.directional = light;
+    }
+
+    void Renderer::submitLight(const PointLight& light)
+    {
+        if (!m_state->lights.hasRoom())
+        {
+            ++m_state->lights.dropped;
+            return;
+        }
+
+        m_state->lights.points.push_back(light);
+    }
+
+    void Renderer::submitLight(const SpotLight& light)
+    {
+        if (!m_state->lights.hasRoom())
+        {
+            ++m_state->lights.dropped;
+            return;
+        }
+
+        m_state->lights.spots.push_back(light);
+    }
+
+    RenderSettings& Renderer::settings()
+    {
+        return m_state->settings;
+    }
+
+    const RenderSettings& Renderer::settings() const
+    {
+        return m_state->settings;
     }
 
     Status Renderer::render()
@@ -187,11 +310,19 @@ namespace lockstep::render
             registered.pass->prepareFrame();
         }
 
+        m_state->prepared = prepareLighting(m_state->lights, m_state->settings);
         m_state->graph->setView(toViewMatrix(m_state->camera),
             toProjectionMatrix(m_state->camera, m_state->aspectRatio));
 
         auto frame = m_state->graph->execute();
-        m_state->scene.clear();
+        m_state->lastFrameLights = {
+            .local = static_cast<uint32_t>(m_state->lights.points.size() + m_state->lights.spots.size()),
+            .dropped = m_state->lights.dropped,
+            .hasDirectional = m_state->lights.directional.has_value(),
+            .caster = m_state->prepared.caster};
+        m_state->draws.clear();
+        m_state->lights.clear();
+        ++m_state->frameIndex;
 
         if (!frame)
         {

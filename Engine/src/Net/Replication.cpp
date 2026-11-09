@@ -2,57 +2,19 @@
 
 #include "Lockstep/Net/Session.hpp"
 
+#include "ReplicationState.hpp"
 #include "SessionState.hpp"
-#include "SnapshotBuffer.hpp"
-#include "SnapshotFormat.hpp"
 #include "WireFormat.hpp"
 
 #include <algorithm>
-#include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace lockstep::net
 {
-    struct ReplicationState
-    {
-        struct ArchetypeSlot
-        {
-            world::EntityId entity{};
-            uint16_t archetype{0};
-        };
-
-        ReplicationState(Session& session, world::Entities& entities, world::TimeDomains& timeDomains)
-            : session(session)
-            , entities(entities)
-            , timeDomains(timeDomains)
-            , worldScale{.scale = timeDomains.scale(world::TimeDomain::World), .tick = 0}
-        {
-        }
-
-        Session& session;
-        world::Entities& entities;
-        world::TimeDomains& timeDomains;
-        ReplicatedTimeScale worldScale{};
-        float interpolationDelay{k_defaultInterpolationDelayTicks};
-        std::vector<ArchetypeSlot> archetypes;
-        std::vector<std::byte> localInput;
-        bool hasLocalInput{false};
-        std::optional<InputMessage> remoteInput;
-        SnapshotBuffer snapshots;
-        std::vector<MirroredEntity> mirrored;
-        ReplicationStats counters{};
-        bool sendFailureReported{false};
-        bool spawnFailureReported{false};
-    };
-
     namespace
     {
-        void log(const ReplicationState& state, const std::string& message)
-        {
-            std::clog << "Net (" << toString(state.session.role()) << "): " << message << '\n';
-        }
-
         std::string describe(world::EntityId id)
         {
             return std::to_string(id.index) + ":" + std::to_string(id.generation);
@@ -61,23 +23,6 @@ namespace lockstep::net
         bool isConnectedAs(const Session& session, Role role)
         {
             return session.role() == role && session.state() == ConnectionState::Connected;
-        }
-
-        void reportSend(ReplicationState& state, const Status& sent, const char* what)
-        {
-            if (sent)
-            {
-                state.sendFailureReported = false;
-                return;
-            }
-
-            const bool isReportedBySession = sent.error().code == ErrorCode::NetworkFailure;
-
-            if (!state.sendFailureReported && !isReportedBySession)
-            {
-                state.sendFailureReported = true;
-                log(state, std::string("sending ") + what + " failed: " + sent.error().message);
-            }
         }
 
         void setWorldScale(ReplicationState& state, ReplicatedTimeScale scale)
@@ -103,7 +48,11 @@ namespace lockstep::net
 
         Snapshot captureSnapshot(const ReplicationState& state, uint64_t tick)
         {
-            Snapshot snapshot{.tick = tick, .worldScale = state.worldScale, .entities = {}};
+            Snapshot snapshot{.tick = tick,
+                .worldScale = state.worldScale,
+                .ackInputTick = state.inputBuffer.lastConsumedTick(),
+                .clientState = state.clientState,
+                .entities = {}};
             const std::span<const world::Entity> entities = state.entities.all();
             const std::span<const world::EntityId> ids = state.entities.ids();
 
@@ -136,18 +85,6 @@ namespace lockstep::net
             if (sent)
             {
                 ++state.counters.snapshotsSent;
-            }
-        }
-
-        void sendInput(ReplicationState& state, uint64_t tick)
-        {
-            const std::vector<std::byte> message = encodeInput(tick, state.localInput);
-            const Status sent = sendEngineMessage(sessionState(state.session), message, Delivery::Unreliable);
-            reportSend(state, sent, "input");
-
-            if (sent)
-            {
-                ++state.counters.inputsSent;
             }
         }
 
@@ -265,6 +202,8 @@ namespace lockstep::net
                 if (snapshot)
                 {
                     ++state.counters.snapshotsReceived;
+                    receiveAcknowledgement(state, *snapshot);
+                    snapshot->clientState.clear();
                     state.snapshots.insert(std::move(*snapshot));
                 }
             }
@@ -280,31 +219,6 @@ namespace lockstep::net
             applyMirror(state, world->entities);
             setWorldScale(state, world->worldScale);
             state.timeDomains.setScale(world::TimeDomain::World, world->worldScale.scale);
-        }
-
-        void receiveInputs(ReplicationState& state)
-        {
-            for (const std::vector<std::byte>& message : sessionState(state.session).engineMessages)
-            {
-                if (messageKind(message) != MessageKind::Input)
-                {
-                    continue;
-                }
-
-                std::optional<InputMessage> input = decodeInput(message);
-
-                if (!input)
-                {
-                    continue;
-                }
-
-                ++state.counters.inputsReceived;
-
-                if (!state.remoteInput || input->tick > state.remoteInput->tick)
-                {
-                    state.remoteInput = std::move(input);
-                }
-            }
         }
     } //namespace
 
@@ -339,20 +253,46 @@ namespace lockstep::net
             return Error{ErrorCode::InvalidArgument, "Replication::setLocalInput: input larger than k_maxInputBytes"};
         }
 
-        m_state->localInput.assign(input.begin(), input.end());
-        m_state->hasLocalInput = true;
+        m_state->localInput = std::vector<std::byte>(input.begin(), input.end());
 
         return {};
     }
 
-    std::optional<RemoteInput> Replication::remoteInput() const
+    std::span<const RemoteInput> Replication::remoteInputs() const
     {
-        if (!m_state->remoteInput)
+        return m_state->remoteInputs;
+    }
+
+    Status Replication::setClientState(std::span<const std::byte> state)
+    {
+        if (state.size() > k_maxClientStateBytes)
+        {
+            return Error{ErrorCode::InvalidArgument, "Replication::setClientState: state larger than k_maxClientStateBytes"};
+        }
+
+        m_state->clientState.assign(state.begin(), state.end());
+
+        return {};
+    }
+
+    std::optional<InputAck> Replication::inputAck() const
+    {
+        if (!m_state->hasNewAck || !m_state->ack)
         {
             return std::nullopt;
         }
 
-        return RemoteInput{.tick = m_state->remoteInput->tick, .bytes = m_state->remoteInput->bytes};
+        const ReplicationState::Acknowledgement& ack = *m_state->ack;
+
+        return InputAck{.hostTick = ack.hostTick, .inputTick = ack.inputTick, .clientState = ack.clientState};
+    }
+
+    void Replication::recordCorrection(float distance)
+    {
+        ReplicationStats& counters = m_state->counters;
+        ++counters.corrections;
+        counters.lastCorrection = distance;
+        counters.largestCorrection = std::max(counters.largestCorrection, distance);
     }
 
     std::span<const MirroredEntity> Replication::mirrored() const
@@ -383,6 +323,25 @@ namespace lockstep::net
         stats.renderTick = m_state->snapshots.renderTick();
         stats.mirroredEntities = m_state->mirrored.size();
 
+        if (m_state->session.role() == Role::Host)
+        {
+            const InputBufferCounters& inputs = m_state->inputBuffer.counters();
+            stats.ackedInputTick = m_state->inputBuffer.lastConsumedTick();
+            stats.inputBufferDepth = m_state->inputBuffer.depth();
+            stats.inputsRepeated = inputs.repeated;
+            stats.inputsStarved = inputs.starved;
+            stats.inputsSkipped = inputs.skipped;
+        }
+        else if (m_state->ack)
+        {
+            stats.ackedInputTick = m_state->ack->inputTick;
+            stats.inputBufferDepth = m_state->pendingInputs.size();
+        }
+        else
+        {
+            stats.inputBufferDepth = m_state->pendingInputs.size();
+        }
+
         return stats;
     }
 
@@ -395,22 +354,25 @@ namespace lockstep::net
             setWorldScale(state, {.scale = state.timeDomains.scale(world::TimeDomain::World), .tick = tick + 1});
         }
 
+        state.lastTick = tick;
+
         if (isConnectedAs(state.session, Role::Host))
         {
             sendSnapshot(state, tick);
         }
-        else if (isConnectedAs(state.session, Role::Client) && state.hasLocalInput)
+        else if (isConnectedAs(state.session, Role::Client))
         {
-            sendInput(state, tick);
+            sendInputs(state, tick);
         }
 
-        state.localInput.clear();
-        state.hasLocalInput = false;
+        state.localInput.reset();
+        state.clientState.clear();
     }
 
     void Replication::receiveTick()
     {
         ReplicationState& state = *m_state;
+        state.hasNewAck = false;
 
         if (isConnectedAs(state.session, Role::Client))
         {
@@ -425,14 +387,11 @@ namespace lockstep::net
         {
             receiveInputs(state);
         }
-        else
-        {
-            state.remoteInput.reset();
-        }
 
         if (state.session.state() != ConnectionState::Connected)
         {
             state.counters = ReplicationStats{};
+            clearInputs(state);
         }
     }
 } //namespace lockstep::net
