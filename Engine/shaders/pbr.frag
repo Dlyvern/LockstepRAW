@@ -201,7 +201,8 @@ vec3 environmentSpecular(vec3 direction, float roughness)
 
 vec3 perturbedNormal(vec3 normal, vec3 position)
 {
-    vec3 sampled = texture(normalTexture, inUv).xyz * 2.0 - 1.0;
+    vec3 sampled = vec3(texture(normalTexture, inUv).xy * 2.0 - 1.0, 0.0);
+    sampled.z = sqrt(max(1.0 - dot(sampled.xy, sampled.xy), 0.0));
     sampled.xy *= draw.emissiveNormalScale.w;
 
     vec3 tangent;

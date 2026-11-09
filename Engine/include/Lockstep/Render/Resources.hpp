@@ -47,8 +47,11 @@ namespace lockstep::render
 
     // Pixel layout of texture data. Rgba8 formats are 4 bytes per pixel. Bc formats are block
     // compressed in 4x4 pixel blocks (a partial block at the edge still takes a whole block):
-    // Bc1 8 bytes per block (RGB, 1-bit alpha), Bc3 and Bc7 16 bytes per block (RGBA).
+    // Bc1 8 bytes per block (RGB, 1-bit alpha), Bc3 and Bc7 16 bytes per block (RGBA), Bc4 8 bytes
+    // per block (R only; samples as (r, 0, 0, 1)), Bc5 16 bytes per block (RG only; samples as
+    // (r, g, 0, 1), for normal maps whose z the shader reconstructs).
     // Srgb formats are decoded from sRGB to linear when sampled; use them for colour data only.
+    // The numeric values are stored in cooked texture files: append new formats, never reorder.
     enum class TextureFormat : uint8_t
     {
         Rgba8Srgb = 0,
@@ -58,7 +61,9 @@ namespace lockstep::render
         Bc3Srgb,
         Bc3Unorm,
         Bc7Srgb,
-        Bc7Unorm
+        Bc7Unorm,
+        Bc4Unorm,
+        Bc5Unorm
     };
 
     // How a texture is sampled when magnified or minified. Linear is trilinear and 16x

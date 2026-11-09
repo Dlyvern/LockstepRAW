@@ -28,6 +28,11 @@ namespace lockstep::physics
     class PhysicsWorld;
 } //namespace lockstep::physics
 
+namespace lockstep::assets
+{
+    class FileSystem;
+} //namespace lockstep::assets
+
 namespace lockstep::world
 {
     class Entities;
@@ -48,6 +53,8 @@ namespace lockstep::app
     //              input message to the host.
     // physics:     rigid bodies, raycasts and character controllers. Stepped by the run loop
     //              with the World delta before each fixedTick.
+    // files:       the virtual file system with RunDescription::content mounted; cooked levels
+    //              load through it, and its pak content hashes identify the content.
     // arguments:   the command-line options from RunDescription::arguments, for Game's own
     //              options (Engine's parsers ignore what they don't know).
     struct EngineContext
@@ -59,6 +66,7 @@ namespace lockstep::app
         net::Session& session;
         net::Replication& replication;
         physics::PhysicsWorld& physics;
+        assets::FileSystem& files;
         std::span<const char* const> arguments;
     };
 

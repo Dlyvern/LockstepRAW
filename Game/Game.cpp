@@ -56,7 +56,7 @@ namespace game
                 return {};
             }
 
-            auto level = loadSceneLevel(*launch, engine.renderer, engine.physics);
+            auto level = loadSceneLevel(*launch, engine.renderer, engine.physics, engine.files);
 
             if (!level)
             {

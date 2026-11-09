@@ -5,12 +5,12 @@
 #include "GltfDocument.hpp"
 #include "GltfMaterials.hpp"
 #include "GltfMeshes.hpp"
+#include "GltfNodes.hpp"
 #include "ImportWarnings.hpp"
 #include "MeshProcessing.hpp"
 #include "TextureImport.hpp"
 
 #include <chrono>
-#include <cstring>
 #include <optional>
 #include <span>
 #include <string>
@@ -131,28 +131,6 @@ namespace lockstep::assets
             return &context.meshParts.emplace(&mesh, std::move(parts)).first->second;
         }
 
-        math::Mat4 localMatrix(const cgltf_node& node)
-        {
-            cgltf_float values[16];
-            cgltf_node_transform_local(&node, values);
-            math::Mat4 matrix{};
-            std::memcpy(matrix.data(), values, sizeof(values));
-
-            return matrix;
-        }
-
-        std::optional<math::Transform> toTransform(const math::Mat4& matrix)
-        {
-            math::Transform transform{};
-
-            if (!math::decompose(matrix, transform.position, transform.rotation, transform.scale))
-            {
-                return std::nullopt;
-            }
-
-            return transform;
-        }
-
         Status addNode(ImportContext& context, const cgltf_node& node, const math::Transform& transform)
         {
             if (node.name != nullptr && node.name[0] != '\0')
@@ -185,66 +163,18 @@ namespace lockstep::assets
             return {};
         }
 
-        std::vector<const cgltf_node*> rootNodes(const cgltf_data& document)
-        {
-            std::vector<const cgltf_node*> roots;
-            const cgltf_scene* scene = document.scene != nullptr ? document.scene
-                : document.scenes_count > 0 ? &document.scenes[0] : nullptr;
-
-            if (scene != nullptr)
-            {
-                roots.assign(scene->nodes, scene->nodes + scene->nodes_count);
-                return roots;
-            }
-
-            for (cgltf_size index = 0; index < document.nodes_count; ++index)
-            {
-                if (document.nodes[index].parent == nullptr)
-                {
-                    roots.push_back(&document.nodes[index]);
-                }
-            }
-
-            return roots;
-        }
-
         Status addNodeTree(ImportContext& context)
         {
-            const float scale = context.options.scale;
-            std::vector<std::pair<const cgltf_node*, math::Mat4>> pending;
-            const math::Mat4 root = math::scale(math::Mat4{1.0f}, math::Vec3{scale, scale, scale});
-
-            for (const cgltf_node* node : rootNodes(context.document))
+            for (const PlacedNode& placed : placeNodes(context.document, context.options.scale, context.warnings))
             {
-                pending.emplace_back(node, root);
-            }
-
-            while (!pending.empty())
-            {
-                const auto [node, parent] = pending.back();
-                pending.pop_back();
-                const math::Mat4 world = parent * localMatrix(*node);
-
-                if (node->skin != nullptr)
+                if (placed.node->light != nullptr)
                 {
-                    context.warnings.add("skins are ignored; skinned meshes are drawn in bind pose");
+                    context.scene.lights.push_back(toSceneLight(*placed.node->light, placed));
                 }
 
-                if (const std::optional<math::Transform> transform = toTransform(world))
+                if (auto added = addNode(context, *placed.node, placed.transform); !added)
                 {
-                    if (auto added = addNode(context, *node, *transform); !added)
-                    {
-                        return added;
-                    }
-                }
-                else if (node->mesh != nullptr)
-                {
-                    context.warnings.add("nodes with a zero scale are skipped");
-                }
-
-                for (cgltf_size child = node->children_count; child > 0; --child)
-                {
-                    pending.emplace_back(node->children[child - 1], world);
+                    return added;
                 }
             }
 
@@ -252,7 +182,7 @@ namespace lockstep::assets
         }
     } //namespace
 
-    Result<Scene> importGltf(render::Renderer& renderer, const std::filesystem::path& path,
+    Result<Scene> importGltf(render::Renderer& renderer, const FileSystem& files, std::string_view path,
         const SceneImportOptions& options)
     {
         const auto start = std::chrono::steady_clock::now();
@@ -263,7 +193,7 @@ namespace lockstep::assets
         }
 
         ImportWarnings warnings;
-        auto document = loadGltfDocument(path, warnings);
+        auto document = loadGltfDocument(files, path, warnings);
 
         if (!document)
         {
@@ -274,7 +204,10 @@ namespace lockstep::assets
         Scene scene{};
         TextureTable textures = TextureTable::collect(data, warnings);
 
-        if (auto imported = importTextures(renderer, textures, path.parent_path(), options, scene.stats, warnings);
+        const std::size_t slash = path.find_last_of('/');
+        const std::string_view directory = slash == std::string_view::npos ? std::string_view{} : path.substr(0, slash);
+
+        if (auto imported = importTextures(renderer, textures, files, directory, options, scene.stats, warnings);
             !imported)
         {
             return imported.error();
@@ -298,7 +231,7 @@ namespace lockstep::assets
 
         if (scene.instances.empty())
         {
-            return Error{ErrorCode::AssetLoadFailed, "importGltf: '" + path.string() + "' has no drawable triangles"};
+            return Error{ErrorCode::AssetLoadFailed, "importGltf: '" + std::string(path) + "' has no drawable triangles"};
         }
 
         scene.warnings = warnings.take();
@@ -307,5 +240,18 @@ namespace lockstep::assets
         scene.stats.loadSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         return scene;
+    }
+
+    Result<Scene> importGltf(render::Renderer& renderer, const std::filesystem::path& path,
+        const SceneImportOptions& options)
+    {
+        FileSystem files;
+
+        if (auto mounted = files.mountDirectory(path.has_parent_path() ? path.parent_path() : "."); !mounted)
+        {
+            return mounted.error();
+        }
+
+        return importGltf(renderer, files, path.filename().string(), options);
     }
 } //namespace lockstep::assets

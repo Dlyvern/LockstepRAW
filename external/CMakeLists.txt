@@ -56,3 +56,28 @@ endblock()
 if(NOT MSVC)
     target_compile_options(ktx_read PRIVATE $<$<CONFIG:Debug>:-O2>)
 endif()
+
+# Zstandard: ktx_read already compiles the full zstd library (external/basisu/zstd/zstd.c,
+# compression included) and exports its symbols. `zstd` reuses that copy instead of linking a
+# second one: it adds zstd.h's folder and links ktx_read. Used by Engine/src/Assets (pak reads)
+# and Tools/Cooker (pak writes).
+add_library(zstd INTERFACE)
+target_include_directories(zstd SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/KTX-Software/external/basisu/zstd)
+target_link_libraries(zstd INTERFACE ktx_read)
+
+# bc7enc_rdo (richgel999): offline BC7 encoder (bc7enc) and BC1-BC5 encoders (rgbcx). Used only
+# by Tools/Cooker, never linked into the game. bc7decomp decodes BC7 for the cooker's error report.
+if(LOCKSTEP_BUILD_TOOLS)
+    add_library(bc7enc STATIC
+        bc7enc_rdo/bc7enc.cpp
+        bc7enc_rdo/bc7decomp.cpp
+        bc7enc_rdo/rgbcx.cpp
+    )
+    target_include_directories(bc7enc SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/bc7enc_rdo)
+
+    if(NOT MSVC)
+        target_compile_options(bc7enc PRIVATE -w $<$<CONFIG:Debug>:-O2>)
+    else()
+        target_compile_options(bc7enc PRIVATE /w)
+    endif()
+endif()

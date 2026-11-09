@@ -59,6 +59,14 @@ namespace lockstep::render
             {
                 return vela::graphics::TextureFormat::BC7Unorm;
             }
+            case TextureFormat::Bc4Unorm:
+            {
+                return vela::graphics::TextureFormat::BC4Unorm;
+            }
+            case TextureFormat::Bc5Unorm:
+            {
+                return vela::graphics::TextureFormat::BC5Unorm;
+            }
         }
 
         return vela::graphics::TextureFormat::RGBA8Srgb;

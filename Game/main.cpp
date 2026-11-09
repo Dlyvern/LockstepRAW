@@ -1,6 +1,7 @@
 #include "Game.hpp"
 
 #include <Lockstep/App/Run.hpp>
+#include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Core/Result.hpp>
 #include <Lockstep/Net/SessionLaunch.hpp>
 #include <Lockstep/Render/PresentMode.hpp>
@@ -37,6 +38,13 @@ int main(int argc, char** argv)
         return reportError(presentMode.error());
     }
 
+    auto content = lockstep::assets::parseContentMounts(options);
+
+    if (!content)
+    {
+        return reportError(content.error());
+    }
+
     const char* title = "Lockstep";
 
     if (session.value().role == lockstep::net::Role::Host)
@@ -52,7 +60,8 @@ int main(int argc, char** argv)
             .window = {.title = title, .width = 1280, .height = 720},
             .renderer = {.presentMode = presentMode.value()},
             .session = std::move(session).value(),
-            .arguments = options},
+            .arguments = options,
+            .content = std::move(content).value()},
         game::gameApi());
 
     if (!status)

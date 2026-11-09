@@ -16,3 +16,6 @@
 [submodule "external/KTX-Software"]
 	path = external/KTX-Software
 	url = https://github.com/KhronosGroup/KTX-Software.git
+[submodule "external/bc7enc_rdo"]
+	path = external/bc7enc_rdo
+	url = https://github.com/richgel999/bc7enc_rdo.git

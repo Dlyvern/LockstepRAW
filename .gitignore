@@ -3,3 +3,4 @@ build/
 compile_commands.json
 *.blend1
 external/physx/lib/
+Content/

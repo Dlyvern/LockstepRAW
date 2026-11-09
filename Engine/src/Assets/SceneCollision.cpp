@@ -3,14 +3,20 @@
 #include "Lockstep/Physics/PhysicsWorld.hpp"
 
 #include <chrono>
+#include <vector>
 
 namespace lockstep::assets
 {
     namespace
     {
+        bool hasShape(const SceneMesh& mesh)
+        {
+            return !mesh.collisionIndices.empty() || mesh.collisionShape != k_noCollisionShape;
+        }
+
         bool wantsCollider(const SceneMesh& mesh, const SceneInstance& instance, const SceneCollisionOptions& options)
         {
-            if (mesh.collisionIndices.empty())
+            if (!hasShape(mesh))
             {
                 return false;
             }
@@ -29,13 +35,51 @@ namespace lockstep::assets
         {
             for (const SceneMesh& mesh : scene.meshes)
             {
-                if (!mesh.collisionIndices.empty())
+                if (hasShape(mesh))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+
+        void addCookedBodies(physics::PhysicsWorld& physics, const Scene& scene,
+            const std::vector<std::vector<uint32_t>>& instancesByShape, SceneCollision& collision)
+        {
+            std::vector<math::Transform> transforms;
+
+            for (std::size_t shape = 0; shape < instancesByShape.size(); ++shape)
+            {
+                const std::vector<uint32_t>& instances = instancesByShape[shape];
+
+                if (instances.empty())
+                {
+                    continue;
+                }
+
+                transforms.clear();
+
+                for (const uint32_t instance : instances)
+                {
+                    transforms.push_back(scene.instances[instance].transform);
+                }
+
+                auto bodies = physics.createStaticMeshes(scene.collisionShapes[shape], transforms);
+
+                if (!bodies)
+                {
+                    collision.skipped += static_cast<uint32_t>(instances.size());
+                    continue;
+                }
+
+                collision.bodies.insert(collision.bodies.end(), bodies.value().begin(), bodies.value().end());
+
+                for (const uint32_t instance : instances)
+                {
+                    collision.triangleCount += scene.meshes[scene.instances[instance].mesh].triangleCount;
+                }
+            }
         }
     } //namespace
 
@@ -50,12 +94,26 @@ namespace lockstep::assets
 
         const auto start = std::chrono::steady_clock::now();
         SceneCollision collision{};
+        std::vector<std::vector<uint32_t>> instancesByShape(scene.collisionShapes.size());
 
-        for (const SceneInstance& instance : scene.instances)
+        for (std::size_t index = 0; index < scene.instances.size(); ++index)
         {
+            const SceneInstance& instance = scene.instances[index];
             const SceneMesh& mesh = scene.meshes[instance.mesh];
 
             if (!wantsCollider(mesh, instance, options))
+            {
+                ++collision.skipped;
+                continue;
+            }
+
+            if (mesh.collisionShape < instancesByShape.size())
+            {
+                instancesByShape[mesh.collisionShape].push_back(static_cast<uint32_t>(index));
+                continue;
+            }
+
+            if (mesh.collisionIndices.empty())
             {
                 ++collision.skipped;
                 continue;
@@ -73,6 +131,7 @@ namespace lockstep::assets
             collision.triangleCount += mesh.collisionIndices.size() / 3;
         }
 
+        addCookedBodies(physics, scene, instancesByShape, collision);
         collision.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         return collision;

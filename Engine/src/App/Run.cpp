@@ -1,5 +1,7 @@
 #include "Lockstep/App/Run.hpp"
 
+#include "Lockstep/Assets/FileSystem.hpp"
+#include "Lockstep/Core/Log.hpp"
 #include "Lockstep/Core/FixedTimestep.hpp"
 #include "Lockstep/Debug/DevTools.hpp"
 #include "Lockstep/Net/Network.hpp"
@@ -13,6 +15,8 @@
 #include "Platform/InputAccess.hpp"
 
 #include <chrono>
+#include <cstdio>
+#include <string>
 #include <utility>
 
 namespace lockstep::app
@@ -39,6 +43,35 @@ namespace lockstep::app
             }
 
             return {};
+        }
+
+        Result<assets::FileSystem> mountContent(const std::vector<std::filesystem::path>& content)
+        {
+            assets::FileSystem files;
+
+            for (const std::filesystem::path& source : content)
+            {
+                if (auto mounted = files.mount(source); !mounted)
+                {
+                    return mounted.error();
+                }
+            }
+
+            for (const assets::MountInfo& mount : files.mounts())
+            {
+                if (mount.kind == assets::MountKind::Directory)
+                {
+                    log(LogLevel::Info, "Assets", "mounted folder '" + mount.source.string() + "'");
+                    continue;
+                }
+
+                char hash[17]{};
+                std::snprintf(hash, sizeof(hash), "%016llx", static_cast<unsigned long long>(mount.contentHash));
+                log(LogLevel::Info, "Assets", "mounted pak '" + mount.source.string() + "': "
+                    + std::to_string(mount.fileCount) + " files, content hash " + hash);
+            }
+
+            return files;
         }
 
         platform::Input filterForGame(const platform::Window& window, const debug::DevTools& devTools)
@@ -211,6 +244,13 @@ namespace lockstep::app
             return physics.error();
         }
 
+        auto files = mountContent(description.content);
+
+        if (!files)
+        {
+            return files.error();
+        }
+
         world::TimeDomains timeDomains;
         world::Entities entities;
         net::Replication replication(session, entities, timeDomains);
@@ -222,6 +262,7 @@ namespace lockstep::app
             .session = session,
             .replication = replication,
             .physics = physics.value(),
+            .files = files.value(),
             .arguments = description.arguments};
 
         auto state = game.init(engine);

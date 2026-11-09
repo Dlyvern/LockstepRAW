@@ -4,9 +4,11 @@
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Physics/PhysicsTypes.hpp"
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace lockstep::physics
 {
@@ -86,6 +88,17 @@ namespace lockstep::physics
         //            (e.g. every triangle was degenerate).
         [[nodiscard]] Result<BodyId> createStaticMesh(std::span<const math::Vec3> positions,
             std::span<const uint32_t> indices, const math::Transform& transform);
+
+        // Creates static triangle-mesh bodies from a mesh cooked offline by MeshCooker, without
+        // cooking at runtime. All the bodies share the one loaded mesh; it lives as long as any of
+        // them. Collision behaves exactly as with createStaticMesh().
+        // cooked:     the bytes MeshCooker::cook() produced (same PhysX version).
+        // transforms: world placement of each body. Scale may be non-uniform; zero is rejected.
+        // Returns:    one handle per transform, in order, or InvalidArgument for a zero scale, or
+        //             PhysicsFailure if the data is not a cooked mesh PhysX can load (nothing is
+        //             created then).
+        [[nodiscard]] Result<std::vector<BodyId>> createStaticMeshes(std::span<const std::byte> cooked,
+            std::span<const math::Transform> transforms);
 
         // Destroys a body. Its handle, and every copy, becomes stale.
         // body:    the body.

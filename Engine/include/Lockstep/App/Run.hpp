@@ -8,7 +8,9 @@
 #include "Lockstep/Render/Renderer.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <span>
+#include <vector>
 
 namespace lockstep::app
 {
@@ -21,6 +23,8 @@ namespace lockstep::app
     //                   net::parseSessionLaunch() for the command-line form).
     // arguments:        command-line options (without the program name) handed to Game through
     //                   EngineContext::arguments. The strings must outlive run().
+    // content:          folders and .pak files mounted into EngineContext::files, highest
+    //                   priority first (see assets::parseContentMounts() for `--content`).
     struct RunDescription
     {
         platform::WindowDescription window{};
@@ -29,10 +33,12 @@ namespace lockstep::app
         uint32_t maxTicksPerFrame{5};
         net::SessionLaunch session{};
         std::span<const char* const> arguments{};
+        std::vector<std::filesystem::path> content{};
     };
 
-    // Creates the window, renderer, dev tools, network session, physics world, time domains,
-    // entity store and replication, then runs Game until the window closes. Each frame: poll
+    // Creates the window, renderer, dev tools, network session, physics world, file system
+    // (mounting RunDescription::content and logging each mount and pak content hash), time
+    // domains, entity store and replication, then runs Game until the window closes. Each frame: poll
     // input, run as many fixed ticks as wall time allows (each advancing the time domains, moving
     // every entity's current transform to its previous one, stepping physics with the World
     // delta, calling GameApi::fixedTick, then sending
@@ -43,7 +49,7 @@ namespace lockstep::app
     // description: window, renderer and tick settings.
     // game:        Game's callbacks.
     // Returns:     success when the window was closed, or the first error from Engine
-    //              creation, starting the session, GameApi::init or rendering.
+    //              creation, mounting content, starting the session, GameApi::init or rendering.
     [[nodiscard]] Status run(const RunDescription& description, const GameApi& game);
 } //namespace lockstep::app
 

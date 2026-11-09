@@ -76,6 +76,25 @@ for it.
   fills it, Engine/Render implements it. Test content lives outside the repo (Sponza, Bistro in
   `~/Downloads`) and is loaded with `--scene <path>`. Imported levels are walkable (PhysX
   triangle-mesh collision).
+- **Shipping content:** source assets (glTF from Blender or packs) are cooked offline by
+  `Tools/Cooker` (`LockstepCooker`, built when `LOCKSTEP_BUILD_TOOLS` is ON) into engine-ready
+  files: GPU-layout meshes with bounds, BC7 colour / BC5 normal / BC4 mask textures with full
+  mips, pre-cooked PhysX collision (shared per mesh), and a level file (instances, nodes such as
+  `PlayerStart_*` / `Interact_*`, lights from KHR_lights_punctual, bounds). Cooked output is
+  deterministic. Layout: `<out>/<prefix>/levels/<name>/scene`, `meshes/`, `textures/`,
+  `collision/`.
+  - Cook: `LockstepCooker <src.gltf> --out Content/cooked/<name> --name levels/<name>`
+  - Pack: `LockstepCooker pack Content/cooked/<name> Content/cooked/<name>.pak [--zstd-level 9]`
+    (19 for release paks; 9 while iterating)
+  - Run: `LockstepGame --content <dir|pak> [--content ...] --level levels/<name>/scene`
+    (`--scene <gltf>` still loads glTF directly through the same VFS).
+  Paks: custom format, per-file zstd, 4 KB alignment, TOC keyed by XXH64 path hash, content hash
+  per pak (logged at startup; to be checked in the Net handshake). Planned split: `base.pak`,
+  `intro.pak`, one per zone, later `patch_*.pak` (no manifest for that split yet). Engine reads
+  everything through `Lockstep/Assets/FileSystem.hpp` with virtual paths; earlier mounts win.
+  No encryption. Content lives in `Content/` inside the project but is git-ignored for now:
+  `Content/source/<area>/` (`.blend`, glTF exports, extracted prop packs in
+  `Content/source/props/`) and `Content/cooked/` (cooker output, paks).
 - **Game-specific shaders/materials:** not designed yet; decide when the first one is needed.
 - **Physics: PhysX 5.6.1** (submodule `external/physx/PhysX`), built exactly as in Velix:
   `external/physx/CMakeLists.txt` runs `external/physx/scripts/build_physx_{linux.sh,windows.bat}`

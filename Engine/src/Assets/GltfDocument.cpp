@@ -4,7 +4,6 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <string>
 #include <string_view>
 
@@ -12,7 +11,8 @@ namespace lockstep::assets
 {
     namespace
     {
-        constexpr std::array<std::string_view, 3> k_supportedExtensions{
+        constexpr std::array<std::string_view, 4> k_supportedExtensions{
+            "KHR_lights_punctual",
             "KHR_texture_basisu",
             "KHR_materials_emissive_strength",
             "KHR_mesh_quantization"};
@@ -33,31 +33,54 @@ namespace lockstep::assets
             return false;
         }
 
-        Error loadError(const std::filesystem::path& path, std::string_view what, cgltf_result result)
+        Error loadError(std::string_view path, std::string_view what, cgltf_result result)
         {
-            return Error{ErrorCode::AssetLoadFailed, "importGltf: " + std::string(what) + " '" + path.string()
+            return Error{ErrorCode::AssetLoadFailed, "importGltf: " + std::string(what) + " '" + std::string(path)
                 + "' failed (cgltf error " + std::to_string(static_cast<int>(result)) + ")"};
         }
 
-        Result<std::vector<std::byte>> readFile(const std::filesystem::path& path)
+        cgltf_result readThroughFileSystem(const cgltf_memory_options* memory, const cgltf_file_options* file,
+            const char* path, cgltf_size* size, void** data)
         {
-            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            const auto& files = *static_cast<const FileSystem*>(file->user_data);
+            auto bytes = files.read(path);
 
-            if (!file)
+            if (!bytes)
             {
-                return Error{ErrorCode::AssetLoadFailed, "cannot open '" + path.string() + "'"};
+                return cgltf_result_file_not_found;
             }
 
-            const std::streamsize size = file.tellg();
-            std::vector<std::byte> bytes(static_cast<std::size_t>(size));
-            file.seekg(0);
+            const std::size_t wanted = *size != 0 ? *size : bytes.value().size();
 
-            if (!file.read(reinterpret_cast<char*>(bytes.data()), size))
+            if (wanted > bytes.value().size())
             {
-                return Error{ErrorCode::AssetLoadFailed, "cannot read '" + path.string() + "'"};
+                return cgltf_result_data_too_short;
             }
 
-            return bytes;
+            void* copy = memory->alloc_func != nullptr ? memory->alloc_func(memory->user_data, wanted)
+                : std::malloc(wanted);
+
+            if (copy == nullptr)
+            {
+                return cgltf_result_out_of_memory;
+            }
+
+            std::memcpy(copy, bytes.value().data(), wanted);
+            *size = wanted;
+            *data = copy;
+
+            return cgltf_result_success;
+        }
+
+        void releaseFileData(const cgltf_memory_options* memory, const cgltf_file_options*, void* data)
+        {
+            if (memory->free_func != nullptr)
+            {
+                memory->free_func(memory->user_data, data);
+                return;
+            }
+
+            std::free(data);
         }
 
         Result<std::vector<std::byte>> decodeDataUri(std::string_view uri)
@@ -100,10 +123,13 @@ namespace lockstep::assets
         cgltf_free(data);
     }
 
-    Result<GltfDocument> loadGltfDocument(const std::filesystem::path& path, ImportWarnings& warnings)
+    Result<GltfDocument> loadGltfDocument(const FileSystem& files, std::string_view path, ImportWarnings& warnings)
     {
-        const std::string file = path.string();
-        const cgltf_options options{};
+        const std::string file(path);
+        cgltf_options options{};
+        options.file.read = readThroughFileSystem;
+        options.file.release = releaseFileData;
+        options.file.user_data = const_cast<FileSystem*>(&files);
         cgltf_data* raw = nullptr;
 
         if (const cgltf_result parsed = cgltf_parse_file(&options, file.c_str(), &raw); parsed != cgltf_result_success)
@@ -148,7 +174,8 @@ namespace lockstep::assets
         return document;
     }
 
-    Result<std::vector<std::byte>> readImageBytes(const cgltf_image& image, const std::filesystem::path& directory)
+    Result<std::vector<std::byte>> readImageBytes(const cgltf_image& image, const FileSystem& files,
+        std::string_view directory)
     {
         if (image.buffer_view != nullptr)
         {
@@ -177,6 +204,6 @@ namespace lockstep::assets
         std::string relative(uri);
         relative.resize(cgltf_decode_uri(relative.data()));
 
-        return readFile(directory / std::filesystem::path(relative));
+        return files.read(directory.empty() ? relative : std::string(directory) + "/" + relative);
     }
 } //namespace lockstep::assets

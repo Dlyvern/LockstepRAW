@@ -23,6 +23,11 @@ namespace lockstep::render
 
 namespace lockstep::assets
 {
+    class FileSystem;
+
+    // SceneMesh::collisionShape of a mesh without a cooked collision shape.
+    inline constexpr uint32_t k_noCollisionShape{0xFFFFFFFFu};
+
     // One drawable part of an imported scene: a glTF mesh primitive uploaded as a GPU mesh, and
     // the material it is drawn with. Several instances may share it.
     // mesh:               the GPU mesh, owned by the Renderer.
@@ -33,6 +38,8 @@ namespace lockstep::assets
     // collisionPositions: mesh-space vertex positions for collision; empty unless the import
     //                     kept them (SceneImportOptions::keepCollisionGeometry).
     // collisionIndices:   triangle list into `collisionPositions`.
+    // collisionShape:     index into Scene::collisionShapes for a cooked scene, else
+    //                     k_noCollisionShape. Identical meshes share one shape.
     struct SceneMesh
     {
         render::MeshHandle mesh{};
@@ -42,6 +49,7 @@ namespace lockstep::assets
         uint32_t triangleCount{0};
         std::vector<math::Vec3> collisionPositions;
         std::vector<uint32_t> collisionIndices;
+        uint32_t collisionShape{k_noCollisionShape};
     };
 
     // One placed copy of a SceneMesh.
@@ -64,15 +72,47 @@ namespace lockstep::assets
         math::Transform transform{};
     };
 
+    // Kind of a SceneLight (glTF KHR_lights_punctual).
+    enum class SceneLightType : uint8_t
+    {
+        Directional = 0,
+        Point,
+        Spot
+    };
+
+    // A light authored in the source file (KHR_lights_punctual), with glTF's units: point and
+    // spot intensity in candela, directional in lux. Game decides how to map them onto
+    // render lights.
+    // type:       directional, point or spot.
+    // name:       the light's name, or its node's name.
+    // color:      linear RGB.
+    // intensity:  see above.
+    // range:      distance where the light ends, 0 for unlimited.
+    // innerAngle: spot only: half-angle of the full-intensity cone, in radians.
+    // outerAngle: spot only: half-angle where it fades out, in radians.
+    // transform:  world placement; the light shines along the transform's local -Z.
+    struct SceneLight
+    {
+        SceneLightType type{SceneLightType::Point};
+        std::string name;
+        math::Vec3 color{1.0f, 1.0f, 1.0f};
+        float intensity{1.0f};
+        float range{0.0f};
+        float innerAngle{0.0f};
+        float outerAngle{0.785398f};
+        math::Transform transform{};
+    };
+
     // What an import produced and how long it took.
-    // loadSeconds:       wall time of importGltf(), parsing to last upload.
+    // loadSeconds:       wall time of importGltf() or loadCookedScene(), first read to last upload.
     // meshCount:         SceneMesh count (glTF primitives uploaded).
     // instanceCount:     SceneInstance count.
     // materialCount:     materials created.
     // textureCount:      textures created (after deduplication).
     // triangleCount:     triangles over all instances, what one full draw of the scene costs.
     // textureBytes:      GPU memory of all texture data, mip levels included.
-    // compressedTextures: textures stored block compressed (Bc1/Bc3/Bc7).
+    // compressedTextures: textures stored block compressed (any Bc format).
+    // contentBytes:      bytes read through the file system (cooked scenes only).
     struct SceneStats
     {
         double loadSeconds{0.0};
@@ -83,21 +123,30 @@ namespace lockstep::assets
         uint64_t triangleCount{0};
         uint64_t textureBytes{0};
         uint32_t compressedTextures{0};
+        uint64_t contentBytes{0};
     };
 
-    // An imported glTF scene: GPU resources (owned by the Renderer; the scene holds handles) and
-    // where to draw them. Plain data; copying it copies handles, not resources.
-    // meshes:    drawable parts.
-    // instances: placed copies of the parts, in node order.
-    // nodes:     every named node with its world transform.
-    // bounds:    world bounds of all instances.
-    // warnings:  glTF features the import skipped or approximated, one line each, deduplicated.
-    // stats:     counts, timing and memory.
+    // A loaded scene (an imported glTF or a cooked level): GPU resources (owned by the Renderer;
+    // the scene holds handles) and where to draw them. Plain data; copying it copies handles, not
+    // resources.
+    // meshes:          drawable parts.
+    // instances:       placed copies of the parts, in node order.
+    // nodes:           every named node with its world transform (markers such as
+    //                  "PlayerStart" or "Interact_Door" included).
+    // lights:          lights authored in the source.
+    // collisionShapes: PhysX triangle meshes cooked by LockstepCooker, referenced by
+    //                  SceneMesh::collisionShape; empty for an imported glTF.
+    // bounds:          world bounds of all instances.
+    // warnings:        source features the import skipped or approximated, one line each,
+    //                  deduplicated.
+    // stats:           counts, timing and memory.
     struct Scene
     {
         std::vector<SceneMesh> meshes;
         std::vector<SceneInstance> instances;
         std::vector<SceneNode> nodes;
+        std::vector<SceneLight> lights;
+        std::vector<std::vector<std::byte>> collisionShapes;
         math::Aabb bounds{};
         std::vector<std::string> warnings;
         SceneStats stats{};
@@ -128,13 +177,46 @@ namespace lockstep::assets
     // tangents are generated. Textures (jpg, png, KTX2 including Basis Universal) are decoded on
     // worker threads, deduplicated per image and colour space, and get mips. Unsupported optional
     // features are skipped and listed in Scene::warnings.
+    // Everything, buffers and images included, is read through the file system.
     // renderer: the renderer that uploads and owns the resources.
-    // path:     the .gltf or .glb file.
+    // files:    the file system to read from.
+    // path:     virtual path of the .gltf or .glb file.
     // options:  scale, collision geometry and texture settings.
     // Returns:  the scene, or an error if the file can't be read or parsed, needs an unsupported
     //           extension, has no triangles, or an upload failed.
+    [[nodiscard]] Result<Scene> importGltf(render::Renderer& renderer, const FileSystem& files, std::string_view path,
+        const SceneImportOptions& options = {});
+
+    // Imports a glTF file from disk: the importGltf() above, over a file system that mounts only
+    // the file's folder. The direct dev path for files that were not cooked.
+    // renderer: the renderer that uploads and owns the resources.
+    // path:     the .gltf or .glb file.
+    // options:  scale, collision geometry and texture settings.
+    // Returns:  the scene, or an error as above.
     [[nodiscard]] Result<Scene> importGltf(render::Renderer& renderer, const std::filesystem::path& path,
         const SceneImportOptions& options = {});
+
+    // Settings for loadCookedScene().
+    // workerThreads: threads reading and decompressing meshes and textures; 0 picks the hardware
+    //                thread count.
+    struct CookedSceneOptions
+    {
+        uint32_t workerThreads{0};
+    };
+
+    // Loads a scene cooked by LockstepCooker through the file system: reads the level file, its
+    // meshes (PbrVertex layout), textures (final GPU format with every mip) and cooked collision
+    // shapes, and uploads them as stored. Nothing is decoded, transcoded, mipmapped or cooked.
+    // renderer: the renderer that uploads and owns the resources.
+    // files:    the file system holding the cooked files.
+    // path:     virtual path of the level file, e.g. "levels/sponza/scene".
+    // options:  worker count.
+    // Returns:  the scene (its meshes keep no collision positions; createSceneCollision() uses
+    //           the cooked shapes), or AssetLoadFailed if a file is missing, damaged or of another
+    //           format version, InvalidArgument if a texture needs Bc support the GPU lacks, or an
+    //           upload error.
+    [[nodiscard]] Result<Scene> loadCookedScene(render::Renderer& renderer, const FileSystem& files,
+        std::string_view path, const CookedSceneOptions& options = {});
 
     // Finds a named node. Names compare case-insensitively, and a name also matches a node whose
     // name starts with it followed by '.' or '_' (Blender appends ".001").

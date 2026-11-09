@@ -30,7 +30,7 @@ namespace lockstep::assets
     // skipped:       instances left without a collider by the options or because cooking found
     //                no usable triangles.
     // triangleCount: triangles handed to PhysX.
-    // seconds:       wall time spent cooking and creating bodies.
+    // seconds:       wall time spent cooking (imported scenes) and creating bodies.
     struct SceneCollision
     {
         std::vector<physics::BodyId> bodies;
@@ -39,11 +39,13 @@ namespace lockstep::assets
         double seconds{0.0};
     };
 
-    // Builds static triangle-mesh colliders for a scene's instances, making it walkable.
+    // Builds static triangle-mesh colliders for a scene's instances, making it walkable. Meshes
+    // of a cooked scene use their pre-cooked shape, loaded once and shared by its instances;
+    // meshes of an imported glTF are cooked here, per instance.
     // physics: the physics world.
-    // scene:   a scene imported with SceneImportOptions::keepCollisionGeometry.
+    // scene:   a cooked scene, or one imported with SceneImportOptions::keepCollisionGeometry.
     // options: which instances to skip.
-    // Returns: the bodies, or InvalidArgument if the scene kept no collision geometry.
+    // Returns: the bodies, or InvalidArgument if the scene has no collision geometry.
     [[nodiscard]] Result<SceneCollision> createSceneCollision(physics::PhysicsWorld& physics, const Scene& scene,
         const SceneCollisionOptions& options = {});
 

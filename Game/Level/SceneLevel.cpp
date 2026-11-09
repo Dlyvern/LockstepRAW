@@ -1,5 +1,6 @@
 #include "Level/SceneLevel.hpp"
 
+#include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Physics/PhysicsWorld.hpp>
 
 #include <algorithm>
@@ -18,6 +19,7 @@ namespace game
         namespace assets = lockstep::assets;
         namespace physics = lockstep::physics;
 
+        constexpr std::string_view k_levelFlag{"--level"};
         constexpr std::string_view k_sceneFlag{"--scene"};
         constexpr std::string_view k_scaleFlag{"--scene-scale"};
         constexpr std::array<std::string_view, 2> k_spawnNodeNames{"PlayerStart", "Spawn"};
@@ -133,11 +135,15 @@ namespace game
         void logLevel(const SceneLaunch& launch, const SceneLevel& level)
         {
             const assets::SceneStats& stats = level.scene.stats;
-            std::clog << std::fixed << std::setprecision(2) << "Game: scene '" << launch.path.string() << "' loaded in "
+            const std::string name = launch.level.empty() ? launch.path.string() : launch.level;
+            std::clog << std::fixed << std::setprecision(2) << "Game: " << (launch.level.empty() ? "scene" : "cooked level")
+                << " '" << name << "' loaded in "
                 << stats.loadSeconds << " s: " << stats.triangleCount << " triangles, " << stats.instanceCount
                 << " instances of " << stats.meshCount << " meshes, " << stats.materialCount << " materials, "
                 << stats.textureCount << " textures (" << stats.compressedTextures << " block compressed, "
-                << static_cast<double>(stats.textureBytes) / k_bytesPerMegabyte << " MiB)\n";
+                << static_cast<double>(stats.textureBytes) / k_bytesPerMegabyte << " MiB), "
+                << static_cast<double>(stats.contentBytes) / k_bytesPerMegabyte << " MiB read, "
+                << level.scene.lights.size() << " lights\n";
             const math::Aabb& bounds = level.scene.bounds;
             std::clog << "Game: scene bounds (" << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z
                 << ") to (" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z << ")\n";
@@ -163,7 +169,7 @@ namespace game
         {
             const std::string_view argument = arguments[index] != nullptr ? arguments[index] : "";
 
-            if (argument != k_sceneFlag && argument != k_scaleFlag)
+            if (argument != k_sceneFlag && argument != k_scaleFlag && argument != k_levelFlag)
             {
                 continue;
             }
@@ -175,9 +181,22 @@ namespace game
 
             const std::string_view value = arguments[++index];
 
-            if (argument == k_sceneFlag)
+            if (argument == k_sceneFlag || argument == k_levelFlag)
             {
-                launch = SceneLaunch{.path = std::filesystem::path(value)};
+                if (!launch)
+                {
+                    launch = SceneLaunch{};
+                }
+
+                if (argument == k_levelFlag)
+                {
+                    launch->level = value;
+                }
+                else
+                {
+                    launch->path = std::filesystem::path(value);
+                }
+
                 continue;
             }
 
@@ -200,9 +219,11 @@ namespace game
     }
 
     lockstep::Result<SceneLevel> loadSceneLevel(const SceneLaunch& launch, lockstep::render::Renderer& renderer,
-        physics::PhysicsWorld& physics)
+        physics::PhysicsWorld& physics, const assets::FileSystem& files)
     {
-        auto scene = assets::importGltf(renderer, launch.path, assets::SceneImportOptions{.scale = launch.scale});
+        auto scene = launch.level.empty()
+            ? assets::importGltf(renderer, launch.path, assets::SceneImportOptions{.scale = launch.scale})
+            : assets::loadCookedScene(renderer, files, launch.level);
 
         if (!scene)
         {

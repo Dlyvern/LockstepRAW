@@ -1,18 +1,27 @@
 add_library(LockstepEngine STATIC
     src/App/Run.cpp
     src/Assets/BlockCompression.cpp
+    src/Assets/CookedFormat.cpp
+    src/Assets/CookedLevelFile.cpp
+    src/Assets/CookedSceneLoad.cpp
+    src/Assets/DirectoryMount.cpp
+    src/Assets/FileSystem.cpp
     src/Assets/GltfDocument.cpp
     src/Assets/GltfImport.cpp
     src/Assets/GltfMaterials.cpp
     src/Assets/GltfMeshes.cpp
+    src/Assets/GltfNodes.cpp
     src/Assets/ImageDecode.cpp
     src/Assets/MeshProcessing.cpp
     src/Assets/MipChain.cpp
+    src/Assets/PakFormat.cpp
+    src/Assets/PakMount.cpp
     src/Assets/Scene.cpp
     src/Assets/SceneCollision.cpp
     src/Assets/TextureImport.cpp
     src/Core/Bounds.cpp
     src/Core/FixedTimestep.cpp
+    src/Core/Hash.cpp
     src/Core/Log.cpp
     src/Core/Result.cpp
     src/Core/Transform.cpp
@@ -28,6 +37,7 @@ add_library(LockstepEngine STATIC
     src/Net/SnapshotBuffer.cpp
     src/Net/SnapshotFormat.cpp
     src/Net/WireFormat.cpp
+    src/Physics/MeshCooker.cpp
     src/Physics/PhysicsBodies.cpp
     src/Physics/PhysicsControllers.cpp
     src/Physics/PhysicsMeshes.cpp
@@ -53,6 +63,7 @@ add_library(LockstepEngine STATIC
     src/Render/ShadowMaterials.cpp
     src/Render/Shapes.cpp
     src/Render/SkyModel.cpp
+    src/Render/TextureLayout.cpp
     src/Render/VelaConversions.cpp
     src/World/Entities.cpp
     src/World/TimeDomains.cpp
@@ -109,12 +120,12 @@ target_link_libraries(LockstepEngine PRIVATE GameNetworkingSockets::static)
 # PhysX stays private: only Engine/src/Physics includes it.
 target_link_libraries(LockstepEngine PRIVATE physx)
 
-# glTF import stays private: only Engine/src/Assets includes cgltf, libktx (KTX2 and Basis
-# Universal transcoding) and stb (stb_image's implementation is compiled into Vela::Assets;
+# glTF import and pak reading stay private: only Engine/src/Assets includes cgltf, libktx (KTX2 and
+# Basis Universal transcoding), zstd (pak decompression) and stb (stb_image's implementation is compiled into Vela::Assets;
 # stb_dxt's into Engine/src/Assets/BlockCompression.cpp). stb's headers are treated as system
 # headers so their warnings don't count as ours.
 set_target_properties(stb_image PROPERTIES SYSTEM ON)
-target_link_libraries(LockstepEngine PRIVATE cgltf ktx_read stb_image)
+target_link_libraries(LockstepEngine PRIVATE cgltf ktx_read stb_image zstd)
 
 # Shaders the Engine loads at runtime from "<exe dir>/shaders". A static library has no runtime
 # directory of its own, so each executable that links the Engine stages them for itself.

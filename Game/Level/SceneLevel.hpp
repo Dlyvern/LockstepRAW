@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 
 namespace lockstep::physics
 {
@@ -23,16 +24,25 @@ namespace lockstep::render
     class Renderer;
 } //namespace lockstep::render
 
+namespace lockstep::assets
+{
+    class FileSystem;
+} //namespace lockstep::assets
+
 namespace game
 {
     namespace math = lockstep::math;
 
-    // A level loaded from a glTF file instead of the arena: `--scene <path>`, optionally with
-    // `--scene-scale <factor>`. Host and client load the same file locally.
-    // path:  the .gltf or .glb file.
-    // scale: uniform scale applied to the scene.
+    // A level loaded instead of the arena: a cooked level from the mounted content,
+    // `--level <virtual path>` (with `--content <folder|pak>`), or a glTF file directly,
+    // `--scene <path>` optionally with `--scene-scale <factor>`. Host and client load the same
+    // level locally.
+    // level: virtual path of a cooked level file ("levels/sponza/scene"); wins over `path`.
+    // path:  the .gltf or .glb file, when `level` is empty.
+    // scale: uniform scale applied to a glTF scene (a cooked level has its scale baked in).
     struct SceneLaunch
     {
+        std::string level;
         std::filesystem::path path;
         float scale{1.0f};
     };
@@ -53,20 +63,22 @@ namespace game
         math::Vec3 enemy{0.0f, 0.0f, 0.0f};
     };
 
-    // Reads `--scene` and `--scene-scale` from the command line.
+    // Reads `--level`, `--scene` and `--scene-scale` from the command line.
     // arguments: command-line options.
-    // Returns:   the scene to load, nothing without `--scene`, or an error for a missing value or
-    //            a scale that is not a positive number.
+    // Returns:   the level to load, nothing without `--level` or `--scene`, or an error for a
+    //            missing value or a scale that is not a positive number.
     [[nodiscard]] lockstep::Result<std::optional<SceneLaunch>> parseSceneLaunch(std::span<const char* const> arguments);
 
-    // Imports the scene, builds its colliders and logs load time, triangles, texture memory and
-    // import warnings.
-    // launch:   the file and scale.
+    // Loads the cooked level or imports the glTF scene, builds its colliders and logs load time,
+    // triangles, texture memory and import warnings.
+    // launch:   the level or file, and scale.
     // renderer: uploads the scene.
     // physics:  receives the colliders.
-    // Returns:  the level, or the import or collision error.
+    // files:    the mounted content a cooked level is read from.
+    // Returns:  the level, or the load or collision error.
     [[nodiscard]] lockstep::Result<SceneLevel> loadSceneLevel(const SceneLaunch& launch,
-        lockstep::render::Renderer& renderer, lockstep::physics::PhysicsWorld& physics);
+        lockstep::render::Renderer& renderer, lockstep::physics::PhysicsWorld& physics,
+        const lockstep::assets::FileSystem& files);
 
     // Finds spawn points: at a node named "PlayerStart" or "Spawn" if the scene has one, else on
     // the ground near the centre of the scene's bounds: the lowest floor with room for a player
