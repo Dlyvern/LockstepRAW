@@ -4,6 +4,7 @@
 #include "GameState.hpp"
 #include "Simulation/HostSimulation.hpp"
 
+#include <Lockstep/Assets/Scene.hpp>
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
 #include <Lockstep/Physics/PhysicsWorld.hpp>
@@ -13,6 +14,7 @@
 #include <Lockstep/World/Entities.hpp>
 #include <Lockstep/World/TimeDomains.hpp>
 
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -33,10 +35,40 @@ namespace game
 
         constexpr math::Vec3 k_lobbyEye{0.0f, 6.0f, 18.0f};
         constexpr math::Vec3 k_lobbyLook{0.0f, -0.3f, -1.0f};
+        constexpr math::Vec3 k_levelLobbyOffset{0.0f, 3.0f, 4.0f};
+
+        struct View
+        {
+            math::Vec3 eye{0.0f, 0.0f, 0.0f};
+            math::Vec3 direction{0.0f, 0.0f, -1.0f};
+        };
 
         void logError(const char* what, const lockstep::Error& error)
         {
             std::clog << "Game: " << what << ": " << error.message << '\n';
+        }
+
+        lockstep::Status loadLevel(GameState& state, EngineContext& engine, const std::optional<SceneLaunch>& launch)
+        {
+            if (!launch)
+            {
+                state.arena = buildArena();
+                return {};
+            }
+
+            auto level = loadSceneLevel(*launch, engine.renderer, engine.physics);
+
+            if (!level)
+            {
+                return level.error();
+            }
+
+            state.level = std::move(level).value();
+            const LevelSpawns spawns = findLevelSpawns(*state.level, engine.physics);
+            state.settings.spawnPoints = spawns.pawns;
+            state.settings.enemy.spawnPoint = spawns.enemy;
+
+            return {};
         }
 
         lockstep::Result<GameState*> init(EngineContext& engine)
@@ -48,10 +80,21 @@ namespace game
                 return visuals.error();
             }
 
+            auto launch = parseSceneLaunch(engine.arguments);
+
+            if (!launch)
+            {
+                return launch.error();
+            }
+
             auto state = std::make_unique<GameState>();
             state->visuals = visuals.value();
             applyArenaLook(engine.renderer);
-            state->arena = buildArena();
+
+            if (auto loaded = loadLevel(*state, engine, launch.value()); !loaded)
+            {
+                return loaded.error();
+            }
 
             if (engine.session.role() == net::Role::Client)
             {
@@ -121,8 +164,10 @@ namespace game
         void fixedTick(GameState& state, EngineContext& engine, const TickInfo& tick)
         {
             state.lastTick = tick.tick;
-            state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls, tick.input,
-                engine.window.isCursorCaptured());
+            const platform::Input idle{};
+            const bool isFlying = state.flyCamera.isActive;
+            state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls,
+                isFlying ? idle : tick.input, !isFlying && engine.window.isCursorCaptured());
 
             if (engine.session.role() == net::Role::Client)
             {
@@ -216,10 +261,45 @@ namespace game
             }
         }
 
+        View lobbyView(const GameState& state)
+        {
+            if (!state.level)
+            {
+                return View{.eye = k_lobbyEye, .direction = math::normalize(k_lobbyLook)};
+            }
+
+            return View{.eye = state.settings.spawnPoints[k_hostPawn] + k_levelLobbyOffset,
+                .direction = math::normalize(k_lobbyLook)};
+        }
+
+        bool presentFlyCamera(GameState& state, EngineContext& engine, const FrameInfo& frameInfo, const View& view)
+        {
+            const float yaw = std::atan2(-view.direction.x, -view.direction.z);
+            const float pitch = std::asin(math::clamp(view.direction.y, -1.0f, 1.0f));
+            toggleFlyCamera(state.flyCamera, frameInfo.input, view.eye, yaw, pitch);
+
+            if (!state.flyCamera.isActive)
+            {
+                return false;
+            }
+
+            updateFlyCamera(state.flyCamera, frameInfo.input, state.settings.controls, engine.window.isCursorCaptured(),
+                frameInfo.frameSeconds);
+            engine.renderer.setCamera(flyCameraView(state.flyCamera));
+
+            return true;
+        }
+
         void frame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
         {
             updateCursorCapture(engine.window, frameInfo.input);
             drawArena(engine.renderer, state.visuals, state.arena);
+
+            if (state.level)
+            {
+                lockstep::assets::submitScene(engine.renderer, state.level->scene);
+            }
+
             updateLighting(state.lighting, frameInfo.input, frameInfo.frameSeconds);
             submitArenaLights(engine.renderer, state.lighting);
 
@@ -236,31 +316,27 @@ namespace game
 
             const bool isClient = engine.session.role() == net::Role::Client;
             const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
+            const View view = localPawn
+                ? View{.eye = eyePosition(*localPawn),
+                    .direction = lookDirection(state.local.command.yaw, state.local.command.pitch)}
+                : lobbyView(state);
 
-            if (!localPawn)
+            if (presentFlyCamera(state, engine, frameInfo, view))
             {
-                const math::Vec3 lobbyDirection = math::normalize(k_lobbyLook);
-                engine.renderer.setCamera(firstPersonCamera(k_lobbyEye, lobbyDirection));
-                submitLocalFlashlight(engine.renderer, state.lighting, k_lobbyEye, lobbyDirection);
-
-                if (status.isJoined)
-                {
-                    drawHealth(engine.renderer, state.visuals, k_lobbyEye, lobbyDirection, status,
-                        state.settings.pawns.maxHealth);
-                }
-
                 return;
             }
 
-            const math::Vec3 eye = eyePosition(*localPawn);
-            const math::Vec3 direction = lookDirection(state.local.command.yaw, state.local.command.pitch);
-            engine.renderer.setCamera(firstPersonCamera(eye, direction));
-            submitLocalFlashlight(engine.renderer, state.lighting, eye, direction);
-            drawCrosshair(engine.renderer, state.visuals, eye, direction);
+            engine.renderer.setCamera(firstPersonCamera(view.eye, view.direction));
+
+            if (localPawn)
+            {
+                drawCrosshair(engine.renderer, state.visuals, view.eye, view.direction);
+            }
 
             if (status.isJoined)
             {
-                drawHealth(engine.renderer, state.visuals, eye, direction, status, state.settings.pawns.maxHealth);
+                drawHealth(engine.renderer, state.visuals, view.eye, view.direction, status,
+                    state.settings.pawns.maxHealth);
             }
         }
 

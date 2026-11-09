@@ -10,3 +10,9 @@
 [submodule "external/physx/PhysX"]
 	path = external/physx/PhysX
 	url = https://github.com/NVIDIA-Omniverse/PhysX.git
+[submodule "external/cgltf"]
+	path = external/cgltf
+	url = https://github.com/jkuhlmann/cgltf.git
+[submodule "external/KTX-Software"]
+	path = external/KTX-Software
+	url = https://github.com/KhronosGroup/KTX-Software.git

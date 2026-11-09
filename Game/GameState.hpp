@@ -3,10 +3,12 @@
 
 #include "Enemies/Enemy.hpp"
 #include "Level/Arena.hpp"
+#include "Level/SceneLevel.hpp"
 #include "Player/Pawns.hpp"
 #include "Player/PlayerCommand.hpp"
 #include "Player/PlayerStatus.hpp"
 #include "Player/Prediction.hpp"
+#include "Presentation/FlyCamera.hpp"
 #include "Presentation/Lighting.hpp"
 #include "Presentation/Visuals.hpp"
 #include "Weapons/Hitscan.hpp"
@@ -24,10 +26,12 @@ namespace lockstep::app
         // Tunables, editable from the dev panel. Only the host's values drive the simulation.
         // worldScale:      World time scale without bullet-time.
         // bulletTimeScale: World time scale while either player holds bullet-time.
+        // spawnPoints:     foot positions where Player1's and Player2's pawns (re)spawn.
         struct Settings
         {
             float worldScale{1.0f};
             float bulletTimeScale{0.2f};
+            std::array<math::Vec3, game::k_playerCount> spawnPoints{{{-2.0f, 0.0f, 8.0f}, {2.0f, 0.0f, 8.0f}}};
             game::ControlSettings controls{};
             game::PawnSettings pawns{};
             game::EnemySettings enemy{};
@@ -70,6 +74,8 @@ namespace lockstep::app
         game::Visuals visuals{};
         game::LightingState lighting{};
         game::Arena arena{};
+        std::optional<game::SceneLevel> level{};
+        game::FlyCamera flyCamera{};
         Settings settings{};
         Local local{};
         Simulation simulation{};

@@ -7,27 +7,71 @@
 #include <Vela/Graphics/Pass.hpp>
 
 #include <memory>
+#include <string_view>
+
+namespace vela::core
+{
+    class Context;
+} //namespace vela::core
 
 namespace lockstep::render
 {
     struct RendererState;
 
-    // Renders the depth of every lit draw from the frame's shadow-casting light into the
-    // fixed-size shadow map. Records nothing when the frame has no shadow caster (the map is still
-    // cleared, which keeps the graph static).
+    // Loads two staged shaders and creates a material from them.
+    // context:      the GPU context.
+    // vertexFile:   vertex shader .spv file name.
+    // fragmentFile: fragment shader .spv file name.
+    // layout:       vertex layout (empty for fullscreen triangles).
+    // renderState:  depth, culling and blending.
+    // Returns:      the material, or an error if a shader is missing or creation failed.
+    [[nodiscard]] Result<vela::graphics::Material> createBuiltinMaterial(vela::core::Context& context,
+        std::string_view vertexFile, std::string_view fragmentFile, const vela::graphics::VertexLayout& layout,
+        const vela::graphics::RenderState& renderState);
+
+    // First pass of the frame. Uploads the frame's lighting block (it must happen inside the graph,
+    // after Vela has advanced its frame slot), then renders the procedural sky into the environment
+    // atlas: a plain sky tile, prefiltered specular tiles and an irradiance tile. Vela attachments
+    // do not persist between frames, so the atlas is rebuilt every frame (it is small).
+    class EnvironmentPass final : public vela::graphics::Pass
+    {
+    public:
+        // Loads the environment shader and creates its material.
+        // state:   the renderer state whose prepared lighting and light buffer the pass uses every
+        //          frame. Must outlive the pass.
+        // Returns: the pass, or an error if a shader is missing or the material failed.
+        [[nodiscard]] static Result<std::unique_ptr<EnvironmentPass>> create(RendererState& state);
+
+        // Returns: the environment atlas as the only output.
+        [[nodiscard]] vela::graphics::PassDescription describe() const override;
+
+        // Uploads the lighting block and draws the atlas (skipped when the sky is off).
+        // recorder: Vela's recorder for this pass.
+        void record(vela::graphics::PassRecorder& recorder) override;
+
+    private:
+        EnvironmentPass(RendererState& state, vela::graphics::Material&& material);
+
+        RendererState* m_state{nullptr};
+        vela::graphics::Material m_material;
+    };
+
+    // Renders the depth of every shadow caster into its tiles of the fixed-size shadow atlas: the
+    // sun's cascades and possibly one spot light. Alpha-masked materials discard in their own
+    // shadow material. The atlas is cleared even when nothing casts, which keeps the graph static.
     class ShadowPass final : public vela::graphics::Pass
     {
     public:
         // Loads the shadow shaders and creates the depth-only material.
-        // state:   the renderer state whose draws and prepared lighting the pass reads every frame.
-        //          Must outlive the pass.
+        // state:   the renderer state whose draw lists and prepared lighting the pass reads every
+        //          frame. Must outlive the pass.
         // Returns: the pass, or an error if a shader is missing or the material failed.
         [[nodiscard]] static Result<std::unique_ptr<ShadowPass>> create(RendererState& state);
 
-        // Returns: the shadow map as the only (depth) output.
+        // Returns: the shadow atlas as the only (depth) output.
         [[nodiscard]] vela::graphics::PassDescription describe() const override;
 
-        // Draws the frame's lit draws with the caster's view-projection.
+        // Draws each tile's casters, scissored to the tile.
         // recorder: Vela's recorder for this pass.
         void record(vela::graphics::PassRecorder& recorder) override;
 
@@ -38,50 +82,32 @@ namespace lockstep::render
         vela::graphics::Material m_material;
     };
 
-    // The forward scene pass: clears the HDR colour and depth targets and draws every submitted
-    // draw with its own material. Lit materials get the frame's lighting block (uploaded here)
-    // and the shadow map; unlit ones only their model matrix.
+    // The forward scene pass: clears the HDR targets and depth, draws visible opaque draws front to
+    // back, the sky behind them, then alpha-blended draws back to front. Lit materials write direct
+    // light to the colour target and environment light to the ambient target (so SSAO can darken
+    // only the latter); unlit materials and the sky write colour only.
     class LitScenePass final : public vela::graphics::Pass
     {
     public:
-        // state: the renderer state whose draws, prepared lighting and light buffer the pass uses
-        //        every frame. Must outlive the pass.
-        explicit LitScenePass(RendererState& state);
-
-        // Returns: HDR colour and depth outputs (cleared), the shadow map as a sampled input.
-        [[nodiscard]] vela::graphics::PassDescription describe() const override;
-
-        // Uploads the frame's lighting block and draws the frame's draws.
-        // recorder: Vela's recorder for this pass.
-        void record(vela::graphics::PassRecorder& recorder) override;
-
-    private:
-        RendererState* m_state{nullptr};
-    };
-
-    // Turns the HDR scene colour into the displayable image: exposure, a tonemapping curve and
-    // dithering, as one fullscreen triangle.
-    class TonemapPass final : public vela::graphics::Pass
-    {
-    public:
-        // Loads the fullscreen and tonemap shaders and creates the material.
-        // state:   the renderer state whose tonemap settings the pass reads every frame. Must
-        //          outlive the pass.
+        // Loads the sky shaders and creates the sky material.
+        // state:   the renderer state whose draw lists and resources the pass uses every frame.
+        //          Must outlive the pass.
         // Returns: the pass, or an error if a shader is missing or the material failed.
-        [[nodiscard]] static Result<std::unique_ptr<TonemapPass>> create(RendererState& state);
+        [[nodiscard]] static Result<std::unique_ptr<LitScenePass>> create(RendererState& state);
 
-        // Returns: the scene colour as sampled input, the display image as the only output.
+        // Returns: colour, ambient and depth outputs (cleared); the shadow atlas and environment
+        //          atlas as sampled inputs.
         [[nodiscard]] vela::graphics::PassDescription describe() const override;
 
-        // Draws the fullscreen triangle.
+        // Draws the frame's draw lists and the sky.
         // recorder: Vela's recorder for this pass.
         void record(vela::graphics::PassRecorder& recorder) override;
 
     private:
-        TonemapPass(const RendererState& state, vela::graphics::Material&& material);
+        LitScenePass(const RendererState& state, vela::graphics::Material&& skyMaterial);
 
         const RendererState* m_state{nullptr};
-        vela::graphics::Material m_material;
+        vela::graphics::Material m_skyMaterial;
     };
 } //namespace lockstep::render
 

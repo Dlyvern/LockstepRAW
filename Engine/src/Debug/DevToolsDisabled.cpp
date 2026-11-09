@@ -36,6 +36,10 @@ namespace lockstep::debug
     {
     }
 
+    void DevTools::recordFrameTiming(const FrameTiming&)
+    {
+    }
+
     bool DevTools::isVisible() const
     {
         return false;

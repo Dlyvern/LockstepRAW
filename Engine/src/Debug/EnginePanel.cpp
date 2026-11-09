@@ -1,6 +1,7 @@
 #include "EnginePanel.hpp"
 
 #include "Lockstep/Physics/PhysicsWorld.hpp"
+#include "Lockstep/Render/PresentMode.hpp"
 
 #include <imgui.h>
 
@@ -18,13 +19,27 @@ namespace lockstep::debug
         {
             return static_cast<double>(bytes) / k_bytesPerMegabyte;
         }
+
+        void drawTimeRow(const char* label, const FrameTimeSummary& summary)
+        {
+            ImGui::Text("%-22s %6.2f %6.2f %6.2f", label, summary.minimum, summary.average, summary.maximum);
+        }
+
+        void setTooltip(const char* text)
+        {
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip("%s", text);
+            }
+        }
     } //namespace
 
-    void drawEnginePanel(const render::RendererState& renderer)
+    void drawEnginePanel(const render::RendererState& renderer, const FrameTimeHistories& frameTimes)
     {
-        const float framesPerSecond = ImGui::GetIO().Framerate;
-        const float frameMilliseconds = framesPerSecond > 0.0f ? k_millisecondsPerSecond / framesPerSecond : 0.0f;
+        const FrameTimeSummary frame = frameTimes.frame.summary();
+        const float framesPerSecond = frame.average > 0.0f ? k_millisecondsPerSecond / frame.average : 0.0f;
         const vela::graphics::FrameStats frameStats = renderer.graph->getFrameStats();
+        const vela::core::SwapchainInfo swapchain = renderer.context.getSwapchainInfo();
         const vela::core::MemoryStats memoryStats = renderer.context.getMemoryStats();
 
         ImGui::SetNextWindowPos(k_panelPosition, ImGuiCond_FirstUseEver);
@@ -32,13 +47,23 @@ namespace lockstep::debug
         if (ImGui::Begin("Engine", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::TextUnformatted(renderer.context.getDeviceInfo().name.c_str());
+            ImGui::Text("Present    %s (asked: %s)", vela::core::toString(swapchain.actualVSync),
+                render::toString(renderer.requestedPresentMode));
             ImGui::Separator();
-            ImGui::Text("FPS        %.0f (%.2f ms)", framesPerSecond, frameMilliseconds);
-            ImGui::Text("CPU frame  %.2f ms", frameStats.cpuFrameMs);
+            ImGui::Text("FPS        %.0f (avg over %u frames)", framesPerSecond, frame.count);
+            ImGui::TextDisabled("%-22s %6s %6s %6s", "ms, last frames", "min", "avg", "max");
+            drawTimeRow("Frame", frame);
+            drawTimeRow("CPU work", frameTimes.cpuWork.summary());
+            setTooltip("Run loop time outside Vela's RenderGraph::execute(): input, ticks, game, "
+                "dev tools, render setup.\nExcludes the vsync wait, and also Vela's command recording, "
+                "submit and present.");
+            drawTimeRow("Vela frame incl. vsync", frameTimes.velaFrame.summary());
+            setTooltip("Vela FrameStats::cpuFrameMs: RenderGraph::execute(), including the wait for "
+                "a free frame and swapchain image (vsync).");
 
             if (frameStats.gpuTimingValid)
             {
-                ImGui::Text("GPU frame  %.2f ms", frameStats.gpuFrameMs);
+                ImGui::Text("GPU frame  %.2f ms (last)", frameStats.gpuFrameMs);
             }
             else
             {

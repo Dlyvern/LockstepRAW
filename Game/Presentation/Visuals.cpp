@@ -39,7 +39,7 @@ namespace game
         constexpr Colour k_player2Colour{70, 200, 90};
         constexpr Colour k_enemyColour{200, 30, 30};
         constexpr Colour k_crosshairColour{255, 255, 255};
-        constexpr Colour k_solidColour{85, 82, 92};
+        constexpr Colour k_solidColour{120, 117, 112};
         constexpr Colour k_healthFullColour{220, 40, 40};
         constexpr Colour k_healthEmptyColour{35, 35, 40};
 
@@ -161,7 +161,6 @@ namespace game
             case Archetype::Pawn:
                 renderer.submit(visuals.cube,
                     owner == world::EntityOwner::Player2 ? visuals.player2 : visuals.player1, transform);
-                submitRemoteFlashlight(renderer, transform);
                 break;
             case Archetype::Enemy:
                 renderer.submit(visuals.cube, visuals.enemy, transform);

@@ -1,5 +1,17 @@
 add_library(LockstepEngine STATIC
     src/App/Run.cpp
+    src/Assets/BlockCompression.cpp
+    src/Assets/GltfDocument.cpp
+    src/Assets/GltfImport.cpp
+    src/Assets/GltfMaterials.cpp
+    src/Assets/GltfMeshes.cpp
+    src/Assets/ImageDecode.cpp
+    src/Assets/MeshProcessing.cpp
+    src/Assets/MipChain.cpp
+    src/Assets/Scene.cpp
+    src/Assets/SceneCollision.cpp
+    src/Assets/TextureImport.cpp
+    src/Core/Bounds.cpp
     src/Core/FixedTimestep.cpp
     src/Core/Result.cpp
     src/Core/Transform.cpp
@@ -16,19 +28,27 @@ add_library(LockstepEngine STATIC
     src/Net/WireFormat.cpp
     src/Physics/PhysicsBodies.cpp
     src/Physics/PhysicsControllers.cpp
+    src/Physics/PhysicsMeshes.cpp
     src/Physics/PhysicsQueries.cpp
     src/Physics/PhysicsWorld.cpp
     src/Physics/PhysXErrorReporter.cpp
     src/Platform/Input.cpp
     src/Platform/VelaInput.cpp
     src/Platform/Window.cpp
+    src/Render/EnvironmentResources.cpp
+    src/Render/FrameCulling.cpp
     src/Render/FrameLighting.cpp
     src/Render/FramePasses.cpp
+    src/Render/PbrResources.cpp
+    src/Render/PostPasses.cpp
+    src/Render/PresentMode.cpp
     src/Render/Renderer.cpp
     src/Render/RendererResources.cpp
     src/Render/RenderPassAdapter.cpp
     src/Render/ShaderLoader.cpp
+    src/Render/ShadowCascades.cpp
     src/Render/Shapes.cpp
+    src/Render/SkyModel.cpp
     src/Render/VelaConversions.cpp
     src/World/Entities.cpp
     src/World/TimeDomains.cpp
@@ -51,6 +71,7 @@ if(LOCKSTEP_DEV_TOOLS)
     target_sources(LockstepEngine PRIVATE
         src/Debug/DevTools.cpp
         src/Debug/EnginePanel.cpp
+        src/Debug/FrameTimeHistory.cpp
         src/Debug/GraphicsPanel.cpp
         src/Debug/ImGuiInput.cpp
         src/Debug/ImGuiOverlayPass.cpp
@@ -85,17 +106,35 @@ target_link_libraries(LockstepEngine PRIVATE GameNetworkingSockets::static)
 # PhysX stays private: only Engine/src/Physics includes it.
 target_link_libraries(LockstepEngine PRIVATE physx)
 
+# glTF import stays private: only Engine/src/Assets includes cgltf, libktx (KTX2 and Basis
+# Universal transcoding) and stb (stb_image's implementation is compiled into Vela::Assets;
+# stb_dxt's into Engine/src/Assets/BlockCompression.cpp). stb's headers are treated as system
+# headers so their warnings don't count as ours.
+set_target_properties(stb_image PROPERTIES SYSTEM ON)
+target_link_libraries(LockstepEngine PRIVATE cgltf ktx_read stb_image)
+
 # Shaders the Engine loads at runtime from "<exe dir>/shaders". A static library has no runtime
 # directory of its own, so each executable that links the Engine stages them for itself.
 set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/unlit.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/unlit.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lit.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lit.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/pbr.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/pbr.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_mask.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_mask.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/environment.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fullscreen.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_prefilter.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_down.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_up.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tonemap.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fxaa.frag
 )
 
 if(LOCKSTEP_DEV_TOOLS)

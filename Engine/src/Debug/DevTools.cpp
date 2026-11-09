@@ -1,6 +1,7 @@
 #include "Lockstep/Debug/DevTools.hpp"
 
 #include "EnginePanel.hpp"
+#include "FrameTimeHistory.hpp"
 #include "GraphicsPanel.hpp"
 #include "ImGuiInput.hpp"
 #include "ImGuiOverlayPass.hpp"
@@ -13,6 +14,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -119,6 +121,7 @@ namespace lockstep::debug
         bool isShown{false};
         NetPanelState netPanel;
         GraphicsPanelState graphicsPanel;
+        FrameTimeHistories frameTimes;
     };
 
     Result<DevTools> DevTools::create(render::Renderer& renderer, platform::Window& window)
@@ -200,7 +203,7 @@ namespace lockstep::debug
 
         updateDisplay(io, window, deltaTime);
         m_state->overlay->beginFrame();
-        drawEnginePanel(*m_state->renderer);
+        drawEnginePanel(*m_state->renderer, m_state->frameTimes);
         drawGraphicsPanel(m_state->graphicsPanel, *m_state->renderer);
     }
 
@@ -224,6 +227,21 @@ namespace lockstep::debug
 
         ImGui::SetCurrentContext(m_state->imguiContext);
         debug::drawPhysicsSection(physics);
+    }
+
+    void DevTools::recordFrameTiming(const FrameTiming& timing)
+    {
+        if (!m_state)
+        {
+            return;
+        }
+
+        const float velaFrameMilliseconds = m_state->renderer->graph->getFrameStats().cpuFrameMs;
+        const float engineRenderMilliseconds = std::max(timing.renderMilliseconds - velaFrameMilliseconds, 0.0f);
+
+        m_state->frameTimes.frame.add(timing.workMilliseconds + timing.renderMilliseconds);
+        m_state->frameTimes.cpuWork.add(timing.workMilliseconds + engineRenderMilliseconds);
+        m_state->frameTimes.velaFrame.add(velaFrameMilliseconds);
     }
 
     bool DevTools::isVisible() const

@@ -1,19 +1,25 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
-// Must match TonemapPass.cpp.
+#include "scene_hdr.glsl"
+
+// Must match TonemapConstants in PostPasses.cpp.
 const uint k_clamp = 0u;
 const uint k_reinhard = 1u;
 const uint k_aces = 2u;
+const uint k_viewScene = 0u;
+const uint k_viewOcclusion = 1u;
+const float k_bloomLevels = 5.0;
 
 layout(push_constant) uniform TonemapConstants
 {
     float exposure;
     uint tonemapper;
-    float dither;
-    uint frameIndex;
+    float bloomStrength;
+    uint view;
 } constants;
 
-layout(set = 2, binding = 0) uniform sampler2D sceneColor;
+layout(set = 2, binding = 3) uniform sampler2D bloom;
 
 layout(location = 0) in vec2 inUv;
 
@@ -37,24 +43,24 @@ vec3 reinhard(vec3 color)
     return color / (1.0 + luminance);
 }
 
-float interleavedGradientNoise(vec2 pixel)
-{
-    return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
-}
-
-vec3 toSrgb(vec3 linear)
-{
-    return mix(linear * 12.92, 1.055 * pow(linear, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), linear));
-}
-
-vec3 toLinear(vec3 srgb)
-{
-    return mix(srgb / 12.92, pow((srgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), srgb));
-}
-
 void main()
 {
-    vec3 color = texelFetch(sceneColor, ivec2(gl_FragCoord.xy), 0).rgb * constants.exposure;
+    vec2 uv = (gl_FragCoord.xy) / vec2(textureSize(sceneColor, 0));
+
+    if (constants.view == k_viewOcclusion)
+    {
+        outColor = vec4(vec3(textureLod(ambientOcclusion, uv, 0.0).r), 1.0);
+        return;
+    }
+
+    vec3 color = sceneHdr(uv);
+
+    if (constants.bloomStrength > 0.0)
+    {
+        color = mix(color, textureLod(bloom, uv, 0.0).rgb / k_bloomLevels, constants.bloomStrength);
+    }
+
+    color *= constants.exposure;
 
     if (constants.tonemapper == k_aces)
     {
@@ -65,14 +71,5 @@ void main()
         color = reinhard(color);
     }
 
-    color = clamp(color, 0.0, 1.0);
-
-    if (constants.dither > 0.0)
-    {
-        vec2 pixel = gl_FragCoord.xy + float(constants.frameIndex % 64u) * vec2(5.588238, 5.588238);
-        float noise = interleavedGradientNoise(pixel) - 0.5;
-        color = toLinear(clamp(toSrgb(color) + noise * constants.dither, 0.0, 1.0));
-    }
-
-    outColor = vec4(color, 1.0);
+    outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

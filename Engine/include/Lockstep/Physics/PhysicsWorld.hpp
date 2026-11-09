@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 
 namespace lockstep::physics
 {
@@ -74,6 +75,17 @@ namespace lockstep::physics
         // Returns:     its handle, or InvalidArgument for a bad shape (non-positive size, a
         //              dynamic plane), or an error PhysX reported.
         [[nodiscard]] Result<BodyId> createBody(const BodyDescription& description);
+
+        // Creates a static triangle-mesh body (level geometry), cooking the mesh with PhysX.
+        // Triangles collide from both sides with controllers and raycasts. Large triangles are
+        // accepted without PhysX's size warning (level floors and walls are meant to be large).
+        // positions: mesh-space vertex positions.
+        // indices:   triangle list into `positions`; a multiple of 3, every index in range.
+        // transform: world placement. Scale may be non-uniform; zero scale is rejected.
+        // Returns:   its handle, or InvalidArgument for bad data, or an error if cooking failed
+        //            (e.g. every triangle was degenerate).
+        [[nodiscard]] Result<BodyId> createStaticMesh(std::span<const math::Vec3> positions,
+            std::span<const uint32_t> indices, const math::Transform& transform);
 
         // Destroys a body. Its handle, and every copy, becomes stale.
         // body:    the body.

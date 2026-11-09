@@ -4,11 +4,14 @@ add_executable(LockstepGame
     DevPanel.cpp
     Enemies/Enemy.cpp
     Level/Arena.cpp
+    Level/SceneLevel.cpp
     Player/Pawns.cpp
     Player/PlayerCommand.cpp
     Player/PlayerStatus.cpp
     Player/Prediction.cpp
+    Presentation/FlyCamera.cpp
     Presentation/Lighting.cpp
+    Presentation/MaterialShowcase.cpp
     Presentation/Visuals.cpp
     Simulation/HostSimulation.cpp
     Weapons/Hitscan.cpp

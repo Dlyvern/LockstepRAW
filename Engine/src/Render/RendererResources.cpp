@@ -4,77 +4,50 @@
 #include "VelaConversions.hpp"
 
 #include <Vela/Graphics/ImageData.hpp>
-#include <Vela/Graphics/Vertex.hpp>
-#include <Vela/Graphics/VertexLayout.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
 namespace lockstep::render
 {
-    namespace
+    std::size_t textureLevelBytes(TextureFormat format, uint32_t width, uint32_t height) noexcept
     {
-        constexpr std::size_t k_bytesPerPixel{4};
+        return vela::graphics::imageSizeBytes(toVelaFormat(format), width, height);
+    }
 
-        static_assert(sizeof(Vertex) == sizeof(vela::graphics::StaticVertex));
-        static_assert(offsetof(Vertex, position) == offsetof(vela::graphics::StaticVertex, position));
-        static_assert(offsetof(Vertex, uv) == offsetof(vela::graphics::StaticVertex, uv));
-        static_assert(offsetof(Vertex, normal) == offsetof(vela::graphics::StaticVertex, normal));
-
-        constexpr uint32_t k_albedoSlot{0};
-        constexpr uint32_t k_lightingSlot{1};
-
-        vela::graphics::VertexLayout unlitVertexLayout()
-        {
-            return vela::graphics::VertexLayout
-            {
-                sizeof(Vertex),
-                {
-                    {0, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(Vertex, position))},
-                    {1, vela::graphics::VertexAttributeFormat::Float2, static_cast<uint32_t>(offsetof(Vertex, uv))}
-                }
-            };
-        }
-
-        vela::graphics::VertexLayout litVertexLayout()
-        {
-            return vela::graphics::VertexLayout
-            {
-                sizeof(Vertex),
-                {
-                    {0, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(Vertex, position))},
-                    {1, vela::graphics::VertexAttributeFormat::Float2, static_cast<uint32_t>(offsetof(Vertex, uv))},
-                    {2, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(Vertex, normal))}
-                }
-            };
-        }
-    } //namespace
-
-    Result<MeshHandle> Renderer::createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices)
+    uint32_t fullMipLevelCount(uint32_t width, uint32_t height) noexcept
     {
-        if (vertices.empty() || indices.empty())
+        uint32_t levels = 1;
+        uint32_t largest = std::max(width, height);
+
+        while (largest > 1)
         {
-            return Error{ErrorCode::InvalidArgument, "createMesh: vertices and indices must not be empty"};
+            largest /= 2;
+            ++levels;
         }
 
-        auto mesh = vela::graphics::Mesh::create(m_state->context, std::as_bytes(vertices),
-            static_cast<uint32_t>(vertices.size()), indices);
-
-        if (!mesh)
-        {
-            return toError(mesh.error());
-        }
-
-        return m_state->meshes.add(std::move(mesh).value());
+        return levels;
     }
 
     Result<TextureHandle> Renderer::createTexture(const TextureDescription& description)
     {
-        const std::size_t expectedSize = static_cast<std::size_t>(description.width) * description.height
-            * k_bytesPerPixel;
+        if (description.width == 0 || description.height == 0 || description.levels == 0
+            || description.levels > fullMipLevelCount(description.width, description.height))
+        {
+            return Error{ErrorCode::InvalidArgument, "createTexture: invalid size or mip level count"};
+        }
 
-        if (description.width == 0 || description.height == 0 || description.pixels.size() != expectedSize)
+        std::size_t expectedSize = 0;
+
+        for (uint32_t level = 0; level < description.levels; ++level)
+        {
+            expectedSize += textureLevelBytes(description.format, std::max(1u, description.width >> level),
+                std::max(1u, description.height >> level));
+        }
+
+        if (description.pixels.size() != expectedSize)
         {
             return Error{ErrorCode::InvalidArgument, "createTexture: expected " + std::to_string(expectedSize)
                 + " bytes of pixel data, got " + std::to_string(description.pixels.size())};
@@ -85,6 +58,7 @@ namespace lockstep::render
         image.width = description.width;
         image.height = description.height;
         image.format = toVelaFormat(description.format);
+        image.levels = description.levels;
 
         auto texture = vela::graphics::Texture::create(m_state->context, image, toVelaSampler(description.filter));
 
@@ -94,48 +68,5 @@ namespace lockstep::render
         }
 
         return m_state->textures.add(std::move(texture).value());
-    }
-
-    Result<MaterialHandle> Renderer::createMaterial(const MaterialDescription& description)
-    {
-        const vela::graphics::Texture* albedo = m_state->textures.find(description.albedo);
-
-        if (albedo == nullptr)
-        {
-            return Error{ErrorCode::InvalidHandle, "createMaterial: albedo texture handle is invalid"};
-        }
-
-        const bool isLit = description.shading == Shading::Lit;
-        const MaterialShaders& shaders = m_state->shaders;
-
-        auto material = vela::graphics::Material::create(m_state->context,
-        {
-            .vertexShader = isLit ? shaders.litVertex : shaders.unlitVertex,
-            .fragmentShader = isLit ? shaders.litFragment : shaders.unlitFragment,
-            .vertexLayout = isLit ? litVertexLayout() : unlitVertexLayout()
-        });
-
-        if (!material)
-        {
-            return toError(material.error());
-        }
-
-        if (auto bound = material.value().setTexture(k_albedoSlot, *albedo); !bound)
-        {
-            return toError(bound.error());
-        }
-
-        if (isLit)
-        {
-            if (auto bound = material.value().setStorageBuffer(k_lightingSlot, m_state->lightBuffer); !bound)
-            {
-                return toError(bound.error());
-            }
-        }
-
-        return m_state->materials.add(MaterialRecord{
-            .material = std::move(material).value(),
-            .shading = description.shading,
-            .surface = {description.specular, description.shininess, description.emissive, 0.0f}});
     }
 } //namespace lockstep::render

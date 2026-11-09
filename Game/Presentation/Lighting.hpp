@@ -1,9 +1,11 @@
 #ifndef LOCKSTEP_GAME_PRESENTATION_LIGHTING_HPP
 #define LOCKSTEP_GAME_PRESENTATION_LIGHTING_HPP
 
-#include <Lockstep/Core/Math.hpp>
-#include <Lockstep/Core/Transform.hpp>
+#include "Presentation/MaterialShowcase.hpp"
+
 #include <Lockstep/Platform/Input.hpp>
+
+#include <optional>
 
 namespace lockstep::render
 {
@@ -12,47 +14,34 @@ namespace lockstep::render
 
 namespace game
 {
-    namespace math = lockstep::math;
-
-    // Presentation-only lighting state of this machine. Never replicated: the local flashlight
-    // switch only changes what this player sees (the other player's flashlight is always drawn on).
-    // isFlashlightOn: the local player's flashlight.
-    // seconds:        presentation time, drives flickering fixtures.
+    // Presentation-only lighting state of this machine. Never replicated.
+    // seconds:        presentation time.
+    // showcase:       the PBR test objects, created on first use.
+    // showcaseFailed: creating the showcase failed once; it is not retried.
     struct LightingState
     {
-        bool isFlashlightOn{true};
         float seconds{0.0f};
+        std::optional<MaterialShowcase> showcase;
+        bool showcaseFailed{false};
     };
 
-    // Sets the arena's look on the renderer once: dark ambient, black fog, filmic tonemapping.
-    // The dev tools can change it afterwards.
+    // Sets the arena's look on the renderer once: a clear afternoon sun and sky lighting the
+    // arena, image-based lighting, no fog, filmic tonemapping. The dev tools can change it
+    // afterwards.
     // renderer: the renderer.
     void applyArenaLook(lockstep::render::Renderer& renderer);
 
-    // Advances the lighting clock and toggles the flashlight on F.
+    // Advances the lighting clock.
     // state:        the lighting state.
     // input:        this frame's input.
     // frameSeconds: wall time since the previous frame.
     void updateLighting(LightingState& state, const lockstep::platform::Input& input, float frameSeconds);
 
-    // Submits the arena's fixed lights: a faint skylight and a few failing ceiling fixtures.
+    // Submits the arena's lights (the sun comes from the renderer's sky; this adds a few warm lamps)
+    // and draws the PBR material showcase along the north wall, creating it on the first call.
     // renderer: the renderer.
-    // state:    the lighting state (for flicker).
-    void submitArenaLights(lockstep::render::Renderer& renderer, const LightingState& state);
-
-    // Submits the local player's flashlight, held at the hip so its shadows show. It is the one
-    // light that casts the shadow map. Does nothing while the flashlight is off.
-    // renderer:  the renderer.
-    // state:     the lighting state.
-    // eye:       the camera position.
-    // direction: unit look direction.
-    void submitLocalFlashlight(lockstep::render::Renderer& renderer, const LightingState& state, const math::Vec3& eye,
-        const math::Vec3& direction);
-
-    // Submits another player's flashlight, pointing where their pawn faces.
-    // renderer: the renderer.
-    // pawn:     the pawn's (interpolated) transform.
-    void submitRemoteFlashlight(lockstep::render::Renderer& renderer, const math::Transform& pawn);
+    // state:    the lighting state.
+    void submitArenaLights(lockstep::render::Renderer& renderer, LightingState& state);
 } //namespace game
 
 #endif //LOCKSTEP_GAME_PRESENTATION_LIGHTING_HPP

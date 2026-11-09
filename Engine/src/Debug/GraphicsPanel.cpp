@@ -10,78 +10,127 @@ namespace lockstep::debug
         constexpr float k_panelWidth{340.0f};
         constexpr ImVec2 k_panelPosition{360.0f, 10.0f};
         constexpr float k_maxAmbient{1.0f};
-        constexpr float k_maxDepthBias{0.2f};
-        constexpr float k_maxNormalBias{5.0f};
-        constexpr float k_maxFogDensity{0.3f};
-        constexpr float k_maxFogStart{30.0f};
+        constexpr float k_maxShadowBias{5.0f};
+        constexpr float k_minShadowDistance{10.0f};
+        constexpr float k_maxShadowDistance{300.0f};
+        constexpr float k_maxFogDensity{0.1f};
+        constexpr float k_maxFogStart{100.0f};
         constexpr float k_minExposure{0.05f};
         constexpr float k_maxExposure{8.0f};
+        constexpr float k_maxSunIntensity{10.0f};
+        constexpr float k_maxSkyIntensity{4.0f};
+        constexpr float k_maxIblIntensity{3.0f};
+        constexpr float k_minTurbidity{1.7f};
+        constexpr float k_maxTurbidity{10.0f};
+        constexpr float k_maxOcclusionRadius{3.0f};
+        constexpr float k_maxOcclusionIntensity{3.0f};
+        constexpr float k_maxOcclusionPower{4.0f};
+        constexpr float k_maxBloomStrength{0.3f};
+        constexpr int k_maxCascades{static_cast<int>(render::k_maxShadowCascades)};
 
-        const char* casterName(render::ShadowCaster caster)
+        bool header(const char* label)
         {
-            switch (caster)
-            {
-                case render::ShadowCaster::Directional:
-                {
-                    return "directional";
-                }
-                case render::ShadowCaster::Spot:
-                {
-                    return "spot";
-                }
-                case render::ShadowCaster::None:
-                {
-                    break;
-                }
-            }
-
-            return "none";
+            return ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen);
         }
 
         void drawLighting(render::LightingSettings& lighting)
         {
-            if (!ImGui::CollapsingHeader("Lighting", ImGuiTreeNodeFlags_DefaultOpen))
+            if (!header("Lighting"))
             {
                 return;
             }
 
-            ImGui::Checkbox("Directional light", &lighting.directional);
+            ImGui::Checkbox("Sun / directional light", &lighting.directional);
             ImGui::Checkbox("Point / spot lights", &lighting.localLights);
             ImGui::Checkbox("Specular", &lighting.specular);
-            ImGui::ColorEdit3("Ambient colour", &lighting.ambientColor.x, ImGuiColorEditFlags_Float);
-            ImGui::SliderFloat("Ambient", &lighting.ambientIntensity, 0.0f, k_maxAmbient, "%.3f",
+            ImGui::ColorEdit3("Flat ambient colour", &lighting.ambientColor.x, ImGuiColorEditFlags_Float);
+            ImGui::SliderFloat("Flat ambient", &lighting.ambientIntensity, 0.0f, k_maxAmbient, "%.3f",
                 ImGuiSliderFlags_Logarithmic);
+        }
+
+        void drawSky(render::SkySettings& sky, render::ImageBasedLightingSettings& ibl)
+        {
+            if (!header("Sun and sky"))
+            {
+                return;
+            }
+
+            ImGui::Checkbox("Sky (and its sun)", &sky.enabled);
+            ImGui::SliderAngle("Sun azimuth", &sky.sunAzimuth, -180.0f, 180.0f);
+            ImGui::SliderAngle("Sun elevation", &sky.sunElevation, -10.0f, 90.0f);
+            ImGui::ColorEdit3("Sun colour", &sky.sunColor.x, ImGuiColorEditFlags_Float);
+            ImGui::SliderFloat("Sun intensity", &sky.sunIntensity, 0.0f, k_maxSunIntensity, "%.2f");
+            ImGui::Checkbox("Atmospheric sun tint", &sky.atmosphericSunTint);
+            ImGui::Checkbox("Sun disk", &sky.sunDisk);
+            ImGui::SliderFloat("Turbidity", &sky.turbidity, k_minTurbidity, k_maxTurbidity, "%.1f");
+            ImGui::SliderFloat("Sky intensity", &sky.skyIntensity, 0.0f, k_maxSkyIntensity, "%.2f");
+            ImGui::ColorEdit3("Ground albedo", &sky.groundAlbedo.x, ImGuiColorEditFlags_Float);
+            ImGui::Separator();
+            ImGui::Checkbox("Image-based lighting", &ibl.enabled);
+            ImGui::SliderFloat("IBL diffuse", &ibl.diffuseIntensity, 0.0f, k_maxIblIntensity, "%.2f");
+            ImGui::SliderFloat("IBL specular", &ibl.specularIntensity, 0.0f, k_maxIblIntensity, "%.2f");
         }
 
         void drawShadows(render::ShadowSettings& shadows)
         {
-            if (!ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen))
+            if (!header("Shadows"))
             {
                 return;
             }
 
-            ImGui::Checkbox("Shadow map", &shadows.enabled);
-            ImGui::SliderFloat("Depth bias (m)", &shadows.depthBias, 0.0f, k_maxDepthBias, "%.3f");
-            ImGui::SliderFloat("Normal bias (texels)", &shadows.normalBias, 0.0f, k_maxNormalBias, "%.2f");
+            int cascades = static_cast<int>(shadows.cascadeCount);
+
+            ImGui::Checkbox("Shadow maps", &shadows.enabled);
+
+            if (ImGui::SliderInt("Cascades", &cascades, 1, k_maxCascades))
+            {
+                shadows.cascadeCount = static_cast<uint32_t>(cascades);
+            }
+
+            ImGui::SliderFloat("Distance (m)", &shadows.distance, k_minShadowDistance, k_maxShadowDistance, "%.0f");
+            ImGui::SliderFloat("Split lambda", &shadows.splitLambda, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Depth bias (texels)", &shadows.depthBias, 0.0f, k_maxShadowBias, "%.2f");
+            ImGui::SliderFloat("Normal bias (texels)", &shadows.normalBias, 0.0f, k_maxShadowBias, "%.2f");
+            ImGui::Checkbox("Show cascades", &shadows.debugCascades);
         }
 
         void drawFog(render::FogSettings& fog)
         {
-            if (!ImGui::CollapsingHeader("Fog", ImGuiTreeNodeFlags_DefaultOpen))
+            if (!ImGui::CollapsingHeader("Fog"))
             {
                 return;
             }
 
             ImGui::Checkbox("Distance fog", &fog.enabled);
             ImGui::ColorEdit3("Fog colour", &fog.color.x, ImGuiColorEditFlags_Float);
-            ImGui::SliderFloat("Density", &fog.density, 0.0f, k_maxFogDensity, "%.3f");
+            ImGui::SliderFloat("Density", &fog.density, 0.0f, k_maxFogDensity, "%.4f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Start (m)", &fog.start, 0.0f, k_maxFogStart, "%.1f");
             ImGui::SliderFloat("Max amount", &fog.maxAmount, 0.0f, 1.0f, "%.2f");
         }
 
+        void drawPostProcessing(render::RenderSettings& settings)
+        {
+            if (!header("Post-processing"))
+            {
+                return;
+            }
+
+            render::AmbientOcclusionSettings& occlusion = settings.ambientOcclusion;
+            ImGui::Checkbox("SSAO", &occlusion.enabled);
+            ImGui::SliderFloat("SSAO radius (m)", &occlusion.radius, 0.05f, k_maxOcclusionRadius, "%.2f");
+            ImGui::SliderFloat("SSAO intensity", &occlusion.intensity, 0.0f, k_maxOcclusionIntensity, "%.2f");
+            ImGui::SliderFloat("SSAO power", &occlusion.power, 0.5f, k_maxOcclusionPower, "%.2f");
+            ImGui::Checkbox("Show SSAO only", &occlusion.showOnly);
+            ImGui::Separator();
+            ImGui::Checkbox("Bloom", &settings.bloom.enabled);
+            ImGui::SliderFloat("Bloom strength", &settings.bloom.strength, 0.0f, k_maxBloomStrength, "%.3f");
+            ImGui::Checkbox("FXAA", &settings.antiAliasing.fxaa);
+            ImGui::Checkbox("Frustum culling", &settings.culling.frustumCulling);
+        }
+
         void drawTonemap(render::TonemapSettings& tonemap)
         {
-            if (!ImGui::CollapsingHeader("Tonemapping", ImGuiTreeNodeFlags_DefaultOpen))
+            if (!header("Exposure and tonemapping"))
             {
                 return;
             }
@@ -115,20 +164,24 @@ namespace lockstep::debug
 
         if (ImGui::Begin("Graphics"))
         {
-            const render::FrameLightStats& lights = renderer.lastFrameLights;
+            const render::FrameStats& frame = renderer.lastFrame;
 
             ImGui::Text("GPU frame (smoothed) %.3f ms", static_cast<double>(panel.smoothedGpuMs));
             ImGui::TextDisabled("Toggle a feature and compare to read its cost.");
-            ImGui::Text("Lights: %u local (%u dropped), directional %s", lights.local, lights.dropped,
-                lights.hasDirectional ? "yes" : "no");
-            ImGui::Text("Shadow caster: %s", casterName(lights.caster));
+            ImGui::Text("Draws: %u submitted, %u visible, %u shadow", frame.submitted, frame.visible,
+                frame.shadowDraws);
+            ImGui::Text("Lights: %u local (%u dropped), sun %s", frame.local, frame.dropped,
+                frame.hasDirectional ? "yes" : "no");
+            ImGui::Text("Shadows: %u cascades%s", frame.cascades, frame.spotShadow ? " + spot" : "");
             ImGui::Separator();
 
             render::RenderSettings& settings = renderer.settings;
             drawLighting(settings.lighting);
+            drawSky(settings.sky, settings.ibl);
             drawShadows(settings.shadows);
-            drawFog(settings.fog);
+            drawPostProcessing(settings);
             drawTonemap(settings.tonemap);
+            drawFog(settings.fog);
         }
 
         ImGui::End();

@@ -57,8 +57,7 @@ namespace game
     // arena:    the arena.
     void drawArena(lockstep::render::Renderer& renderer, const Visuals& visuals, const Arena& arena);
 
-    // Queues an entity for drawing with the look of its archetype; a pawn also brings its
-    // flashlight. Unknown archetypes are skipped.
+    // Queues an entity for drawing with the look of its archetype. Unknown archetypes are skipped.
     // renderer:  the renderer.
     // visuals:   the game's meshes and materials.
     // archetype: what the entity is.

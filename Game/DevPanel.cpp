@@ -67,13 +67,23 @@ namespace game
             GameState::Settings& settings = state.settings;
             const GameState::Simulation& simulation = state.simulation;
 
+            const bool isClientConnected = engine.session.state() == net::ConnectionState::Connected;
+
+            ImGui::BeginDisabled(isClientConnected);
             ImGui::SliderFloat("Move speed", &settings.pawns.moveSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderInt("Player health", &settings.pawns.maxHealth, 1, k_maxPlayerHealth);
+            ImGui::EndDisabled();
+
+            if (isClientConnected)
+            {
+                ImGui::TextDisabled("Move speed and player health are locked while a client is connected.");
+            }
+
             ImGui::SliderFloat("Enemy speed", &settings.enemy.walkSpeed, 0.0f, k_maxEnemySpeed);
             ImGui::SliderInt("Enemy health", &settings.enemy.maxHealth, 1, k_maxEnemyHealth);
             ImGui::SliderFloat("Respawn delay", &settings.enemy.respawnDelay, 0.0f, k_maxRespawnDelay);
             ImGui::SliderInt("Enemy damage", &settings.enemy.attackDamage, 0, k_maxPlayerHealth);
             ImGui::SliderFloat("Enemy cooldown", &settings.enemy.attackCooldown, 0.1f, k_maxRespawnDelay);
-            ImGui::SliderInt("Player health", &settings.pawns.maxHealth, 1, k_maxPlayerHealth);
             ImGui::SliderFloat("Player respawn", &settings.pawns.respawnDelay, 0.0f, k_maxRespawnDelay);
             ImGui::Separator();
 

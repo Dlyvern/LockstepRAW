@@ -18,75 +18,42 @@ namespace lockstep::render
 {
     namespace
     {
+        constexpr std::string_view k_fullscreenVertexShader{"fullscreen.vert.spv"};
+        constexpr std::string_view k_environmentFragmentShader{"environment.frag.spv"};
         constexpr std::string_view k_shadowVertexShader{"shadow.vert.spv"};
         constexpr std::string_view k_shadowFragmentShader{"shadow.frag.spv"};
-        constexpr std::string_view k_fullscreenVertexShader{"fullscreen.vert.spv"};
-        constexpr std::string_view k_tonemapFragmentShader{"tonemap.frag.spv"};
-        constexpr uint32_t k_shadowMapSlot{0};
-        constexpr uint32_t k_sceneColorSlot{0};
+        constexpr std::string_view k_skyVertexShader{"sky.vert.spv"};
+        constexpr std::string_view k_skyFragmentShader{"sky.frag.spv"};
+        constexpr uint32_t k_lightingSlot{0};
+        constexpr uint32_t k_shadowAtlasSlot{0};
+        constexpr uint32_t k_environmentSlot{1};
+        constexpr uint32_t k_brdfLutSlot{2};
         constexpr uint32_t k_fullscreenTriangleVertices{3};
-        constexpr float k_ditherAmplitude{1.0f / 255.0f};
 
-        struct LitDrawConstants
+        struct PbrDrawConstants
         {
             math::Mat4 model;
-            float surface[4];
+            PbrFactors factors;
         };
 
-        struct TonemapConstants
+        struct MaskedShadowConstants
         {
-            float exposure;
-            uint32_t tonemapper;
-            float dither;
-            uint32_t frameIndex;
+            math::Mat4 lightModel;
+            float mask[4];
         };
 
-        static_assert(sizeof(LitDrawConstants) == 80);
-        static_assert(sizeof(TonemapConstants) == 16);
+        static_assert(sizeof(PbrDrawConstants) == 128);
+        static_assert(sizeof(MaskedShadowConstants) == 80);
 
         vela::graphics::VertexLayout positionOnlyLayout()
         {
             return vela::graphics::VertexLayout
             {
-                sizeof(Vertex),
+                sizeof(PbrVertex),
                 {
-                    {0, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(Vertex, position))}
+                    {0, vela::graphics::VertexAttributeFormat::Float3, static_cast<uint32_t>(offsetof(PbrVertex, position))}
                 }
             };
-        }
-
-        Result<vela::graphics::Material> createMaterial(vela::core::Context& context, std::string_view vertexFile,
-            std::string_view fragmentFile, const vela::graphics::VertexLayout& layout,
-            const vela::graphics::RenderState& renderState)
-        {
-            auto vertexShader = loadShader(vertexFile);
-
-            if (!vertexShader)
-            {
-                return vertexShader.error();
-            }
-
-            auto fragmentShader = loadShader(fragmentFile);
-
-            if (!fragmentShader)
-            {
-                return fragmentShader.error();
-            }
-
-            auto material = vela::graphics::Material::create(context,
-            {
-                .vertexShader = vertexShader.value(),
-                .fragmentShader = fragmentShader.value(),
-                .vertexLayout = layout,
-                .renderState = renderState
-            });
-
-            if (!material)
-            {
-                return toError(material.error());
-            }
-
-            return std::move(material).value();
         }
 
         vela::graphics::AttachmentSlot clearedSlot(std::string_view name, vela::graphics::TextureFormat format)
@@ -99,11 +66,109 @@ namespace lockstep::render
 
             return slot;
         }
+
+        vela::graphics::RenderState fullscreenState()
+        {
+            vela::graphics::RenderState renderState{};
+            renderState.depthTest = false;
+            renderState.depthWrite = false;
+
+            return renderState;
+        }
     } //namespace
+
+    Result<vela::graphics::Material> createBuiltinMaterial(vela::core::Context& context, std::string_view vertexFile,
+        std::string_view fragmentFile, const vela::graphics::VertexLayout& layout,
+        const vela::graphics::RenderState& renderState)
+    {
+        auto vertexShader = loadShader(vertexFile);
+
+        if (!vertexShader)
+        {
+            return vertexShader.error();
+        }
+
+        auto fragmentShader = loadShader(fragmentFile);
+
+        if (!fragmentShader)
+        {
+            return fragmentShader.error();
+        }
+
+        auto material = vela::graphics::Material::create(context,
+        {
+            .vertexShader = vertexShader.value(),
+            .fragmentShader = fragmentShader.value(),
+            .vertexLayout = layout,
+            .renderState = renderState
+        });
+
+        if (!material)
+        {
+            return toError(material.error());
+        }
+
+        return std::move(material).value();
+    }
+
+    Result<std::unique_ptr<EnvironmentPass>> EnvironmentPass::create(RendererState& state)
+    {
+        auto material = createBuiltinMaterial(state.context, k_fullscreenVertexShader, k_environmentFragmentShader,
+            vela::graphics::VertexLayout{}, fullscreenState());
+
+        if (!material)
+        {
+            return material.error();
+        }
+
+        if (auto bound = material.value().setStorageBuffer(k_lightingSlot, state.lightBuffer); !bound)
+        {
+            return toError(bound.error());
+        }
+
+        return std::unique_ptr<EnvironmentPass>(new EnvironmentPass(state, std::move(material).value()));
+    }
+
+    EnvironmentPass::EnvironmentPass(RendererState& state, vela::graphics::Material&& material)
+        : m_state(&state),
+          m_material(std::move(material))
+    {
+    }
+
+    vela::graphics::PassDescription EnvironmentPass::describe() const
+    {
+        vela::graphics::AttachmentSlot atlas = clearedSlot(k_environmentAttachment, k_sceneColorFormat);
+        atlas.size = {k_environmentTileSize * k_environmentTiles, k_environmentTileSize};
+        atlas.clear = {0.0f, 0.0f, 0.0f, 1.0f};
+
+        vela::graphics::PassDescription description{};
+        description.colorOutputs.push_back(atlas);
+
+        return description;
+    }
+
+    void EnvironmentPass::record(vela::graphics::PassRecorder& recorder)
+    {
+        const GpuFrameLighting& lighting = m_state->prepared.lighting;
+
+        if (auto uploaded = m_state->lightBuffer.update(std::as_bytes(std::span(&lighting, 1))); !uploaded)
+        {
+            std::cerr << "Renderer: lighting upload failed: " << uploaded.error().message << '\n';
+            return;
+        }
+
+        if (lighting.iblParams[3] <= 0.0f)
+        {
+            return;
+        }
+
+        recorder.bind(m_material);
+        recorder.drawInstanced(k_fullscreenTriangleVertices, 1);
+    }
 
     Result<std::unique_ptr<ShadowPass>> ShadowPass::create(RendererState& state)
     {
-        auto material = createMaterial(state.context, k_shadowVertexShader, k_shadowFragmentShader,
+        auto material = createBuiltinMaterial(state.context, k_shadowVertexShader, k_shadowFragmentShader,
             positionOnlyLayout(), vela::graphics::RenderState{});
 
         if (!material)
@@ -123,7 +188,7 @@ namespace lockstep::render
     vela::graphics::PassDescription ShadowPass::describe() const
     {
         vela::graphics::AttachmentSlot depth = clearedSlot(k_shadowMapAttachment, k_depthFormat);
-        depth.size = {k_shadowMapSize, k_shadowMapSize};
+        depth.size = {k_shadowAtlasSize, k_shadowAtlasSize};
         depth.clear.depth = 1.0f;
 
         vela::graphics::PassDescription description{};
@@ -134,24 +199,67 @@ namespace lockstep::render
 
     void ShadowPass::record(vela::graphics::PassRecorder& recorder)
     {
-        if (m_state->prepared.caster == ShadowCaster::None)
-        {
-            return;
-        }
+        const PreparedLighting& prepared = m_state->prepared;
 
-        const math::Mat4& lightViewProjection = m_state->prepared.shadowViewProjection;
-
-        for (const DrawItem& item : m_state->draws)
+        for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
         {
-            if (item.material->shading == Shading::Lit)
+            const std::vector<uint32_t>& casters = m_state->drawLists.shadowCasters[tile];
+
+            if (casters.empty())
             {
-                recorder.draw(*item.mesh, m_material, lightViewProjection * item.model);
+                continue;
+            }
+
+            recorder.setScissor(static_cast<int32_t>((tile % 2) * k_shadowTileSize),
+                static_cast<int32_t>((tile / 2) * k_shadowTileSize), k_shadowTileSize, k_shadowTileSize);
+
+            const math::Mat4& tileViewProjection = prepared.tiles[tile].atlasViewProjection;
+
+            for (const uint32_t index : casters)
+            {
+                const DrawItem& item = m_state->draws[index];
+                const math::Mat4 lightModel = tileViewProjection * item.model;
+
+                if (item.material->maskedShadow)
+                {
+                    const PbrFactors& factors = item.material->factors;
+                    const MaskedShadowConstants constants{
+                        .lightModel = lightModel,
+                        .mask = {factors.baseColorFactor[3], factors.surface[3], 0.0f, 0.0f}};
+                    recorder.draw(*item.mesh, *item.material->maskedShadow, constants);
+                    continue;
+                }
+
+                recorder.draw(*item.mesh, m_material, lightModel);
             }
         }
     }
 
-    LitScenePass::LitScenePass(RendererState& state)
-        : m_state(&state)
+    Result<std::unique_ptr<LitScenePass>> LitScenePass::create(RendererState& state)
+    {
+        vela::graphics::RenderState skyState{};
+        skyState.depthWrite = false;
+        skyState.depthCompare = vela::graphics::DepthCompare::LessOrEqual;
+
+        auto material = createBuiltinMaterial(state.context, k_skyVertexShader, k_skyFragmentShader,
+            vela::graphics::VertexLayout{}, skyState);
+
+        if (!material)
+        {
+            return material.error();
+        }
+
+        if (auto bound = material.value().setStorageBuffer(k_lightingSlot, state.lightBuffer); !bound)
+        {
+            return toError(bound.error());
+        }
+
+        return std::unique_ptr<LitScenePass>(new LitScenePass(state, std::move(material).value()));
+    }
+
+    LitScenePass::LitScenePass(const RendererState& state, vela::graphics::Material&& skyMaterial)
+        : m_state(&state),
+          m_skyMaterial(std::move(skyMaterial))
     {
     }
 
@@ -159,94 +267,50 @@ namespace lockstep::render
     {
         vela::graphics::AttachmentSlot color = clearedSlot(k_sceneColorAttachment, k_sceneColorFormat);
         color.clear = {0.0f, 0.0f, 0.0f, 1.0f};
+        vela::graphics::AttachmentSlot ambient = clearedSlot(k_sceneAmbientAttachment, k_sceneColorFormat);
+        ambient.clear = {0.0f, 0.0f, 0.0f, 0.0f};
 
         vela::graphics::PassDescription description{};
         description.colorOutputs.push_back(color);
+        description.colorOutputs.push_back(ambient);
         description.depthOutput = clearedSlot(k_sceneDepthAttachment, k_depthFormat);
         description.inputs.push_back({std::string(k_shadowMapAttachment), vela::graphics::InputUsage::Sampled});
+        description.inputs.push_back({std::string(k_environmentAttachment), vela::graphics::InputUsage::Sampled});
 
         return description;
     }
 
     void LitScenePass::record(vela::graphics::PassRecorder& recorder)
     {
-        const GpuFrameLighting& lighting = m_state->prepared.lighting;
+        recorder.bindAttachment(k_shadowAtlasSlot, std::string(k_shadowMapAttachment));
+        recorder.bindAttachment(k_environmentSlot, std::string(k_environmentAttachment));
+        recorder.bindTexture(k_brdfLutSlot, m_state->environment.brdfLut);
 
-        if (auto uploaded = m_state->lightBuffer.update(std::as_bytes(std::span(&lighting, 1))); !uploaded)
+        auto drawList = [this, &recorder](const std::vector<uint32_t>& list)
         {
-            std::cerr << "Renderer: lighting upload failed: " << uploaded.error().message << '\n';
-            return;
-        }
-
-        recorder.bindAttachment(k_shadowMapSlot, std::string(k_shadowMapAttachment));
-
-        for (const DrawItem& item : m_state->draws)
-        {
-            if (item.material->shading == Shading::Unlit)
+            for (const uint32_t index : list)
             {
-                recorder.draw(*item.mesh, item.material->material, item.model);
-                continue;
+                const DrawItem& item = m_state->draws[index];
+
+                if (item.material->shading == Shading::Unlit)
+                {
+                    recorder.draw(*item.mesh, item.material->material, item.model);
+                    continue;
+                }
+
+                const PbrDrawConstants constants{.model = item.model, .factors = item.material->factors};
+                recorder.draw(*item.mesh, item.material->material, constants);
             }
+        };
 
-            LitDrawConstants constants{.model = item.model, .surface = {}};
+        drawList(m_state->drawLists.opaque);
 
-            for (std::size_t index = 0; index < 4; ++index)
-            {
-                constants.surface[index] = item.material->surface[index];
-            }
-
-            recorder.draw(*item.mesh, item.material->material, constants);
-        }
-    }
-
-    Result<std::unique_ptr<TonemapPass>> TonemapPass::create(RendererState& state)
-    {
-        vela::graphics::RenderState renderState{};
-        renderState.depthTest = false;
-        renderState.depthWrite = false;
-
-        auto material = createMaterial(state.context, k_fullscreenVertexShader, k_tonemapFragmentShader,
-            vela::graphics::VertexLayout{}, renderState);
-
-        if (!material)
+        if (m_state->prepared.lighting.skyGround[3] > 0.0f)
         {
-            return material.error();
+            recorder.bind(m_skyMaterial);
+            recorder.drawInstanced(k_fullscreenTriangleVertices, 1);
         }
 
-        return std::unique_ptr<TonemapPass>(new TonemapPass(state, std::move(material).value()));
-    }
-
-    TonemapPass::TonemapPass(const RendererState& state, vela::graphics::Material&& material)
-        : m_state(&state),
-          m_material(std::move(material))
-    {
-    }
-
-    vela::graphics::PassDescription TonemapPass::describe() const
-    {
-        vela::graphics::AttachmentSlot display = clearedSlot(k_displayAttachment, k_displayFormat);
-        display.load = vela::graphics::LoadOp::DontCare;
-
-        vela::graphics::PassDescription description{};
-        description.colorOutputs.push_back(display);
-        description.inputs.push_back({std::string(k_sceneColorAttachment), vela::graphics::InputUsage::Sampled});
-
-        return description;
-    }
-
-    void TonemapPass::record(vela::graphics::PassRecorder& recorder)
-    {
-        const TonemapSettings& settings = m_state->settings.tonemap;
-
-        const TonemapConstants constants{
-            .exposure = settings.enabled ? settings.exposure : 1.0f,
-            .tonemapper = static_cast<uint32_t>(settings.enabled ? settings.tonemapper : Tonemapper::Clamp),
-            .dither = settings.dither ? k_ditherAmplitude : 0.0f,
-            .frameIndex = m_state->frameIndex};
-
-        recorder.bind(m_material);
-        recorder.setConstants(constants);
-        recorder.bindAttachment(k_sceneColorSlot, std::string(k_sceneColorAttachment));
-        recorder.drawInstanced(k_fullscreenTriangleVertices, 1);
+        drawList(m_state->drawLists.blended);
     }
 } //namespace lockstep::render

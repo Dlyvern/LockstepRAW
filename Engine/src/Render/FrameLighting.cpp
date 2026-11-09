@@ -1,22 +1,19 @@
 #include "FrameLighting.hpp"
 
+#include "SkyModel.hpp"
+
+#include <algorithm>
 #include <cmath>
 
 namespace lockstep::render
 {
     namespace
     {
-        constexpr float k_casterNone{-2.0f};
-        constexpr float k_casterDirectional{-1.0f};
+        constexpr float k_noSpotShadow{-1.0f};
         constexpr float k_pointKind{0.0f};
         constexpr float k_spotKind{1.0f};
-        constexpr float k_spotShadowNear{0.05f};
-        constexpr float k_spotShadowFovMargin{1.05f};
-        constexpr float k_maxSpotShadowFov{math::radians(170.0f)};
-        constexpr float k_directionalDepthScale{2.0f};
-        constexpr math::Vec3 k_worldUp{0.0f, 1.0f, 0.0f};
-        constexpr math::Vec3 k_fallbackUp{1.0f, 0.0f, 0.0f};
-        constexpr float k_parallelThreshold{0.99f};
+        constexpr float k_sunDiskCosine{0.99994f};
+        constexpr float k_sunDiskBrightness{40.0f};
 
         void store(float (&target)[4], const math::Vec3& xyz, float w)
         {
@@ -24,37 +21,6 @@ namespace lockstep::render
             target[1] = xyz.y;
             target[2] = xyz.z;
             target[3] = w;
-        }
-
-        math::Vec3 upFor(const math::Vec3& direction)
-        {
-            return std::abs(math::dot(direction, k_worldUp)) > k_parallelThreshold ? k_fallbackUp : k_worldUp;
-        }
-
-        math::Mat4 spotViewProjection(const SpotLight& light)
-        {
-            const math::Vec3 direction = math::normalize(light.direction);
-            const float fov = std::fmin(light.outerAngle * 2.0f * k_spotShadowFovMargin, k_maxSpotShadowFov);
-            const math::Mat4 view = math::lookAt(light.position, light.position + direction, upFor(direction));
-
-            return math::perspective(fov, 1.0f, k_spotShadowNear, light.range) * view;
-        }
-
-        float spotNormalBiasPerMetre(const SpotLight& light, float normalBias)
-        {
-            const float fov = std::fmin(light.outerAngle * 2.0f * k_spotShadowFovMargin, k_maxSpotShadowFov);
-
-            return normalBias * 2.0f * std::tan(fov * 0.5f) / static_cast<float>(k_shadowMapSize);
-        }
-
-        math::Mat4 directionalViewProjection(const DirectionalLight& light)
-        {
-            const math::Vec3 direction = math::normalize(light.direction);
-            const float radius = light.shadowRadius;
-            const math::Vec3 eye = light.shadowCenter - direction * (radius * k_directionalDepthScale);
-            const math::Mat4 view = math::lookAt(eye, light.shadowCenter, upFor(direction));
-
-            return math::ortho(-radius, radius, -radius, radius, 0.0f, radius * k_directionalDepthScale * 2.0f) * view;
         }
 
         void packPoint(GpuLocalLight& target, const PointLight& light)
@@ -73,46 +39,104 @@ namespace lockstep::render
             store(target.cosInnerKind, math::Vec3{std::cos(light.innerAngle), k_spotKind, 0.0f}, 0.0f);
         }
 
-        void packShadow(PreparedLighting& prepared, const FrameLights& lights, const RenderSettings& settings,
-            uint32_t firstSpotSlot)
+        std::optional<DirectionalLight> frameSun(const FrameLights& lights, const RenderSettings& settings)
+        {
+            if (!settings.lighting.directional)
+            {
+                return std::nullopt;
+            }
+
+            if (lights.directional)
+            {
+                return lights.directional;
+            }
+
+            if (!settings.sky.enabled)
+            {
+                return std::nullopt;
+            }
+
+            return DirectionalLight{
+                .direction = sunTravelDirection(settings.sky.sunAzimuth, settings.sky.sunElevation),
+                .color = skySunRadiance(settings.sky),
+                .intensity = 1.0f,
+                .castsShadows = true};
+        }
+
+        void packSky(GpuFrameLighting& gpu, const RenderSettings& settings, const math::Vec3& sunDirection,
+            const math::Vec3& sunRadiance)
+        {
+            const SkyCoefficients sky = computeSky(settings.sky, sunDirection * -1.0f, sunRadiance);
+
+            store(gpu.skyA, sky.perezA, 0.0f);
+            store(gpu.skyB, sky.perezB, 0.0f);
+            store(gpu.skyC, sky.perezC, 0.0f);
+            store(gpu.skyD, sky.perezD, 0.0f);
+            store(gpu.skyE, sky.perezE, 0.0f);
+            store(gpu.skyZenith, sky.zenith, sky.radianceScale);
+            store(gpu.skyGround, sky.ground, settings.sky.enabled ? 1.0f : 0.0f);
+
+            const bool showDisk = settings.sky.enabled && settings.sky.sunDisk;
+            store(gpu.sunDisk, sunRadiance * k_sunDiskBrightness, showDisk ? k_sunDiskCosine : 0.0f);
+
+            const ImageBasedLightingSettings& ibl = settings.ibl;
+            store(gpu.iblParams, math::Vec3{ibl.diffuseIntensity, ibl.specularIntensity, 0.0f},
+                ibl.enabled && settings.sky.enabled ? 1.0f : 0.0f);
+        }
+
+        void packShadows(PreparedLighting& prepared, const FrameLights& lights, const RenderSettings& settings,
+            const std::optional<DirectionalLight>& sun, const Camera& camera, float aspectRatio)
         {
             GpuFrameLighting& gpu = prepared.lighting;
-            store(gpu.shadowParams, math::Vec3{k_casterNone, settings.shadows.depthBias, 0.0f}, 0.0f);
+            const ShadowSettings& shadows = settings.shadows;
+            store(gpu.shadowParams, math::Vec3{0.0f, shadows.depthBias, shadows.normalBias},
+                shadows.debugCascades ? 1.0f : 0.0f);
+            store(gpu.spotShadowParams, math::Vec3{k_noSpotShadow, 0.0f, 0.0f}, 0.0f);
+            store(gpu.cascadeTexelSize, math::Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
 
-            if (!settings.shadows.enabled)
+            if (!shadows.enabled)
             {
                 return;
             }
 
+            uint32_t sunTiles = k_maxShadowTiles;
+
             if (settings.lighting.localLights)
             {
-                for (uint32_t index = 0; index < lights.spots.size(); ++index)
+                const auto caster = std::find_if(lights.spots.begin(), lights.spots.end(),
+                    [](const SpotLight& spot) { return spot.castsShadows; });
+
+                if (caster != lights.spots.end())
                 {
-                    const SpotLight& spot = lights.spots[index];
+                    const uint32_t tile = k_maxShadowTiles - 1;
+                    const ShadowTile spotTile = fitSpotShadow(*caster, tile);
+                    const float slot = static_cast<float>(lights.points.size()
+                        + static_cast<std::size_t>(caster - lights.spots.begin()));
 
-                    if (spot.castsShadows)
-                    {
-                        prepared.caster = ShadowCaster::Spot;
-                        prepared.shadowViewProjection = spotViewProjection(spot);
-                        store(gpu.shadowParams, math::Vec3{static_cast<float>(firstSpotSlot + index),
-                            settings.shadows.depthBias, spotNormalBiasPerMetre(spot, settings.shadows.normalBias)}, 1.0f);
-                        gpu.shadowViewProjection = prepared.shadowViewProjection;
-
-                        return;
-                    }
+                    prepared.spotTile = tile;
+                    prepared.tiles[tile] = spotTile;
+                    sunTiles = tile;
+                    store(gpu.spotShadowParams, math::Vec3{slot, shadows.normalBias * spotTile.texelSize,
+                        shadows.depthBias * 0.02f}, static_cast<float>(tile));
                 }
             }
 
-            if (settings.lighting.directional && lights.directional && lights.directional->castsShadows)
+            if (sun && sun->castsShadows)
             {
-                const DirectionalLight& directional = *lights.directional;
-                const float texelSize = directional.shadowRadius * 2.0f / static_cast<float>(k_shadowMapSize);
+                const uint32_t count = std::clamp(shadows.cascadeCount, 1u, sunTiles);
+                fitSunCascades(camera, aspectRatio, math::normalize(sun->direction), shadows, count, prepared.tiles);
+                prepared.cascadeCount = count;
+                gpu.shadowParams[0] = static_cast<float>(count);
 
-                prepared.caster = ShadowCaster::Directional;
-                prepared.shadowViewProjection = directionalViewProjection(directional);
-                store(gpu.shadowParams, math::Vec3{k_casterDirectional, settings.shadows.depthBias,
-                    settings.shadows.normalBias * texelSize}, 0.0f);
-                gpu.shadowViewProjection = prepared.shadowViewProjection;
+                for (uint32_t cascade = 0; cascade < count; ++cascade)
+                {
+                    gpu.cascadeTexelSize[cascade] = prepared.tiles[cascade].texelSize;
+                }
+            }
+
+            for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
+            {
+                gpu.shadowTileViewProjection[tile] = prepared.tiles[tile].atlasViewProjection;
             }
         }
     } //namespace
@@ -130,20 +154,28 @@ namespace lockstep::render
         dropped = 0;
     }
 
-    PreparedLighting prepareLighting(const FrameLights& lights, const RenderSettings& settings)
+    uint32_t PreparedLighting::tileCount() const
+    {
+        return cascadeCount + (spotTile ? 1u : 0u);
+    }
+
+    PreparedLighting prepareLighting(const FrameLights& lights, const RenderSettings& settings, const Camera& camera,
+        float aspectRatio)
     {
         PreparedLighting prepared{};
         GpuFrameLighting& gpu = prepared.lighting;
 
         store(gpu.ambient, settings.lighting.ambientColor * settings.lighting.ambientIntensity, 0.0f);
-        store(gpu.directionalDirection, math::Vec3{0.0f, -1.0f, 0.0f}, 0.0f);
-        store(gpu.directionalColor, math::Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
 
-        if (settings.lighting.directional && lights.directional)
-        {
-            store(gpu.directionalDirection, math::normalize(lights.directional->direction), 1.0f);
-            store(gpu.directionalColor, lights.directional->color * lights.directional->intensity, 0.0f);
-        }
+        const std::optional<DirectionalLight> sun = frameSun(lights, settings);
+        const math::Vec3 skySunDirection = sun ? math::normalize(sun->direction)
+            : sunTravelDirection(settings.sky.sunAzimuth, settings.sky.sunElevation);
+        const math::Vec3 sunRadiance = sun ? sun->color * sun->intensity : math::Vec3{0.0f, 0.0f, 0.0f};
+
+        prepared.hasSun = sun.has_value();
+        store(gpu.sunDirection, skySunDirection, sun ? 1.0f : 0.0f);
+        store(gpu.sunRadiance, sunRadiance, 0.0f);
+        packSky(gpu, settings, skySunDirection, sunRadiance);
 
         const FogSettings& fog = settings.fog;
         store(gpu.fogColor, fog.color, fog.density);
@@ -169,7 +201,7 @@ namespace lockstep::render
         gpu.counts[2] = 0;
         gpu.counts[3] = 0;
 
-        packShadow(prepared, lights, settings, static_cast<uint32_t>(lights.points.size()));
+        packShadows(prepared, lights, settings, sun, camera, aspectRatio);
 
         return prepared;
     }

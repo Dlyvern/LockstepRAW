@@ -8,6 +8,7 @@
 #include "Lockstep/Render/Renderer.hpp"
 
 #include <cstdint>
+#include <span>
 
 namespace lockstep::app
 {
@@ -18,6 +19,8 @@ namespace lockstep::app
     // maxTicksPerFrame: most ticks run in one frame; time beyond that is dropped after a stall.
     // session:          whether the network session hosts or connects at startup (see
     //                   net::parseSessionLaunch() for the command-line form).
+    // arguments:        command-line options (without the program name) handed to Game through
+    //                   EngineContext::arguments. The strings must outlive run().
     struct RunDescription
     {
         platform::WindowDescription window{};
@@ -25,6 +28,7 @@ namespace lockstep::app
         double tickRate{60.0};
         uint32_t maxTicksPerFrame{5};
         net::SessionLaunch session{};
+        std::span<const char* const> arguments{};
     };
 
     // Creates the window, renderer, dev tools, network session, physics world, time domains,

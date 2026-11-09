@@ -24,7 +24,6 @@ namespace game
         using lockstep::app::EngineContext;
         using lockstep::app::GameState;
 
-        constexpr std::array<math::Vec3, k_playerCount> k_pawnSpawnPoints{{{-2.0f, 0.0f, 8.0f}, {2.0f, 0.0f, 8.0f}}};
         constexpr std::array<world::EntityOwner, k_playerCount> k_pawnOwners{world::EntityOwner::Player1,
             world::EntityOwner::Player2};
         constexpr double k_viewToShotTicks{0.5};
@@ -42,7 +41,7 @@ namespace game
         lockstep::Status spawnPlayer(GameState& state, EngineContext& engine, std::size_t pawnIndex)
         {
             return spawnPawn(state.simulation.pawns[pawnIndex], engine.entities, engine.replication, engine.physics,
-                k_pawnOwners[pawnIndex], k_pawnSpawnPoints[pawnIndex], state.settings.pawns);
+                k_pawnOwners[pawnIndex], state.settings.spawnPoints[pawnIndex], state.settings.pawns);
         }
 
         void syncClientPawn(GameState& state, EngineContext& engine)

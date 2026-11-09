@@ -3,6 +3,7 @@
 #include <Lockstep/App/Run.hpp>
 #include <Lockstep/Core/Result.hpp>
 #include <Lockstep/Net/SessionLaunch.hpp>
+#include <Lockstep/Render/PresentMode.hpp>
 
 #include <cstddef>
 #include <iostream>
@@ -21,11 +22,19 @@ namespace
 int main(int argc, char** argv)
 {
     const std::span<const char* const> arguments(argv, static_cast<size_t>(argc));
-    auto session = lockstep::net::parseSessionLaunch(arguments.empty() ? arguments : arguments.subspan(1));
+    const std::span<const char* const> options = arguments.empty() ? arguments : arguments.subspan(1);
+    auto session = lockstep::net::parseSessionLaunch(options);
 
     if (!session)
     {
         return reportError(session.error());
+    }
+
+    auto presentMode = lockstep::render::parsePresentMode(options);
+
+    if (!presentMode)
+    {
+        return reportError(presentMode.error());
     }
 
     const char* title = "Lockstep";
@@ -41,7 +50,9 @@ int main(int argc, char** argv)
 
     const lockstep::Status status = lockstep::app::run({
             .window = {.title = title, .width = 1280, .height = 720},
-            .session = std::move(session).value()},
+            .renderer = {.presentMode = presentMode.value()},
+            .session = std::move(session).value(),
+            .arguments = options},
         game::gameApi());
 
     if (!status)

@@ -20,6 +20,11 @@ namespace lockstep::app
     {
         using Clock = std::chrono::steady_clock;
 
+        float toMilliseconds(Clock::duration duration)
+        {
+            return std::chrono::duration<float, std::milli>(duration).count();
+        }
+
         Status validate(const RunDescription& description, const GameApi& game)
         {
             if (!(description.tickRate > 0.0) || description.maxTicksPerFrame == 0)
@@ -138,10 +143,16 @@ namespace lockstep::app
                     .frameSeconds = static_cast<float>(frameSeconds),
                     .input = frameInput});
 
+                const Clock::time_point renderStart = Clock::now();
+
                 if (auto rendered = loop.engine.renderer.render(); !rendered)
                 {
                     return rendered;
                 }
+
+                loop.devTools.recordFrameTiming(debug::FrameTiming{
+                    .workMilliseconds = toMilliseconds(renderStart - now),
+                    .renderMilliseconds = toMilliseconds(Clock::now() - renderStart)});
             }
 
             return {};
@@ -207,7 +218,8 @@ namespace lockstep::app
             .entities = entities,
             .session = session,
             .replication = replication,
-            .physics = physics.value()};
+            .physics = physics.value(),
+            .arguments = description.arguments};
 
         auto state = game.init(engine);
 

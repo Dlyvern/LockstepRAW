@@ -31,6 +31,17 @@ namespace lockstep::debug
 {
     struct DevToolsState;
 
+    // Wall-clock split of one run-loop iteration, measured by the run loop.
+    // workMilliseconds:   from the start of the iteration (before window.pollEvents()) to the
+    //                     call of renderer.render().
+    // renderMilliseconds: duration of renderer.render(). Includes Vela's wait for a free frame
+    //                     and a swapchain image (the vsync wait), recording, submit and present.
+    struct FrameTiming
+    {
+        float workMilliseconds{0.0f};
+        float renderMilliseconds{0.0f};
+    };
+
     // The in-game ImGui dev tools overlay: an engine stats panel, a graphics panel (renderer
     // feature toggles and tunables) plus any panels Game draws with ImGui. F1 toggles it; it starts visible in debug builds and hidden otherwise.
     //
@@ -89,6 +100,13 @@ namespace lockstep::debug
         // renderer.render().
         // physics: the physics world to report on.
         void drawPhysicsSection(const physics::PhysicsWorld& physics);
+
+        // Records one frame for the Engine panel's frame time, CPU work and Vela frame figures
+        // (min/avg/max over the last few seconds). CPU work is the frame minus the time spent
+        // inside Vela's RenderGraph::execute(), which blocks on vsync. Call once per frame right
+        // after renderer.render(), whether or not the overlay is visible.
+        // timing: the frame's measured split.
+        void recordFrameTiming(const FrameTiming& timing);
 
         // Returns: true if the last beginFrame() showed the overlay. This does not mean an ImGui
         //          frame is open: Game ImGui calls are only valid while this is true AND between

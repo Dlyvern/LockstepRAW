@@ -10,22 +10,18 @@ namespace lockstep::render
     // Most point and spot lights one frame can use, together. Lights submitted past this are dropped.
     inline constexpr uint32_t k_maxLocalLights{16};
 
-    // A light infinitely far away, lighting everything from one direction (moonlight through a
-    // skylight, a distant floodlight). One per frame.
+    // A light infinitely far away, lighting everything from one direction: the sun. One per frame;
+    // when Game submits none, the sky's sun is used (see SkySettings).
     // direction:    unit direction the light travels in (from the light towards the scene).
     // color:        linear RGB colour.
-    // intensity:    brightness multiplier on `color`.
-    // castsShadows: true to let it cast the frame's shadow map, if no spot light claims it.
-    // shadowCenter: centre of the world region its shadow map covers.
-    // shadowRadius: radius of that region, in metres.
+    // intensity:    brightness multiplier on `color`; 1 lights a white surface facing it to 1.
+    // castsShadows: true to cast cascaded shadow maps.
     struct DirectionalLight
     {
         math::Vec3 direction{0.0f, -1.0f, 0.0f};
         math::Vec3 color{1.0f, 1.0f, 1.0f};
         float intensity{1.0f};
         bool castsShadows{false};
-        math::Vec3 shadowCenter{0.0f, 0.0f, 0.0f};
-        float shadowRadius{25.0f};
     };
 
     // A light shining in every direction from a point (a bulb, a lamp).
@@ -49,8 +45,8 @@ namespace lockstep::render
     // range:        distance at which the light fades out completely, in metres.
     // innerAngle:   half-angle of the fully lit core, in radians.
     // outerAngle:   half-angle where the cone has faded to nothing, in radians. Must be > innerAngle.
-    // castsShadows: true to cast the frame's shadow map. Only the first such spot light of a
-    //               frame does; it takes precedence over the directional light.
+    // castsShadows: true to cast a shadow map. Only the first such spot light of a frame does; it
+    //               takes the last tile of the shadow atlas, leaving the sun one cascade fewer.
     struct SpotLight
     {
         math::Vec3 position{0.0f, 0.0f, 0.0f};

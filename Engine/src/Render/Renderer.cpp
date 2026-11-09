@@ -1,7 +1,9 @@
 #include "Lockstep/Render/Renderer.hpp"
 
 #include "FrameAttachments.hpp"
+#include "FrameCulling.hpp"
 #include "FramePasses.hpp"
+#include "PostPasses.hpp"
 #include "RendererState.hpp"
 #include "ShaderLoader.hpp"
 #include "VelaConversions.hpp"
@@ -13,6 +15,7 @@
 #include <algorithm>
 #include <cassert>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -24,13 +27,73 @@ namespace lockstep::render
     {
         constexpr std::string_view k_unlitVertexShader{"unlit.vert.spv"};
         constexpr std::string_view k_unlitFragmentShader{"unlit.frag.spv"};
-        constexpr std::string_view k_litVertexShader{"lit.vert.spv"};
-        constexpr std::string_view k_litFragmentShader{"lit.frag.spv"};
+        constexpr std::string_view k_pbrVertexShader{"pbr.vert.spv"};
+        constexpr std::string_view k_pbrFragmentShader{"pbr.frag.spv"};
+        constexpr std::string_view k_shadowMaskVertexShader{"shadow_mask.vert.spv"};
+        constexpr std::string_view k_shadowMaskFragmentShader{"shadow_mask.frag.spv"};
+        constexpr std::string_view k_environmentPassName{"environment"};
         constexpr std::string_view k_shadowPassName{"shadow"};
         constexpr std::string_view k_scenePassName{"scene"};
-        constexpr std::string_view k_tonemapPassName{"tonemap"};
         constexpr const char* k_engineName{"Lockstep"};
         constexpr std::string_view k_enginePassPrefix{"engine-pass-"};
+        constexpr vela::core::VSync k_uncappedChain[]{vela::core::VSync::Off, vela::core::VSync::Fast};
+        constexpr vela::core::VSync k_lowLatencyChain[]{vela::core::VSync::Fast};
+
+        std::span<const vela::core::VSync> fallbackChain(PresentMode mode)
+        {
+            switch (mode)
+            {
+                case PresentMode::Uncapped:
+                {
+                    return k_uncappedChain;
+                }
+                case PresentMode::LowLatency:
+                {
+                    return k_lowLatencyChain;
+                }
+                case PresentMode::VSync:
+                {
+                    break;
+                }
+            }
+
+            return {};
+        }
+
+        Result<vela::core::Context> createAttachedContext(vela::core::Window& window,
+            vela::core::ContextPreferences& preferences, vela::core::VSync vsync)
+        {
+            preferences.preferredVSync = vsync;
+            auto context = vela::core::Context::create(window, preferences);
+
+            if (!context)
+            {
+                return toError(context.error());
+            }
+
+            if (auto attached = context.value().attach(window); !attached)
+            {
+                return toError(attached.error());
+            }
+
+            return std::move(context).value();
+        }
+
+        Result<vela::core::Context> createPresentingContext(vela::core::Window& window,
+            vela::core::ContextPreferences preferences, PresentMode mode)
+        {
+            for (const vela::core::VSync vsync : fallbackChain(mode))
+            {
+                auto context = createAttachedContext(window, preferences, vsync);
+
+                if (!context || context.value().getSwapchainInfo().actualVSync == vsync)
+                {
+                    return context;
+                }
+            }
+
+            return createAttachedContext(window, preferences, vela::core::VSync::On);
+        }
 
         void updateAspectRatio(RendererState& state)
         {
@@ -50,8 +113,10 @@ namespace lockstep::render
             const std::pair<std::string_view, std::vector<uint32_t>*> files[]{
                 {k_unlitVertexShader, &shaders.unlitVertex},
                 {k_unlitFragmentShader, &shaders.unlitFragment},
-                {k_litVertexShader, &shaders.litVertex},
-                {k_litFragmentShader, &shaders.litFragment}};
+                {k_pbrVertexShader, &shaders.pbrVertex},
+                {k_pbrFragmentShader, &shaders.pbrFragment},
+                {k_shadowMaskVertexShader, &shaders.shadowMaskVertex},
+                {k_shadowMaskFragmentShader, &shaders.shadowMaskFragment}};
 
             for (const auto& [fileName, target] : files)
             {
@@ -88,6 +153,13 @@ namespace lockstep::render
                 return toError(graph.error());
             }
 
+            auto environmentPass = EnvironmentPass::create(state);
+
+            if (!environmentPass)
+            {
+                return environmentPass.error();
+            }
+
             auto shadowPass = ShadowPass::create(state);
 
             if (!shadowPass)
@@ -95,11 +167,17 @@ namespace lockstep::render
                 return shadowPass.error();
             }
 
-            auto tonemapPass = TonemapPass::create(state);
+            auto scenePass = LitScenePass::create(state);
 
-            if (!tonemapPass)
+            if (!scenePass)
             {
-                return tonemapPass.error();
+                return scenePass.error();
+            }
+
+            if (auto added = addFramePass(graph.value(), k_environmentPassName, std::move(environmentPass).value());
+                !added)
+            {
+                return added;
             }
 
             if (auto added = addFramePass(graph.value(), k_shadowPassName, std::move(shadowPass).value()); !added)
@@ -107,12 +185,12 @@ namespace lockstep::render
                 return added;
             }
 
-            if (auto added = addFramePass(graph.value(), k_scenePassName, std::make_unique<LitScenePass>(state)); !added)
+            if (auto added = addFramePass(graph.value(), k_scenePassName, std::move(scenePass).value()); !added)
             {
                 return added;
             }
 
-            if (auto added = addFramePass(graph.value(), k_tonemapPassName, std::move(tonemapPass).value()); !added)
+            if (auto added = addPostPasses(graph.value(), state); !added)
             {
                 return added;
             }
@@ -125,10 +203,11 @@ namespace lockstep::render
     } //namespace
 
     RendererState::RendererState(vela::core::Window& window, vela::core::Context&& context, MaterialShaders&& shaders,
-        vela::graphics::DynamicBuffer&& lightBuffer)
+        vela::graphics::DynamicBuffer&& lightBuffer, EnvironmentResources&& environment)
         : window(window),
           context(std::move(context)),
           shaders(std::move(shaders)),
+          environment(std::move(environment)),
           lightBuffer(std::move(lightBuffer))
     {
     }
@@ -197,18 +276,12 @@ namespace lockstep::render
         vela::core::ContextPreferences preferences{};
         preferences.applicationName = description.applicationName;
         preferences.engineName = k_engineName;
-        preferences.preferredVSync = description.vsync ? vela::core::VSync::On : vela::core::VSync::Off;
 
-        auto context = vela::core::Context::create(velaWindow, preferences);
+        auto context = createPresentingContext(velaWindow, preferences, description.presentMode);
 
         if (!context)
         {
-            return toError(context.error());
-        }
-
-        if (auto attached = context.value().attach(velaWindow); !attached)
-        {
-            return toError(attached.error());
+            return context.error();
         }
 
         auto lightBuffer = vela::graphics::DynamicBuffer::create(context.value(),
@@ -219,8 +292,17 @@ namespace lockstep::render
             return toError(lightBuffer.error());
         }
 
+        auto environment = EnvironmentResources::create(context.value());
+
+        if (!environment)
+        {
+            return environment.error();
+        }
+
         auto state = std::make_unique<RendererState>(velaWindow, std::move(context).value(),
-            std::move(shaders).value(), std::move(lightBuffer).value());
+            std::move(shaders).value(), std::move(lightBuffer).value(), std::move(environment).value());
+
+        state->requestedPresentMode = description.presentMode;
 
         if (auto built = buildFrameGraph(*state); !built)
         {
@@ -250,18 +332,23 @@ namespace lockstep::render
 
     void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform)
     {
-        const vela::graphics::Mesh* velaMesh = m_state->meshes.find(mesh);
-        const MaterialRecord* record = m_state->materials.find(material);
+        const MeshRecord* record = m_state->meshes.find(mesh);
+        const MaterialRecord* materialRecord = m_state->materials.find(material);
 
-        assert(velaMesh != nullptr && "submit: invalid mesh handle");
-        assert(record != nullptr && "submit: invalid material handle");
+        assert(record != nullptr && "submit: invalid mesh handle");
+        assert(materialRecord != nullptr && "submit: invalid material handle");
 
-        if (velaMesh == nullptr || record == nullptr)
+        if (record == nullptr || materialRecord == nullptr)
         {
             return;
         }
 
-        m_state->draws.push_back({.mesh = velaMesh, .material = record, .model = math::toMatrix(transform)});
+        m_state->draws.push_back({
+            .mesh = &record->mesh,
+            .material = materialRecord,
+            .model = math::toMatrix(transform),
+            .worldBounds = math::transformBounds(record->bounds, transform),
+            .cameraDistance = 0.0f});
     }
 
     void Renderer::submitLight(const DirectionalLight& light)
@@ -303,26 +390,42 @@ namespace lockstep::render
 
     Status Renderer::render()
     {
-        updateAspectRatio(*m_state);
+        RendererState& state = *m_state;
+        updateAspectRatio(state);
 
-        for (RegisteredPass& registered : m_state->passes)
+        for (RegisteredPass& registered : state.passes)
         {
             registered.pass->prepareFrame();
         }
 
-        m_state->prepared = prepareLighting(m_state->lights, m_state->settings);
-        m_state->graph->setView(toViewMatrix(m_state->camera),
-            toProjectionMatrix(m_state->camera, m_state->aspectRatio));
+        state.view = toViewMatrix(state.camera);
+        state.projection = toProjectionMatrix(state.camera, state.aspectRatio);
+        state.prepared = prepareLighting(state.lights, state.settings, state.camera, state.aspectRatio);
+        buildDrawLists(state, state.projection * state.view);
+        state.graph->setView(state.view, state.projection);
 
-        auto frame = m_state->graph->execute();
-        m_state->lastFrameLights = {
-            .local = static_cast<uint32_t>(m_state->lights.points.size() + m_state->lights.spots.size()),
-            .dropped = m_state->lights.dropped,
-            .hasDirectional = m_state->lights.directional.has_value(),
-            .caster = m_state->prepared.caster};
-        m_state->draws.clear();
-        m_state->lights.clear();
-        ++m_state->frameIndex;
+        auto frame = state.graph->execute();
+
+        uint32_t shadowDraws = 0;
+
+        for (const std::vector<uint32_t>& casters : state.drawLists.shadowCasters)
+        {
+            shadowDraws += static_cast<uint32_t>(casters.size());
+        }
+
+        state.lastFrame = {
+            .local = static_cast<uint32_t>(state.lights.points.size() + state.lights.spots.size()),
+            .dropped = state.lights.dropped,
+            .hasDirectional = state.prepared.hasSun,
+            .spotShadow = state.prepared.spotTile.has_value(),
+            .cascades = state.prepared.cascadeCount,
+            .submitted = static_cast<uint32_t>(state.draws.size()),
+            .visible = static_cast<uint32_t>(state.drawLists.opaque.size() + state.drawLists.blended.size()),
+            .shadowDraws = shadowDraws};
+        state.draws.clear();
+        state.drawLists.clear();
+        state.lights.clear();
+        ++state.frameIndex;
 
         if (!frame)
         {

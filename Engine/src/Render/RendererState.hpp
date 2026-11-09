@@ -1,13 +1,17 @@
 #ifndef LOCKSTEP_RENDER_RENDERER_STATE_HPP
 #define LOCKSTEP_RENDER_RENDERER_STATE_HPP
 
+#include "Lockstep/Core/Bounds.hpp"
 #include "Lockstep/Core/Math.hpp"
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Render/Camera.hpp"
+#include "Lockstep/Render/PbrMaterial.hpp"
+#include "Lockstep/Render/PresentMode.hpp"
 #include "Lockstep/Render/Renderer.hpp"
 #include "Lockstep/Render/RenderSettings.hpp"
 #include "Lockstep/Render/Resources.hpp"
 
+#include "EnvironmentResources.hpp"
 #include "FrameLighting.hpp"
 #include "RenderPass.hpp"
 #include "RenderPassAdapter.hpp"
@@ -21,6 +25,7 @@
 #include <Vela/Graphics/RenderGraph.hpp>
 #include <Vela/Graphics/Texture.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -34,40 +39,96 @@ namespace lockstep::render
     {
         std::vector<uint32_t> unlitVertex;
         std::vector<uint32_t> unlitFragment;
-        std::vector<uint32_t> litVertex;
-        std::vector<uint32_t> litFragment;
+        std::vector<uint32_t> pbrVertex;
+        std::vector<uint32_t> pbrFragment;
+        std::vector<uint32_t> shadowMaskVertex;
+        std::vector<uint32_t> shadowMaskFragment;
     };
 
-    // A material and the shading parameters the scene pass pushes with each of its draws.
-    // material: the Vela material (pipeline and set-1 bindings).
-    // shading:  lit or unlit.
-    // surface:  x specular, y shininess, z emissive, w unused. Read by lit.frag.
+    // A GPU mesh and its object-space bounds (for culling). Every mesh uses the PbrVertex layout.
+    struct MeshRecord
+    {
+        vela::graphics::Mesh mesh;
+        math::Aabb bounds{};
+    };
+
+    // Per-draw material constants pushed with each PBR draw (pbr.vert / pbr.frag DrawConstants
+    // after the model matrix).
+    // baseColorFactor:     linear RGBA.
+    // emissiveNormalScale: rgb emissive factor, w normal scale.
+    // surface:             x metallic, y roughness, z occlusion strength, w alpha cutoff (-1 when
+    //                      not masked).
+    // flags:               x 1 if double-sided, y 1 if alpha-blended.
+    struct PbrFactors
+    {
+        float baseColorFactor[4]{1.0f, 1.0f, 1.0f, 1.0f};
+        float emissiveNormalScale[4]{0.0f, 0.0f, 0.0f, 1.0f};
+        float surface[4]{0.0f, 1.0f, 1.0f, -1.0f};
+        float flags[4]{0.0f, 0.0f, 0.0f, 0.0f};
+    };
+
+    // A material and everything its draws need.
+    // material:     the Vela material for the scene pass (pipeline and set-1 bindings).
+    // maskedShadow: for alpha-masked lit materials, the shadow-pass material that discards by
+    //               the base colour alpha.
+    // shading:      lit (PBR) or unlit.
+    // alphaMode:    opaque, masked or blended; blended draws are sorted after opaque ones and
+    //               cast no shadows.
+    // factors:      the constants pushed with each draw (lit only).
     struct MaterialRecord
     {
         vela::graphics::Material material;
+        std::optional<vela::graphics::Material> maskedShadow;
         Shading shading{Shading::Lit};
-        float surface[4]{0.0f, 0.0f, 0.0f, 0.0f};
+        AlphaMode alphaMode{AlphaMode::Opaque};
+        PbrFactors factors{};
     };
 
     // One submitted draw, valid until the end of the frame's render().
+    // worldBounds:    the mesh bounds in world space.
+    // cameraDistance: distance from the camera to the bounds' centre, for sorting.
     struct DrawItem
     {
         const vela::graphics::Mesh* mesh{nullptr};
         const MaterialRecord* material{nullptr};
         math::Mat4 model{1.0f};
+        math::Aabb worldBounds{};
+        float cameraDistance{0.0f};
     };
 
-    // What the last render() lit, for the dev tools.
+    // Indices into RendererState::draws chosen for one frame.
+    // opaque:        visible opaque, masked and unlit draws, front to back.
+    // blended:       visible alpha-blended draws, back to front.
+    // shadowCasters: per shadow atlas tile, the draws that cast into it.
+    struct FrameDrawLists
+    {
+        std::vector<uint32_t> opaque;
+        std::vector<uint32_t> blended;
+        std::array<std::vector<uint32_t>, k_maxShadowTiles> shadowCasters;
+
+        // Forgets every list, keeping their storage.
+        void clear();
+    };
+
+    // What the last render() drew and lit, for the dev tools.
     // local:          point and spot lights used.
     // dropped:        lights rejected over k_maxLocalLights.
-    // hasDirectional: a directional light was submitted.
-    // caster:         which light cast the shadow map.
-    struct FrameLightStats
+    // hasDirectional: the frame had a sun (submitted or from the sky).
+    // spotShadow:     a spot light cast a shadow.
+    // cascades:       sun shadow cascades rendered.
+    // submitted:      draws submitted.
+    // visible:        draws that passed frustum culling.
+    // shadowDraws:    shadow-map draws over all atlas tiles.
+    struct FrameStats
     {
         uint32_t local{0};
         uint32_t dropped{0};
         bool hasDirectional{false};
-        ShadowCaster caster{ShadowCaster::None};
+        bool spotShadow{false};
+        uint32_t cascades{0};
+        uint32_t submitted{0};
+        uint32_t visible{0};
+        uint32_t shadowDraws{0};
     };
 
     // An Engine pass added to the render graph, and the graph-owned adapter that forwards to it.
@@ -93,8 +154,9 @@ namespace lockstep::render
         // context:         a context already attached to `window`.
         // shaders:         SPIR-V of the built-in material shaders.
         // lightBuffer:     the per-frame lighting storage buffer lit materials bind.
+        // environment:     default material textures and the BRDF lookup table.
         RendererState(vela::core::Window& window, vela::core::Context&& context, MaterialShaders&& shaders,
-            vela::graphics::DynamicBuffer&& lightBuffer);
+            vela::graphics::DynamicBuffer&& lightBuffer, EnvironmentResources&& environment);
 
         ~RendererState();
 
@@ -115,11 +177,13 @@ namespace lockstep::render
 
         vela::core::Window& window;
         vela::core::Context context;
+        PresentMode requestedPresentMode{k_defaultPresentMode};
 
         MaterialShaders shaders;
 
         ResourcePool<TextureHandle, vela::graphics::Texture> textures;
-        ResourcePool<MeshHandle, vela::graphics::Mesh> meshes;
+        EnvironmentResources environment;
+        ResourcePool<MeshHandle, MeshRecord> meshes;
         vela::graphics::DynamicBuffer lightBuffer;
         ResourcePool<MaterialHandle, MaterialRecord> materials;
 
@@ -127,16 +191,19 @@ namespace lockstep::render
         uint32_t passNameCounter{0};
 
         std::vector<DrawItem> draws;
+        FrameDrawLists drawLists;
         FrameLights lights;
         PreparedLighting prepared;
         RenderSettings settings{};
-        FrameLightStats lastFrameLights{};
+        FrameStats lastFrame{};
         uint32_t frameIndex{0};
 
         std::optional<vela::graphics::RenderGraph> graph;
 
         Camera camera{};
         float aspectRatio{1.0f};
+        math::Mat4 view{1.0f};
+        math::Mat4 projection{1.0f};
     };
 
     // Engine-internal access to a Renderer's state, for Engine modules that extend rendering

@@ -12,9 +12,10 @@ namespace lockstep::debug
         float smoothedGpuMs{0.0f};
     };
 
-    // Draws the "Graphics" ImGui window: smoothed GPU frame time, the frame's light counts and
-    // shadow caster, and every renderer feature switch and tunable (lighting, shadows, fog,
-    // tonemapping), edited in place. Must be called inside an ImGui frame.
+    // Draws the "Graphics" ImGui window: smoothed GPU frame time, the frame's draw, light and
+    // shadow counts, and every renderer feature switch and tunable (lighting, sun and sky, IBL,
+    // shadows, SSAO, bloom, FXAA, culling, exposure, fog), edited in place. Must be called inside
+    // an ImGui frame.
     // panel:    the panel's state across frames.
     // renderer: the state of the renderer to tune.
     void drawGraphicsPanel(GraphicsPanelState& panel, render::RendererState& renderer);

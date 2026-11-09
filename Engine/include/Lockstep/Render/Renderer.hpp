@@ -5,6 +5,8 @@
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Render/Camera.hpp"
 #include "Lockstep/Render/Lighting.hpp"
+#include "Lockstep/Render/PbrMaterial.hpp"
+#include "Lockstep/Render/PresentMode.hpp"
 #include "Lockstep/Render/RenderSettings.hpp"
 #include "Lockstep/Render/Resources.hpp"
 
@@ -23,18 +25,23 @@ namespace lockstep::render
     struct RendererState;
 
     // Settings for the GPU context the Renderer creates.
+    // applicationName: name reported to the Vulkan driver.
+    // presentMode:     how frames reach the screen; falls back towards VSync when unsupported
+    //                  (see PresentMode).
     struct RendererDescription
     {
         std::string applicationName{"Lockstep"};
-        bool vsync{true};
+        PresentMode presentMode{k_defaultPresentMode};
     };
 
     // Owns the GPU context, the render scene and the render graph, plus every GPU resource
     // created through it. It draws into a platform::Window it does not own. Each frame:
-    // setCamera(), submit() what is visible, submitLight() the lights, then render(). The frame is
-    // a shadow pass, a forward lit scene pass into an HDR target (with fog) and a tonemapping
-    // pass; Engine overlays (dev tools) draw on top of the tonemapped image. Destroying the
-    // Renderer waits for the GPU to go idle first.
+    // setCamera(), submit() what is visible, submitLight() the lights, then render(). Lit
+    // materials are glTF metallic-roughness PBR. The frame is: the procedural sky into an
+    // environment atlas (image-based lighting), cascaded sun shadows (plus one spot light) into a
+    // shadow atlas, a forward HDR scene pass (frustum-culled, opaque front to back, sky, blended back
+    // to front), SSAO, bloom, tonemapping and FXAA; Engine overlays (dev tools) draw on top of the
+    // final image. Destroying the Renderer waits for the GPU to go idle first.
     class Renderer
     {
     public:
@@ -62,8 +69,17 @@ namespace lockstep::render
         [[nodiscard]] Result<MeshHandle> createMesh(std::span<const Vertex> vertices,
             std::span<const uint32_t> indices);
 
-        // Uploads a 2D RGBA8 texture to the GPU.
-        // description: pixel data, size, format and filtering. Pixels must hold width * height * 4 bytes.
+        // Uploads a static PBR mesh to the GPU and records its bounds for culling.
+        // vertices: vertex data with normals, texture coordinates and tangents (see PbrVertex).
+        // indices:  triangle-list indices into `vertices`, counter-clockwise front faces (as in
+        //           glTF). Must not be empty.
+        // Returns:  a handle to the mesh, or an error if the data is empty or the upload failed.
+        [[nodiscard]] Result<MeshHandle> createMesh(std::span<const PbrVertex> vertices,
+            std::span<const uint32_t> indices);
+
+        // Uploads a 2D texture (RGBA8 or block compressed, with or without mips) to the GPU.
+        // description: pixel data of every level, size, format, filtering and level count. Pixels
+        //              must hold exactly the sum of textureLevelBytes() over the levels.
         // Returns:     a handle to the texture, or an error if the description is invalid or the
         //              upload failed.
         [[nodiscard]] Result<TextureHandle> createTexture(const TextureDescription& description);
@@ -74,6 +90,13 @@ namespace lockstep::render
         // Returns:     a handle to the material, or an error if the texture handle is invalid or the
         //              pipeline could not be created.
         [[nodiscard]] Result<MaterialHandle> createMaterial(const MaterialDescription& description);
+
+        // Creates a glTF 2.0 metallic-roughness material (see PbrMaterialDescription).
+        // description: factors, textures created by this renderer (any may be invalid), alpha mode
+        //              and sidedness.
+        // Returns:     a handle to the material, or an error if a valid-looking texture handle does
+        //              not resolve or the pipeline could not be created.
+        [[nodiscard]] Result<MaterialHandle> createMaterial(const PbrMaterialDescription& description);
 
         // Sets the point of view for the next render().
         // camera: camera position, orientation and lens.

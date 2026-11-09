@@ -5,6 +5,7 @@
 #include "Lockstep/Platform/Input.hpp"
 
 #include <cstdint>
+#include <span>
 
 namespace lockstep::platform
 {
@@ -47,6 +48,8 @@ namespace lockstep::app
     //              input message to the host.
     // physics:     rigid bodies, raycasts and character controllers. Stepped by the run loop
     //              with the World delta before each fixedTick.
+    // arguments:   the command-line options from RunDescription::arguments, for Game's own
+    //              options (Engine's parsers ignore what they don't know).
     struct EngineContext
     {
         platform::Window& window;
@@ -56,6 +59,7 @@ namespace lockstep::app
         net::Session& session;
         net::Replication& replication;
         physics::PhysicsWorld& physics;
+        std::span<const char* const> arguments;
     };
 
     // What one fixed simulation tick gets.
