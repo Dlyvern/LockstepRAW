@@ -3,6 +3,8 @@
 
 #include <Lockstep/Core/Result.hpp>
 
+#include "TextureCaps.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -16,6 +18,7 @@ namespace lockstep::cooker
     //          "<name>/scene". The folder is emptied first.
     // scale:   uniform scale applied to the scene.
     // threads: worker threads; 0 picks the hardware thread count.
+    // textureCaps: texture size limits (see textureCaps()).
     struct CookOptions
     {
         std::filesystem::path source;
@@ -23,6 +26,7 @@ namespace lockstep::cooker
         std::string name;
         float scale{1.0f};
         uint32_t threads{0};
+        TextureCapOptions textureCaps{};
     };
 
     // Cooks a glTF scene into engine-ready files: meshes in PbrVertex layout, textures in their

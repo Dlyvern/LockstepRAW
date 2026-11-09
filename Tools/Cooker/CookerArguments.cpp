@@ -30,6 +30,8 @@ namespace lockstep::cooker
             return T{value};
         }
 
+        constexpr std::string_view k_noAutoCap{"--no-auto-cap"};
+
         struct ParsedFlags
         {
             std::vector<std::string_view> positional;
@@ -47,6 +49,12 @@ namespace lockstep::cooker
                 if (!argument.starts_with("--"))
                 {
                     parsed.positional.push_back(argument);
+                    continue;
+                }
+
+                if (argument == k_noAutoCap)
+                {
+                    parsed.flags.emplace_back(argument, std::string_view{});
                     continue;
                 }
 
@@ -146,6 +154,32 @@ namespace lockstep::cooker
                     }
 
                     options.threads = threads.value();
+                }
+                else if (flag == "--max-texture-size")
+                {
+                    auto size = parseNumber<uint32_t>(flag, value);
+
+                    if (!size || size.value() < 4)
+                    {
+                        return invalid("--max-texture-size must be at least 4");
+                    }
+
+                    options.textureCaps.maxSize = size.value();
+                }
+                else if (flag == "--texels-per-metre")
+                {
+                    auto density = parseNumber<float>(flag, value);
+
+                    if (!density || !(density.value() > 0.0f) || !std::isfinite(density.value()))
+                    {
+                        return invalid("--texels-per-metre must be a positive number");
+                    }
+
+                    options.textureCaps.texelsPerMetre = density.value();
+                }
+                else if (flag == k_noAutoCap)
+                {
+                    options.textureCaps.automatic = false;
                 }
                 else
                 {

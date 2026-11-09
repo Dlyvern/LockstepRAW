@@ -18,6 +18,7 @@ namespace lockstep::cooker
     inline constexpr const char* k_usage =
         "usage:\n"
         "  LockstepCooker <source.gltf> --out <dir> --name <virtual prefix> [--scale f] [--threads n]\n"
+        "      [--max-texture-size n] [--texels-per-metre n] [--no-auto-cap]\n"
         "  LockstepCooker pack <cooked dir> <out.pak> [--zstd-level n] [--threads n]\n";
 
     // Parses the cooker's command line.

@@ -10,6 +10,7 @@ add_executable(LockstepCooker
     PakWriter.cpp
     SceneCook.cpp
     SceneSource.cpp
+    TextureCaps.cpp
     TextureCook.cpp
 )
 

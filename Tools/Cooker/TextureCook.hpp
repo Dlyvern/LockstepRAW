@@ -21,6 +21,8 @@ namespace lockstep::cooker
     // width / height:   base level size.
     // levels:           mip levels (always the full chain).
     // pixelBytes:       GPU memory of all levels.
+    // sourceWidth / sourceHeight: size of the decoded source image.
+    // uncappedBytes:    GPU memory all levels would take at the source size.
     // meanSquaredError: encoding error of the base level against the decoded source (see
     //                   blockError()).
     struct CookedTexture
@@ -31,6 +33,9 @@ namespace lockstep::cooker
         uint32_t height{0};
         uint32_t levels{0};
         uint64_t pixelBytes{0};
+        uint32_t sourceWidth{0};
+        uint32_t sourceHeight{0};
+        uint64_t uncappedBytes{0};
         double meanSquaredError{0.0};
     };
 
@@ -41,13 +46,16 @@ namespace lockstep::cooker
     // Cooks an encoded image: decodes it (jpg, png, KTX2 incl. Basis Universal; a stored mip
     // chain is replaced), builds a full mip chain on the CPU (box filter; sRGB colour averaged in
     // linear space; normal maps averaged as unit vectors and renormalized) and block-compresses
-    // every level. Deterministic.
+    // every level. Levels whose larger side exceeds `maxSize` are dropped from the top before
+    // encoding, so a capped texture is the source downscaled by the same filter as its mips.
+    // Deterministic.
     // encoded: the image file contents.
     // usage:   what it holds, which picks the format.
+    // maxSize: largest allowed side of the top level, in texels (at least 1).
     // gate:    the cook's shared Basis transcoder gate.
     // Returns: the cooked texture, or the decode error.
     [[nodiscard]] Result<CookedTexture> cookTexture(std::span<const std::byte> encoded, TextureUsage usage,
-        assets::TranscoderGate& gate);
+        uint32_t maxSize, assets::TranscoderGate& gate);
 } //namespace lockstep::cooker
 
 #endif //LOCKSTEP_COOKER_TEXTURE_COOK_HPP

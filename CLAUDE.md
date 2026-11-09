@@ -84,6 +84,11 @@ for it.
   deterministic. Layout: `<out>/<prefix>/levels/<name>/scene`, `meshes/`, `textures/`,
   `collision/`.
   - Cook: `LockstepCooker <src.gltf> --out Content/cooked/<name> --name levels/<name>`
+    Textures are capped by the size of the objects using them: `--texels-per-metre N` (default
+    1024, so a 0.3 m prop gets 512 and a 2 m bed 2048), `--max-texture-size N` (default 2048;
+    tiling surfaces with UVs beyond 0-1 use it), `--no-auto-cap` to disable.
+  - Third-party assets: every new one gets a line in `CREDITS.md` (CC BY ones must be credited
+    in the shipped game).
   - Pack: `LockstepCooker pack Content/cooked/<name> Content/cooked/<name>.pak [--zstd-level 9]`
     (19 for release paks; 9 while iterating)
   - Run: `LockstepGame --content <dir|pak> [--content ...] --level levels/<name>/scene`

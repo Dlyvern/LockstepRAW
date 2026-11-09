@@ -20,6 +20,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <string>
 #include <system_error>
 
 namespace lockstep::cooker
@@ -240,6 +241,8 @@ namespace lockstep::cooker
             std::array<double, k_usageCount> squaredError{};
             std::array<uint32_t, k_usageCount> counts{};
             uint64_t pixelBytes = 0;
+            uint64_t uncappedBytes = 0;
+            uint32_t cappedCount = 0;
 
             for (std::size_t index = 0; index < outcomes.size(); ++index)
             {
@@ -248,14 +251,22 @@ namespace lockstep::cooker
                     continue;
                 }
 
+                const CookedTexture& cooked = *outcomes[index].cooked;
                 const auto usage = static_cast<std::size_t>(context.scene.textures[index].usage);
-                squaredError[usage] += outcomes[index].cooked->meanSquaredError;
+                squaredError[usage] += cooked.meanSquaredError;
                 ++counts[usage];
-                pixelBytes += outcomes[index].cooked->pixelBytes;
+                pixelBytes += cooked.pixelBytes;
+                uncappedBytes += cooked.uncappedBytes;
+                cappedCount += cooked.width != cooked.sourceWidth || cooked.height != cooked.sourceHeight ? 1 : 0;
             }
 
+            const TextureCapOptions& caps = context.options.textureCaps;
             std::cout << "  textures: " << context.level.textures.size() << " cooked, "
-                << static_cast<double>(pixelBytes) / k_bytesPerMegabyte << " MiB of GPU data with mips\n";
+                << static_cast<double>(pixelBytes) / k_bytesPerMegabyte << " MiB of GPU data with mips ("
+                << static_cast<double>(uncappedBytes) / k_bytesPerMegabyte << " MiB uncapped); " << cappedCount
+                << " capped (max " << caps.maxSize << ", auto "
+                << (caps.automatic ? std::to_string(static_cast<uint32_t>(caps.texelsPerMetre)) + " texels/m" : "off")
+                << ")\n";
 
             for (std::size_t usage = 0; usage < k_usageCount; ++usage)
             {
@@ -281,12 +292,13 @@ namespace lockstep::cooker
             const std::vector<SourceTexture>& textures = context.scene.textures;
             std::vector<TextureOutcome> outcomes(textures.size());
             assets::TranscoderGate gate{};
+            const std::vector<uint32_t> caps = textureCaps(context.scene, context.options.textureCaps);
 
             parallelFor(textures.size(), context.options.threads, [&](std::size_t index)
             {
                 auto bytes = assets::readImageBytes(*textures[index].image, context.sourceFiles,
                     context.scene.directory);
-                auto cooked = bytes ? cookTexture(bytes.value(), textures[index].usage, gate)
+                auto cooked = bytes ? cookTexture(bytes.value(), textures[index].usage, caps[index], gate)
                     : Result<CookedTexture>(bytes.error());
 
                 if (!cooked)

@@ -131,7 +131,7 @@ namespace lockstep::cooker
         }
     }
 
-    Result<CookedTexture> cookTexture(std::span<const std::byte> encoded, TextureUsage usage,
+    Result<CookedTexture> cookTexture(std::span<const std::byte> encoded, TextureUsage usage, uint32_t maxSize,
         assets::TranscoderGate& gate)
     {
         const assets::DecodeTargets rgba8Only{.blockCompression = false, .compress = false};
@@ -149,22 +149,38 @@ namespace lockstep::cooker
 
         CookedTexture cooked{};
         cooked.format = cookedFormat(usage);
-        cooked.width = source.width;
-        cooked.height = source.height;
-        cooked.levels = static_cast<uint32_t>(levels.size());
+        cooked.sourceWidth = source.width;
+        cooked.sourceHeight = source.height;
+        uint32_t topLevel = 0;
+
+        while (topLevel + 1 < levels.size()
+            && std::max(source.width >> topLevel, source.height >> topLevel) > std::max(maxSize, 1u))
+        {
+            ++topLevel;
+        }
+
+        for (uint32_t level = 0; level < levels.size(); ++level)
+        {
+            cooked.uncappedBytes += render::textureLevelBytes(cooked.format, std::max(1u, source.width >> level),
+                std::max(1u, source.height >> level));
+        }
+
+        cooked.width = std::max(1u, source.width >> topLevel);
+        cooked.height = std::max(1u, source.height >> topLevel);
+        cooked.levels = static_cast<uint32_t>(levels.size()) - topLevel;
         std::vector<std::byte> pixels;
 
         for (uint32_t level = 0; level < cooked.levels; ++level)
         {
             const std::size_t start = pixels.size();
-            const uint32_t levelWidth = std::max(1u, source.width >> level);
-            const uint32_t levelHeight = std::max(1u, source.height >> level);
-            encodeBlocks(cooked.format, levels[level], levelWidth, levelHeight, pixels);
+            const uint32_t levelWidth = std::max(1u, cooked.width >> level);
+            const uint32_t levelHeight = std::max(1u, cooked.height >> level);
+            encodeBlocks(cooked.format, levels[topLevel + level], levelWidth, levelHeight, pixels);
 
             if (level == 0)
             {
-                cooked.meanSquaredError = blockError(cooked.format, std::span(pixels).subspan(start), levels[0],
-                    levelWidth, levelHeight);
+                cooked.meanSquaredError = blockError(cooked.format, std::span(pixels).subspan(start),
+                    levels[topLevel], levelWidth, levelHeight);
             }
         }
 
