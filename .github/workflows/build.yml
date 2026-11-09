@@ -1,0 +1,103 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Release build with dev tools ON (F1 overlay, Net panel): these artifacts are playtest builds.
+# Each artifact is the bin folder: the executable plus its compiled shaders.
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential ninja-build \
+            libvulkan-dev glslang-tools \
+            libwayland-dev libwayland-bin wayland-protocols libxkbcommon-dev \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libprotobuf-dev protobuf-compiler libssl-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOCKSTEP_DEV_TOOLS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LockstepGame-linux
+          path: build/bin/
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    env:
+      VCPKG_TRIPLET: x64-windows-static-md
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          curl -Lo vulkan-sdk.exe https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe
+          ./vulkan-sdk.exe --accept-licenses --default-answer --confirm-command install
+          $sdkPath = Get-ChildItem "C:\VulkanSDK" -Directory | Select-Object -Last 1 -ExpandProperty FullName
+          echo "VULKAN_SDK=$sdkPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # protobuf takes a long time to build with vcpkg; cache the built packages between runs.
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg-cache
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-protobuf-openssl-v1
+
+      - name: Install GameNetworkingSockets dependencies (vcpkg)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\vcpkg-cache" | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            protobuf:$env:VCPKG_TRIPLET openssl:$env:VCPKG_TRIPLET
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLOCKSTEP_DEV_TOOLS=ON `
+            -DVulkan_ROOT="$env:VULKAN_SDK" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LockstepGame-windows
+          path: build/bin/
+          if-no-files-found: error

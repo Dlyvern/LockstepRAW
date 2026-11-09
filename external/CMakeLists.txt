@@ -17,3 +17,15 @@ if(LOCKSTEP_DEV_TOOLS)
 
     target_include_directories(imgui SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
 endif()
+
+# GameNetworkingSockets: transport, wrapped privately by Engine/src/Net. Static, OpenSSL crypto,
+# protobuf from the system. No P2P (ICE/WebRTC), examples, tests or tools.
+set(BUILD_STATIC_LIB ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(ENABLE_ICE OFF CACHE BOOL "" FORCE)
+set(USE_STEAMWEBRTC OFF CACHE BOOL "" FORCE)
+set(USE_CRYPTO "OpenSSL" CACHE STRING "" FORCE)
+add_subdirectory(GameNetworkingSockets SYSTEM)

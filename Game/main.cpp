@@ -1,62 +1,53 @@
-#include <Vela/Builtins/ForwardGraph.hpp>
-#include <Vela/Core/Context.hpp>
-#include <Vela/Core/Window.hpp>
-#include <Vela/Graphics/RenderScene.hpp>
+#include "Game.hpp"
 
+#include <Lockstep/App/Run.hpp>
+#include <Lockstep/Core/Result.hpp>
+#include <Lockstep/Net/SessionLaunch.hpp>
+
+#include <cstddef>
 #include <iostream>
+#include <span>
+#include <utility>
 
 namespace
 {
-    int fail(const vela::Error& error)
+    int reportError(const lockstep::Error& error)
     {
-        std::cerr << "Vela error " << static_cast<uint32_t>(error.code) << ": " << error.message << '\n';
+        std::cerr << "Error (" << lockstep::toString(error.code) << "): " << error.message << '\n';
         return 1;
     }
 } //namespace
 
-int main()
+int main(int argc, char** argv)
 {
-    auto windowResult = vela::core::Window::create({.title = "Lockstep", .width = 1280, .height = 720});
+    const std::span<const char* const> arguments(argv, static_cast<size_t>(argc));
+    auto session = lockstep::net::parseSessionLaunch(arguments.empty() ? arguments : arguments.subspan(1));
 
-    if (!windowResult)
-        return fail(windowResult.error());
-
-    vela::core::Window window = std::move(windowResult).value();
-
-    auto contextResult = vela::core::Context::create(window);
-
-    if (!contextResult)
-        return fail(contextResult.error());
-
-    vela::core::Context context = std::move(contextResult).value();
-
-    if (auto attached = context.attach(window); !attached)
-        return fail(attached.error());
-
-    vela::graphics::RenderScene scene;
-
-    auto graphResult = vela::builtins::forwardGraph(context, scene);
-
-    if (!graphResult)
-        return fail(graphResult.error());
-
-    vela::graphics::RenderGraph graph = std::move(graphResult).value();
-
-    vela::core::Event event{};
-
-    while (window.isOpen())
+    if (!session)
     {
-        window.pollEvents();
-
-        while (window.popEvent(event))
-            if (event.type == vela::core::EventType::KeyPressed && event.key == vela::core::Key::Escape)
-                window.close();
-
-        if (auto frame = graph.execute(); !frame)
-            return fail(frame.error());
+        return reportError(session.error());
     }
 
-    context.waitIdle();
+    const char* title = "Lockstep";
+
+    if (session.value().role == lockstep::net::Role::Host)
+    {
+        title = "Lockstep (host)";
+    }
+    else if (session.value().role == lockstep::net::Role::Client)
+    {
+        title = "Lockstep (client)";
+    }
+
+    const lockstep::Status status = lockstep::app::run({
+            .window = {.title = title, .width = 1280, .height = 720},
+            .session = std::move(session).value()},
+        game::gameApi());
+
+    if (!status)
+    {
+        return reportError(status.error());
+    }
 
     return 0;
 }
