@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace lockstep::physics
@@ -148,8 +149,8 @@ namespace game
     // Lists, for the local player, what changed in `state` since the last call.
     // room:        the room; its shown state catches up with `state`.
     // localPlayer: this machine's player index.
-    // Returns:     the lines to show, in order.
-    [[nodiscard]] std::vector<const char*> takeRoomChanges(ApartmentRoom& room, std::size_t localPlayer);
+    // Returns:     the dialogue ids of the lines to show, in order.
+    [[nodiscard]] std::vector<std::string_view> takeRoomChanges(ApartmentRoom& room, std::size_t localPlayer);
 
     // Applies the state to this machine's level: shakes the ringing alarm, swings the lockers, the
     // front door and the street door (colliders too), hides taken mugs and gear.

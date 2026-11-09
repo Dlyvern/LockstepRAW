@@ -234,9 +234,9 @@ namespace game
             << " ticks, " << room.recording.events.size() << " interactions\n";
     }
 
-    std::vector<const char*> takeRoomChanges(ApartmentRoom& room, std::size_t localPlayer)
+    std::vector<std::string_view> takeRoomChanges(ApartmentRoom& room, std::size_t localPlayer)
     {
-        std::vector<const char*> lines = describeRoomChanges(room.shownState, room.state, localPlayer);
+        std::vector<std::string_view> lines = describeRoomChanges(room.shownState, room.state, localPlayer);
         room.shownState = room.state;
 
         return lines;

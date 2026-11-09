@@ -3,6 +3,7 @@
 #include "PhysXConversions.hpp"
 #include "PhysicsState.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace lockstep::physics
@@ -30,6 +31,48 @@ namespace lockstep::physics
                 return physx::PxQueryHitType::eBLOCK;
             }
         };
+
+        class StandingRoomFilter final : public physx::PxQueryFilterCallback
+        {
+        public:
+            physx::PxQueryHitType::Enum preFilter(const physx::PxFilterData&, const physx::PxShape*,
+                const physx::PxRigidActor* actor, physx::PxHitFlags&) override
+            {
+                if (actor == nullptr || decodeActorTag(actor->userData).kind == ActorKind::Controller)
+                {
+                    return physx::PxQueryHitType::eNONE;
+                }
+
+                const auto* dynamic = actor->is<physx::PxRigidDynamic>();
+                const bool isSimulated = dynamic != nullptr
+                    && !dynamic->getRigidBodyFlags().isSet(physx::PxRigidBodyFlag::eKINEMATIC);
+                return isSimulated ? physx::PxQueryHitType::eNONE : physx::PxQueryHitType::eBLOCK;
+            }
+
+            physx::PxQueryHitType::Enum postFilter(const physx::PxFilterData&, const physx::PxQueryHit&,
+                const physx::PxShape*, const physx::PxRigidActor*) override
+            {
+                return physx::PxQueryHitType::eBLOCK;
+            }
+        };
+
+        bool fitsCapsule(const PhysicsState& state, const physx::PxCapsuleController& controller, float cylinderHeight)
+        {
+            const float skin = controller.getContactOffset();
+            const float radius = std::max(controller.getRadius() - skin, k_minMoveDistance);
+            const physx::PxExtendedVec3 foot = controller.getFootPosition();
+            const float centreHeight = 2.0f * skin + radius + 0.5f * cylinderHeight;
+            const physx::PxVec3 centre(static_cast<float>(foot.x), static_cast<float>(foot.y) + centreHeight,
+                static_cast<float>(foot.z));
+            const physx::PxQuat xToUp = physx::PxShortestRotation(physx::PxVec3(1.0f, 0.0f, 0.0f), k_upDirection);
+            const physx::PxCapsuleGeometry capsule(radius, 0.5f * cylinderHeight);
+            const physx::PxQueryFilterData filterData(physx::PxQueryFlag::eSTATIC | physx::PxQueryFlag::eDYNAMIC
+                | physx::PxQueryFlag::ePREFILTER | physx::PxQueryFlag::eANY_HIT);
+            StandingRoomFilter filter;
+            physx::PxOverlapBuffer hit;
+
+            return !state.scene->overlap(capsule, physx::PxTransform(centre, xToUp), hit, filterData, &filter);
+        }
 
         Status validate(const ControllerDescription& description)
         {
@@ -169,6 +212,48 @@ namespace lockstep::physics
         slot->isGrounded = false;
 
         return true;
+    }
+
+    bool PhysicsWorld::setControllerHeight(ControllerId controller, float height, ControllerResize resize)
+    {
+        ControllerSlot* slot = m_state->findController(controller);
+
+        if (slot == nullptr)
+        {
+            return false;
+        }
+
+        physx::PxCapsuleController& capsule = *slot->controller;
+        const float cylinderHeight = height - 2.0f * capsule.getRadius();
+
+        if (!(cylinderHeight > 0.0f))
+        {
+            return false;
+        }
+
+        const bool isGrowing = cylinderHeight > capsule.getHeight();
+
+        if (isGrowing && resize == ControllerResize::MustFit && !fitsCapsule(*m_state, capsule, cylinderHeight))
+        {
+            return false;
+        }
+
+        capsule.resize(cylinderHeight);
+        capsule.invalidateCache();
+
+        return true;
+    }
+
+    std::optional<float> PhysicsWorld::controllerHeight(ControllerId controller) const
+    {
+        const ControllerSlot* slot = m_state->findController(controller);
+
+        if (slot == nullptr)
+        {
+            return std::nullopt;
+        }
+
+        return slot->controller->getHeight() + 2.0f * slot->controller->getRadius();
     }
 
     bool PhysicsWorld::isGrounded(ControllerId controller) const noexcept

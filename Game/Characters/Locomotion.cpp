@@ -239,7 +239,8 @@ namespace game
 
         void playStride(anim::Animator& animator, const StrideClip& stride, float speed)
         {
-            animator.play(stride.clip, k_crossfadeSeconds, {.loop = true, .speed = playbackFor(speed, stride.strideSpeed)});
+            animator.play(stride.clip, k_crossfadeSeconds,
+                {.loop = true, .speed = stride.direction * playbackFor(speed, stride.strideSpeed)});
         }
 
         float forwardBlendParameter(const LocomotionSet& set, float speed)
@@ -320,7 +321,7 @@ namespace game
             .idle = clips[0],
             .walk = {clips[1], measureStrideSpeed(model, clips[1], k_fallbackWalk)},
             .run = {clips[2], measureStrideSpeed(model, clips[2], k_fallbackRun)},
-            .walkBack = {clips[3], measureStrideSpeed(model, clips[3], k_fallbackSide)},
+            .walkBack = {clips[3], measureStrideSpeed(model, clips[3], k_fallbackSide), names.reverseWalkBack ? -1.0f : 1.0f},
             .strafeLeft = {clips[4], measureStrideSpeed(model, clips[4], k_fallbackSide)},
             .strafeRight = {clips[5], measureStrideSpeed(model, clips[5], k_fallbackSide)},
             .turnLeft = findOptionalClip(model, names.turnLeft),

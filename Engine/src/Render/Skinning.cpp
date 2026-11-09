@@ -174,6 +174,12 @@ namespace lockstep::render
     void Renderer::submitSkinned(MeshHandle mesh, MaterialHandle material, const math::Transform& transform,
         JointPalette palette, const math::Aabb& localBounds, RenderLayers layers)
     {
+        if (m_state->meshes.isStale(mesh) || m_state->materials.isStale(material))
+        {
+            reportStaleHandle(*m_state, m_state->meshes.isStale(mesh) ? "submitSkinned: mesh" : "submitSkinned: material");
+            return;
+        }
+
         const MeshRecord* record = m_state->meshes.find(mesh);
         const MaterialRecord* materialRecord = m_state->materials.find(material);
 

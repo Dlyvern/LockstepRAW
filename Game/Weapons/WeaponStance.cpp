@@ -71,8 +71,18 @@ namespace game
         return found;
     }
 
-    bool isWeaponLowered(bool wantsLowered, WeaponZone zone)
+    WeaponZone effectiveWeaponZone(WeaponZone zone, bool isCombatActive)
     {
+        return zone == WeaponZone::Safe && isCombatActive ? WeaponZone::Open : zone;
+    }
+
+    bool isWeaponLowered(bool wantsLowered, WeaponZone zone, bool isHoldingToy)
+    {
+        if (isHoldingToy)
+        {
+            return true;
+        }
+
         switch (zone)
         {
             case WeaponZone::Safe:

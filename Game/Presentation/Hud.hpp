@@ -30,6 +30,7 @@ namespace game
     // lines:        narration, oldest first.
     // fade:         how black the screen is, 0 to 1.
     // caption:      large centred text shown over the fade, empty for none.
+    // subtitle:     the dialogue subtitle at the bottom of the screen, empty for none.
     struct Hud
     {
         std::size_t localPlayer{0};
@@ -38,6 +39,7 @@ namespace game
         std::vector<HudLine> lines;
         float fade{0.0f};
         std::string caption;
+        std::string subtitle;
     };
 
     // Sets the prompt; logs it when it changes to a new non-empty one.
@@ -49,6 +51,11 @@ namespace game
     // hud:       the HUD.
     // objective: the line, empty for none.
     void setHudObjective(Hud& hud, std::string_view objective);
+
+    // Sets the subtitle; logs it when it changes to a new non-empty one.
+    // hud:      the HUD.
+    // subtitle: the subtitle, empty for none.
+    void setHudSubtitle(Hud& hud, std::string_view subtitle);
 
     // Shows a line of narration for a few seconds and logs it. Old lines make room. A line already
     // on screen is not added again; its timer starts over instead.

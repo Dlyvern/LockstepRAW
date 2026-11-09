@@ -183,14 +183,24 @@ namespace lockstep::render
                 return &fallback;
             }
 
-            const vela::graphics::Texture* texture = state.textures.find(handle);
+            const TextureRecord* texture = state.textures.find(handle);
 
             if (texture == nullptr)
             {
                 return Error{ErrorCode::InvalidHandle, std::string("createMaterial: ") + name + " texture handle is invalid"};
             }
 
-            return texture;
+            return &texture->texture;
+        }
+
+        MaterialHandle addMaterial(RendererState& state, MaterialRecord&& record)
+        {
+            for (const uint32_t slot : record.textureSlots)
+            {
+                ++state.textures.atIndex(slot)->materialUses;
+            }
+
+            return state.materials.add(std::move(record));
         }
 
         Status bindTexture(vela::graphics::Material& material, PbrSlot slot, const vela::graphics::Texture& texture)
@@ -270,7 +280,7 @@ namespace lockstep::render
 
     Result<MaterialHandle> Renderer::createMaterial(const MaterialDescription& description)
     {
-        const vela::graphics::Texture* albedo = m_state->textures.find(description.albedo);
+        const TextureRecord* albedo = m_state->textures.find(description.albedo);
 
         if (albedo == nullptr)
         {
@@ -302,14 +312,16 @@ namespace lockstep::render
             return toError(material.error());
         }
 
-        if (auto bound = material.value().setTexture(k_unlitAlbedoSlot, *albedo); !bound)
+        if (auto bound = material.value().setTexture(k_unlitAlbedoSlot, albedo->texture); !bound)
         {
             return toError(bound.error());
         }
 
-        return m_state->materials.add(MaterialRecord{
+        return addMaterial(*m_state, MaterialRecord{
             .material = std::move(material).value(),
             .maskedShadow = std::nullopt,
+            .maskedShadowBaseColor = nullptr,
+            .textureSlots = {description.albedo.index},
             .shading = Shading::Unlit,
             .alphaMode = AlphaMode::Opaque,
             .factors = {}});
@@ -388,6 +400,8 @@ namespace lockstep::render
         MaterialRecord record{
             .material = std::move(material).value(),
             .maskedShadow = std::nullopt,
+            .maskedShadowBaseColor = nullptr,
+            .textureSlots = {},
             .shading = Shading::Lit,
             .kind = kind,
             .alphaMode = description.alphaMode,
@@ -406,6 +420,14 @@ namespace lockstep::render
             record.maskedShadowBaseColor = resolved[0];
         }
 
-        return state.materials.add(std::move(record));
+        for (const auto& texture : textures)
+        {
+            if (const TextureHandle handle = std::get<1>(texture); handle.isValid())
+            {
+                record.textureSlots.push_back(handle.index);
+            }
+        }
+
+        return addMaterial(state, std::move(record));
     }
 } //namespace lockstep::render

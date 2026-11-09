@@ -8,16 +8,23 @@
 
 namespace lockstep::render
 {
-    // Typed index of a GPU resource owned by the Renderer. Cheap to copy and safe to store in game
-    // state. The Tag only keeps handles of different resource kinds from mixing.
+    // Typed, generation-checked index of a GPU resource owned by the Renderer. Cheap to copy and
+    // safe to store in game state. The Tag only keeps handles of different resource kinds from
+    // mixing. When the resource is destroyed (Renderer::destroyMesh() and friends) its slot gets a
+    // new generation, so a handle kept past that is stale: the Renderer ignores it, asserting in
+    // debug builds and logging once in release builds.
+    // index:      slot in the Renderer's pool of that kind.
+    // generation: which use of the slot it refers to; 0 for none.
     template<typename Tag>
     struct Handle
     {
         static constexpr uint32_t k_invalidIndex{0xFFFFFFFFu};
 
         uint32_t index{k_invalidIndex};
+        uint32_t generation{0};
 
-        // Returns: true if the handle refers to a resource (it may still belong to another Renderer).
+        // Returns: true if the handle was made by a Renderer (it may since have been destroyed, or
+        //          belong to another Renderer).
         [[nodiscard]] constexpr bool isValid() const noexcept
         {
             return index != k_invalidIndex;
@@ -126,6 +133,31 @@ namespace lockstep::render
         float specular{0.2f};
         float shininess{24.0f};
         float emissive{0.0f};
+    };
+
+    // GPU memory and resource counts, for logs and dev tools (Renderer::memoryStats()).
+    // deviceBytesUsed:      device-local memory in use by this process: the driver's figure with
+    //                       VK_EXT_memory_budget, else what the allocator holds.
+    // deviceBytesBudget:    device-local memory the process can use without overcommitting.
+    // deviceBytesAllocated: device-local memory in the allocator's live allocations.
+    // allocationCount:      live allocations.
+    // isBudgetFromDriver:   the used and budget figures come from VK_EXT_memory_budget.
+    // meshes:               living meshes.
+    // materials:            living materials.
+    // textures:             living textures.
+    // pendingReleases:      destroyed resources whose memory is not handed back yet (draws of
+    //                       this frame, or a material still binding a destroyed texture).
+    struct GpuMemoryStats
+    {
+        uint64_t deviceBytesUsed{0};
+        uint64_t deviceBytesBudget{0};
+        uint64_t deviceBytesAllocated{0};
+        uint32_t allocationCount{0};
+        bool isBudgetFromDriver{false};
+        uint32_t meshes{0};
+        uint32_t materials{0};
+        uint32_t textures{0};
+        uint32_t pendingReleases{0};
     };
 } //namespace lockstep::render
 

@@ -36,20 +36,31 @@ namespace game
         return owner == world::EntityOwner::Player2 ? k_clientPawn : k_hostPawn;
     }
 
-    PawnLook remotePawnLook(const GameState& state, world::EntityOwner owner)
+    PawnLook remotePawnLook(const GameState& state, world::EntityOwner owner, const math::Transform& transform)
     {
         const PlayerStatus& status = state.local.statuses[ownerPawnIndex(owner)];
 
         return PawnLook{.isArmed = status.isArmed, .isAiming = status.isArmed && status.isAiming,
-            .isLowered = status.isArmed && status.isLowered};
+            .isLowered = status.isArmed && status.isLowered,
+            .crouch = pawnCrouchAmount(transform, state.settings.pawns),
+            .isSliding = status.isSliding};
     }
 
-    PawnLook localPawnLook(const GameState& state, const EngineContext& engine)
+    PawnLook localPawnLook(const GameState& state, const EngineContext& engine,
+        const std::optional<math::Transform>& transform)
     {
         const bool isArmed = state.local.statuses[localPawnIndex(engine)].isArmed;
 
         return PawnLook{.isArmed = isArmed, .isAiming = isArmed && state.local.command.aim,
-            .isLowered = isArmed && isWeaponLowered(state.local.command.lower, state.local.weaponZone)};
+            .isLowered = isArmed && isWeaponLowered(state.local.command.lower, state.local.weaponZone,
+                isHoldingToy(state, engine)),
+            .crouch = transform ? pawnCrouchAmount(*transform, state.settings.pawns) : 0.0f,
+            .isSliding = isSliding(localPawnMotion(state, engine))};
+    }
+
+    const PawnMotion& localPawnMotion(const GameState& state, const EngineContext& engine)
+    {
+        return isClient(engine) ? state.local.prediction.motion : state.simulation.pawns[k_hostPawn].motion;
     }
 
     bool isHoldingToy(const GameState& state, const EngineContext& engine)
@@ -63,7 +74,10 @@ namespace game
                                                         : state.simulation.pawns[k_hostPawn].entity;
         const world::Entity* pawn = engine.entities.find(entity);
 
-        return pawn != nullptr ? weaponZoneAt(state.weaponZones, pawn->transform().position) : WeaponZone::Open;
+        const WeaponZone place = pawn != nullptr ? weaponZoneAt(state.weaponZones, pawn->transform().position)
+                                                 : WeaponZone::Open;
+
+        return effectiveWeaponZone(place, state.local.isCombatActive);
     }
 
     lockstep::physics::ControllerId localController(const GameState& state, const EngineContext& engine)

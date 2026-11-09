@@ -86,6 +86,26 @@ namespace lockstep::assets
         return instances;
     }
 
+    void releaseScene(render::Renderer& renderer, Scene& scene)
+    {
+        for (const render::MeshHandle mesh : scene.resources.meshes)
+        {
+            renderer.destroyMesh(mesh);
+        }
+
+        for (const render::MaterialHandle material : scene.resources.materials)
+        {
+            renderer.destroyMaterial(material);
+        }
+
+        for (const render::TextureHandle texture : scene.resources.textures)
+        {
+            renderer.destroyTexture(texture);
+        }
+
+        scene = Scene{};
+    }
+
     void submitScene(render::Renderer& renderer, const Scene& scene)
     {
         for (const SceneInstance& instance : scene.instances)

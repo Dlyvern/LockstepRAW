@@ -19,15 +19,14 @@ namespace game
 {
     namespace math = lockstep::math;
 
-    // The first-person arms-and-weapon model and its two static poses.
+    // The first-person arms-and-weapon model and its static pose. The lowered stance turns this
+    // pose (ViewModelTuning::lowered*), so the hands keep the same grip.
     // character: the arms model.
     // aimClip:   the raised pose (ready stance and aiming down sights).
-    // lowClip:   the lowered pose.
     struct FirstPersonModel
     {
         CharacterModel character;
         uint32_t aimClip{0};
-        uint32_t lowClip{0};
     };
 
     // Where the viewmodel sits in one pose, in view space (x right, y up, -z forward, metres):
@@ -56,13 +55,19 @@ namespace game
     // swayDamping:    damping of that spring, 1/s.
     // bobAmount:      sideways bob in metres at walking speed (vertical is two thirds of it).
     // bobRoll:        roll of the bob in radians at walking speed.
-    // bobStride:      metres travelled per bob cycle (two steps).
+    // breatheAmount:  idle breathing sway, radians.
+    // breatheRate:    breaths per second.
     // recoilKick:     muzzle climb speed one shot adds, rad/s.
     // recoilBack:     metres the weapon moves back per radian of climb.
     // recoilStiffness, recoilDamping: the recoil spring.
+    // crouchRecoilScale: recoil multiplier while crouched or sliding.
     // aimDamping:     multiplier of sway, bob and recoil while aiming.
     // readyOffset:    extra view-space offset with the weapon up (ready or lowered).
     // aimOffset:      extra view-space offset while aiming down sights.
+    // loweredPitch, loweredYaw, loweredRoll: how the lowered pose turns the ready pose, radians
+    //                 (muzzle down, muzzle toward the left, cant).
+    // loweredPivot:   view-space point (near the stock) the ready pose turns about when lowered.
+    // loweredOffset:  extra view-space offset of the lowered pose.
     struct ViewModelTuning
     {
         float aimSeconds{0.15f};
@@ -74,14 +79,21 @@ namespace game
         float swayDamping{16.0f};
         float bobAmount{0.005f};
         float bobRoll{0.008f};
-        float bobStride{1.5f};
+        float breatheAmount{0.004f};
+        float breatheRate{0.25f};
         float recoilKick{0.9f};
         float recoilBack{1.2f};
         float recoilStiffness{320.0f};
         float recoilDamping{26.0f};
+        float crouchRecoilScale{0.7f};
         float aimDamping{0.35f};
         math::Vec3 readyOffset{0.0f, 0.0f, 0.0f};
         math::Vec3 aimOffset{0.0f, 0.0f, 0.0f};
+        float loweredPitch{0.3f};
+        float loweredYaw{0.35f};
+        float loweredRoll{0.1f};
+        math::Vec3 loweredPivot{0.17f, -0.07f, -0.23f};
+        math::Vec3 loweredOffset{-0.02f, 0.0f, 0.0f};
     };
 
     // The local player's viewmodel: its animated instance and the state of its procedural motion.
@@ -90,8 +102,7 @@ namespace game
     // aimBlend:   0 not aiming, 1 aiming down sights, moved linearly by aimSeconds.
     // raiseBlend: 0 lowered, 1 up, moved linearly by raiseSeconds.
     // sway:       look lag as (yaw, pitch) radians, and its rate.
-    // bobPhase:   walk bob cycle, radians.
-    // bobWeight:  smoothed bob strength (1 at walking speed).
+    // breathePhase: idle breathing cycle, radians.
     // recoil:     muzzle climb in radians, and its rate.
     // shotCount:  the local shot counter last seen, so each new shot kicks once.
     // lastYaw, lastPitch: the look of the previous frame.
@@ -104,8 +115,7 @@ namespace game
         float raiseBlend{1.0f};
         math::Vec2 sway{0.0f, 0.0f};
         math::Vec2 swayRate{0.0f, 0.0f};
-        float bobPhase{0.0f};
-        float bobWeight{0.0f};
+        float breathePhase{0.0f};
         float recoil{0.0f};
         float recoilRate{0.0f};
         uint8_t shotCount{0};
@@ -117,9 +127,12 @@ namespace game
 
     // What drives the viewmodel this frame.
     // eye:          the camera position.
-    // yaw, pitch:   the camera look (radians, as in PlayerCommand).
-    // speed:        the local pawn's planar ground speed, m/s.
-    // walkSpeed:    the speed where the bob has its nominal size.
+    // yaw, pitch:   the look (radians, as in PlayerCommand); sway follows their changes.
+    // cameraPitchOffset, cameraRoll: the camera's presentation-only kick and roll (HeadPose), so
+    //               the weapon stays fixed on screen.
+    // bobPhase:     the head's step cycle (HeadPose::bobPhase), so weapon and camera bob together.
+    // bobStrength:  bob size relative to walking (HeadPose::bobStrength).
+    // isCrouched:   crouched or sliding (less recoil).
     // isAiming:     the player aims down sights.
     // isLowered:    the weapon is lowered.
     // canFire:      a click fires the weapon (false while it throws a held toy); with the weapon
@@ -131,8 +144,11 @@ namespace game
         math::Vec3 eye{0.0f, 0.0f, 0.0f};
         float yaw{0.0f};
         float pitch{0.0f};
-        float speed{0.0f};
-        float walkSpeed{1.6f};
+        float cameraPitchOffset{0.0f};
+        float cameraRoll{0.0f};
+        float bobPhase{0.0f};
+        float bobStrength{0.0f};
+        bool isCrouched{false};
         bool isAiming{false};
         bool isLowered{false};
         bool canFire{true};
@@ -140,16 +156,16 @@ namespace game
         float deltaSeconds{0.0f};
     };
 
-    // Finds the first-person poses of an arms model and logs where its head sits in the aiming
+    // Finds the first-person pose of an arms model and logs where its head sits in the aiming
     // pose (a check of the placement constants).
     // character: the loaded arms model.
     // aimClip:   name of the aiming pose.
-    // lowClip:   name of the low-ready pose.
-    // Returns:   the model, or InvalidArgument naming a missing clip.
+    // Returns:   the model, or InvalidArgument if the clip is missing.
     [[nodiscard]] lockstep::Result<FirstPersonModel> createFirstPersonModel(CharacterModel&& character,
-        std::string_view aimClip, std::string_view lowClip);
+        std::string_view aimClip);
 
-    // Animates the viewmodel (raise/lower crossfade, look sway, walk bob, aim-in, recoil) and
+    // Animates the viewmodel (raise/lower crossfade, look sway, idle breathing, walk bob, aim-in,
+    // recoil) and
     // queues it on render::k_viewModelLayer, placed relative to the camera. Sway turns it about the
     // eye; bob, dip and recoil together move it at most a few centimetres, so it never comes near
     // the eye.

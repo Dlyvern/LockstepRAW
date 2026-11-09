@@ -1,0 +1,109 @@
+# Police station, level 1 part 2. Format: id | speaker | text
+# Speakers: chief, sergeant, armorer, range_officer, guard, prisoner, officer, hud.
+# "hud" lines are on-screen text (objectives, tips), not spoken.
+# Lines address both players ("you two", "you"), never one by name.
+
+# --- Chief's office, 2nd floor ---
+station.chief.briefing.01 | chief | There they are. Shift started twenty minutes ago, gentlemen.
+station.chief.briefing.02 | chief | Car trouble again? Or did you sell the car?
+station.chief.briefing.03 | chief | Don't answer that. Sit. Or stand, chairs cost money.
+station.chief.briefing.04 | chief | Welfare check. Garland Arms, Carver Street, apartment 4C. Ida Pruitt, seventy-one.
+station.chief.briefing.05 | chief | Her daughter's called three days running. No answer at the door, no answer on the phone.
+station.chief.briefing.06 | chief | Super won't open up. Says it's not his problem. Make it his problem.
+station.chief.briefing.07 | chief | Thing is, the Garland's where the Carver Street boys keep product. Fourth floor, mostly.
+station.chief.briefing.08 | chief | Last two calls to that building, nobody came out to meet us. Nobody.
+station.chief.briefing.09 | chief | So you don't go in wearing what you've got on. You go in dressed.
+station.chief.briefing.10 | chief | Armory first, basement. Range is open if you want a feel for the new V-45s.
+station.chief.briefing.11 | chief | Then the car. Knock, look, bring her daughter good news if you can.
+station.chief.briefing.12 | chief | And come back with the car. It's the only one we've got that starts.
+
+# --- Desk sergeant, lobby ---
+station.sergeant.idle.01 | sergeant | Sign the log, officers. In pen. The pencil walked off again.
+station.sergeant.idle.02 | sergeant | Twenty-nine days. Then it's a boat, a lake and no telephone.
+station.sergeant.idle.03 | sergeant | Coffee's from yesterday. Builds character.
+station.sergeant.idle.04 | sergeant | Chief's upstairs. He's in a mood. He's always in a mood.
+station.sergeant.idle.05 | sergeant | Lady out front wants her cat arrested. I said we'd send our best.
+station.sergeant.idle.06 | sergeant | Thirty-one years at this desk. Wore a groove in the floor. Look.
+
+# --- Armorer, basement ---
+station.armorer.give.armor | armorer | Vest. Plates are new, the straps are not. Pull them tight.
+station.armorer.give.weapon | armorer | V-45. Forty-five calibre. Kicks less than you'd think. Bring it back clean.
+station.armorer.give.ammo | armorer | Three mags each. I count them out and I count them back in.
+station.armorer.idle.01 | armorer | Sign the sheet. Every round in this cage has a name next to it.
+station.armorer.idle.02 | armorer | My girl made honor roll. Don't touch the picture, just look at it.
+station.armorer.idle.03 | armorer | Budget gave us plates or a new boiler. Guess which one's cold.
+station.armorer.idle.04 | armorer | Muzzle down in my cage. I've been shot once already this decade.
+station.armorer.idle.05 | armorer | You need anything else, fill out a form. Then don't hold your breath.
+
+# --- Range officer, firing range ---
+station.range.intro.01 | range_officer | Range is hot. Pick a lane, any of the six, eyes and ears on.
+station.range.intro.02 | range_officer | Paper at fifteen yards. Put rounds on it, not on my ceiling.
+station.range.intro.03 | range_officer | Weapons stay pointed downrange. Fire when you're ready.
+station.range.done.01 | range_officer | That'll pass. Barely. I've seen worse. Not today, but I have.
+station.range.done.02 | range_officer | Good enough. Clear your weapon, sign the sheet, get out of my range.
+station.range.idle.01 | range_officer | Lane four's been pulling left all week. Can't find a thing wrong with it.
+station.range.idle.02 | range_officer | Finger off the trigger till you mean it.
+station.range.idle.03 | range_officer | Twenty years of this. Can't hear my wife. Some days that's a feature.
+station.range.idle.04 | range_officer | Pick up your brass on the way out. We sell it back.
+
+# --- Holding cells guard, basement ---
+station.guard.idle.01 | guard | Keep your hands off the bars. They bite. Some of them literally.
+station.guard.idle.02 | guard | Got them sandwiches out of my own pocket. Don't tell the chief.
+station.guard.idle.03 | guard | Quiet night. Mostly drunks. One fella wouldn't stop asking the time.
+station.guard.idle.04 | guard | Eight hours down here. You start to like the hum of the lights.
+
+# --- Prisoners, holding cells ---
+station.prisoner.01 | prisoner | Hey! Hey, officer! I want my phone call! I want two!
+station.prisoner.02 | prisoner | I didn't take nothing. The TV was already outside the store.
+station.prisoner.03 | prisoner | Nice vest. City finally spring for you, or you buy it yourself?
+station.prisoner.04 | prisoner | My kid's alone at home. Please. Somebody call my sister.
+station.prisoner.05 | prisoner | You two look broker than me. And I'm in here.
+station.prisoner.06 | prisoner | This is a mistake, man. Wrong guy. Wrong street. Wrong everything.
+station.prisoner.07 | prisoner | Bologna again? This is cruel and unusual, I know my rights.
+station.prisoner.08 | prisoner | Carver Street? Don't go up past the third floor. Just don't.
+station.prisoner.09 | prisoner | Officer. What time is it? No. No, it was that an hour ago too.
+station.prisoner.10 | prisoner | I'll be out by lunch. You'll still be poor by dinner.
+
+# --- Bullpen chatter ---
+station.npc.idle.01 | officer | Copier's jammed. Again. Somebody kick it, gently.
+station.npc.idle.02 | officer | Who took my stapler? I engraved my name on it. Twice.
+station.npc.idle.03 | officer | Overtime's frozen till spring. Spring of when, they didn't say.
+station.npc.idle.04 | officer | Garland Arms? Better you than me. Take the stairs, the lift's a coffin.
+station.npc.idle.05 | officer | Rodriguez is bringing in cake Friday. It's her kid's birthday.
+station.npc.idle.06 | officer | Radio's been eating calls all morning. Half of dispatch is static.
+station.npc.idle.07 | officer | My car's got a hundred and ninety thousand miles and no heater.
+station.npc.idle.08 | officer | Heard you two share a place. Cozy. Who gets the bed?
+station.npc.idle.09 | officer | Report's due in an hour. I've written the date. Good start.
+station.npc.idle.10 | officer | Coffee machine took my last dollar. This whole building's a casino.
+
+# --- Objectives (HUD) ---
+station.objective.chief | hud | Report to the chief
+station.objective.listen | hud | Hear the chief out
+station.objective.armory | hud | Gear up in the armory
+station.objective.car | hud | Head out to the car
+station.objective.wait_car | hud | Wait at the car for your partner
+
+# --- Narration (HUD) ---
+station.narration.armory | hud | The armory is in the basement.
+station.narration.partner_geared | hud | Your partner is geared up.
+station.narration.geared | hud | You're both geared up. Car's out back.
+station.narration.drive | hud | You get in the car. Garland Arms, Carver Street.
+
+# --- Notices (HUD), when E does nothing ---
+station.notice.report_first | hud | Report to the chief first.
+station.notice.already_taken | hud | You already have that.
+station.notice.already_briefed | hud | The chief already told you what he wants.
+station.notice.chief_talking | hud | The chief is still talking.
+station.notice.nothing | hud | Nothing happens.
+station.notice.wait_partner | hud | The chief won't say it twice. Wait for your partner.
+
+# --- Caption (HUD), over the fade at the end of the station ---
+station.caption.mission | hud | Welfare check. Garland Arms, Carver Street
+
+# --- Tips (HUD) ---
+station.tip.01 | hud | Press X to lower or raise your weapon.
+station.tip.02 | hud | Hold right mouse to aim down sights.
+station.tip.03 | hud | Inside the station, keep your weapon lowered.
+station.tip.04 | hud | On the range, fire only from your lane, downrange.
+station.tip.05 | hud | Press E to talk to people and use things.
+station.tip.range | hud | The range is optional. Try the V-45 there if you like.

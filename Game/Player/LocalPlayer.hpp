@@ -9,6 +9,7 @@
 #include <Lockstep/World/Entities.hpp>
 
 #include <cstddef>
+#include <optional>
 
 namespace game
 {
@@ -24,18 +25,28 @@ namespace game
     // Returns: that player's pawn index.
     [[nodiscard]] std::size_t ownerPawnIndex(lockstep::world::EntityOwner owner);
 
-    // How another player's pawn is drawn, from their replicated status.
-    // state:   the game state.
-    // owner:   the pawn entity's owner.
-    // Returns: armed, aiming and lowered as last known.
-    [[nodiscard]] PawnLook remotePawnLook(const lockstep::app::GameState& state, lockstep::world::EntityOwner owner);
+    // How another player's pawn is drawn, from their replicated status and transform.
+    // state:     the game state.
+    // owner:     the pawn entity's owner.
+    // transform: the pawn's interpolated transform (its height says how far it crouches).
+    // Returns:   armed, aiming, lowered and sliding as last known, crouch from the transform.
+    [[nodiscard]] PawnLook remotePawnLook(const lockstep::app::GameState& state, lockstep::world::EntityOwner owner,
+        const math::Transform& transform);
 
     // How the local pawn is drawn: armed from the replicated status, aiming and lowered from this
-    // machine's newest command (no replication delay).
+    // machine's newest command, crouch and slide from its predicted (or, on the host, simulated)
+    // movement (no replication delay).
+    // state:     the game state.
+    // engine:    Engine services.
+    // transform: the local pawn's drawn transform, or nothing (crouch is then 0).
+    // Returns:   the look.
+    [[nodiscard]] PawnLook localPawnLook(const lockstep::app::GameState& state,
+        const lockstep::app::EngineContext& engine, const std::optional<math::Transform>& transform = std::nullopt);
+
     // state:   the game state.
     // engine:  Engine services.
-    // Returns: the look.
-    [[nodiscard]] PawnLook localPawnLook(const lockstep::app::GameState& state,
+    // Returns: the local pawn's movement state (the client's predicted one on a client).
+    [[nodiscard]] const PawnMotion& localPawnMotion(const lockstep::app::GameState& state,
         const lockstep::app::EngineContext& engine);
 
     // state:   the game state.
@@ -45,8 +56,8 @@ namespace game
 
     // state:   the game state.
     // engine:  Engine services.
-    // Returns: the weapon zone the local pawn (host pawn or the client's predicted one) stands in,
-    //          Open while it has none.
+    // Returns: the weapon zone rule in effect where the local pawn (host pawn or the client's
+    //          predicted one) stands (Open for a safe zone during combat), Open while it has none.
     [[nodiscard]] WeaponZone localWeaponZone(const lockstep::app::GameState& state,
         const lockstep::app::EngineContext& engine);
 

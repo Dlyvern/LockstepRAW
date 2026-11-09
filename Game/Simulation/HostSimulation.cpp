@@ -2,6 +2,7 @@
 
 #include "GameState.hpp"
 #include "Simulation/RoomSimulation.hpp"
+#include "Simulation/StationSimulation.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
@@ -39,12 +40,15 @@ namespace game
             std::clog << "Game: " << what << ": " << error.message << '\n';
         }
 
-        void applyWeaponStance(const GameState& state, const EngineContext& engine, Pawn& pawn)
+        void applyWeaponStance(GameState& state, const EngineContext& engine, std::size_t pawnIndex)
         {
+            Pawn& pawn = state.simulation.pawns[pawnIndex];
             const world::Entity* entity = engine.entities.find(pawn.entity);
-            const WeaponZone zone = entity != nullptr ? weaponZoneAt(state.weaponZones, entity->transform().position)
-                                                      : WeaponZone::Open;
-            pawn.isLowered = pawn.isArmed && isWeaponLowered(pawn.command.lower, zone);
+            const WeaponZone place = entity != nullptr ? weaponZoneAt(state.weaponZones, entity->transform().position)
+                                                       : WeaponZone::Open;
+            const WeaponZone zone = effectiveWeaponZone(place, state.simulation.isCombatActive);
+            const bool isHoldingToy = state.room && state.room->state.heldToy[pawnIndex] != k_nobody;
+            pawn.isLowered = pawn.isArmed && isWeaponLowered(pawn.command.lower, zone, isHoldingToy);
             pawn.command.aim = pawn.command.aim && pawn.isArmed && !pawn.isLowered;
             pawn.command.isWeaponUp = pawn.isArmed && !pawn.isLowered;
         }
@@ -117,6 +121,11 @@ namespace game
             simulation.lastRewindTicks = rewind.ticks;
             ++shooter.shots;
 
+            if (simulation.lastShot.outcome == ShotOutcome::Level)
+            {
+                shootStation(state, shooterIndex, simulation.lastShot.body);
+            }
+
             if (simulation.lastShot.outcome != ShotOutcome::Enemy)
             {
                 std::clog << "Game: " << playerName(shooterIndex) << " shot: " << toString(simulation.lastShot.outcome)
@@ -172,7 +181,7 @@ namespace game
                         pawn.processedInteracts = command->interactCount;
                     }
 
-                    applyWeaponStance(state, engine, pawn);
+                    applyWeaponStance(state, engine, k_clientPawn);
                 }
 
                 if (world::Entity* entity = engine.entities.find(pawn.entity); entity != nullptr && pawn.hasCommand)
@@ -324,26 +333,28 @@ namespace game
                 state.local.statuses[index] = playerStatus(simulation.pawns[index]);
             }
 
+            state.local.isCombatActive = simulation.isCombatActive;
+
             if (engine.session.state() != net::ConnectionState::Connected)
             {
                 simulation.sentStatuses.reset();
                 return;
             }
 
-            if (simulation.sentStatuses == state.local.statuses)
+            const StatusMessage status{.players = state.local.statuses, .isCombatActive = simulation.isCombatActive};
+
+            if (simulation.sentStatuses == status)
             {
                 return;
             }
 
-            const auto message = encodePlayerStatuses(state.local.statuses);
-
-            if (auto sent = engine.session.send(message, net::Delivery::Reliable); !sent)
+            if (auto sent = engine.session.send(encodeStatusMessage(status), net::Delivery::Reliable); !sent)
             {
-                logError("health not sent", sent.error());
+                logError("status not sent", sent.error());
                 return;
             }
 
-            simulation.sentStatuses = state.local.statuses;
+            simulation.sentStatuses = status;
         }
     } //namespace
 
@@ -377,7 +388,7 @@ namespace game
         Pawn& hostPawn = state.simulation.pawns[k_hostPawn];
         hostPawn.command = state.local.command;
         hostPawn.hasCommand = true;
-        applyWeaponStance(state, engine, hostPawn);
+        applyWeaponStance(state, engine, k_hostPawn);
 
         syncClientPawn(state, engine);
         applyClientInputs(state, engine);
@@ -394,5 +405,6 @@ namespace game
         publishStatuses(state, engine);
         publishClientState(state, engine);
         runRoomHostTick(state, engine);
+        runStationHostTick(state, engine);
     }
 } //namespace game

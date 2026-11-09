@@ -368,9 +368,9 @@ namespace game
 
             const math::Vec3 foot = math::lerp(from.foot, to.foot, alpha);
             const float yaw = lerpAngle(from.yaw, to.yaw, alpha);
-            ghosts[player] = math::Transform{.position = foot + math::Vec3{0.0f, k_pawnHalfExtents.y, 0.0f},
+            ghosts[player] = math::Transform{.position = foot + math::Vec3{0.0f, 0.5f * k_pawnStandHeight, 0.0f},
                 .rotation = math::angleAxis(yaw, math::Vec3{0.0f, 1.0f, 0.0f}),
-                .scale = k_pawnHalfExtents * 2.0f};
+                .scale = math::Vec3{2.0f * k_pawnRadius, k_pawnStandHeight, 2.0f * k_pawnRadius}};
         }
 
         return ghosts;

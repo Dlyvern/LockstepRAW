@@ -183,6 +183,21 @@ namespace lockstep::physics
         // Returns:    false for a stale handle.
         bool setFootPosition(ControllerId controller, const math::Vec3& position);
 
+        // Changes a controller's total height (feet to top of the head), keeping its feet where
+        // they are, e.g. to crouch. Only static and kinematic bodies can block a grow; simulated
+        // bodies and other controllers never do (as in move(), so host and client agree).
+        // controller: the controller.
+        // height:     the new total height; must be more than twice its radius.
+        // resize:     whether a grow must fit (MustFit) or happens anyway (Force).
+        // Returns:    true if the controller now has `height`; false for a stale handle, an
+        //             invalid height or a grow that did not fit.
+        bool setControllerHeight(ControllerId controller, float height,
+            ControllerResize resize = ControllerResize::MustFit);
+
+        // controller: the controller.
+        // Returns:    its total height (feet to top of the head), or nothing for a stale handle.
+        [[nodiscard]] std::optional<float> controllerHeight(ControllerId controller) const;
+
         // controller: the controller.
         // Returns:    whether its last move() ended on the ground (false before the first move or
         //             for a stale handle).

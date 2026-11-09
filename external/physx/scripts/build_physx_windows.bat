@@ -34,14 +34,14 @@ python --version 2>&1 || echo [Lockstep_PhysX_build] WARNING: python not found i
 
 if not exist "%PHYSX_PRESET_TEMPLATE%" (
     echo [Lockstep_PhysX_build] Error: PhysX preset template not found at "%PHYSX_PRESET_TEMPLATE%"
-    call :cleanup_and_exit 1
+    set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 
 echo [Lockstep_PhysX_build] Preparing PhysX preset %PHYSX_PRESET%...
 python -c "from pathlib import Path; template = Path(r'%PHYSX_PRESET_TEMPLATE%'); output = Path(r'%PHYSX_PRESET_XML%'); text = template.read_text(); text = text.replace('name=\"%PHYSX_PRESET_BASE%\"', 'name=\"%PHYSX_PRESET%\"', 1); text = text.replace('name=\"PX_BUILDSNIPPETS\" value=\"True\"', 'name=\"PX_BUILDSNIPPETS\" value=\"False\"', 1); text = text.replace('name=\"PX_BUILDPVDRUNTIME\" value=\"True\"', 'name=\"PX_BUILDPVDRUNTIME\" value=\"False\"', 1); output.write_text(text)"
 if errorlevel 1 (
     echo [Lockstep_PhysX_build] Error: Failed to write temporary PhysX preset
-    call :cleanup_and_exit 1
+    set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 
 echo [Lockstep_PhysX_build] Generating Visual Studio project files...
@@ -50,19 +50,19 @@ if errorlevel 1 (
     echo [Lockstep_PhysX_build] Error: Failed to generate PhysX Visual Studio projects
     echo [Lockstep_PhysX_build] Available presets:
     dir /b compiler 2>nul
-    call :cleanup_and_exit 1
+    set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 
 if not exist "%PHYSX_SOLUTION%" (
     echo [Lockstep_PhysX_build] Error: Generated PhysX solution not found at "%PHYSX_SOLUTION%"
-    call :cleanup_and_exit 1
+    set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 
 echo [Lockstep_PhysX_build] Building PhysX in %PHYSX_BUILD_TYPE% mode...
 msbuild "%PHYSX_SOLUTION%" /p:Configuration=%PHYSX_MSBUILD_CONFIGURATION% /maxcpucount /t:Build /v:n /nologo
 if errorlevel 1 (
     echo [Lockstep_PhysX_build] Error: MSBuild returned a non-zero exit code
-    call :cleanup_and_exit 1
+    set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 echo [Lockstep_PhysX_build] MSBuild completed successfully
 
@@ -74,7 +74,7 @@ if not exist "%PHYSX_BUILD_OUTPUT%\" (
     echo [Lockstep_PhysX_build] Error: PhysX build output directory not found at "%PHYSX_BUILD_OUTPUT%"
     echo [Lockstep_PhysX_build] Contents of bin\:
     dir /b "%PHYSX_ROOT%\bin" 2>nul
-    call :cleanup_and_exit 1
+    set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 
 echo [Lockstep_PhysX_build] Using PhysX build output from %PHYSX_BUILD_OUTPUT%
@@ -86,14 +86,13 @@ set "ROBOCOPY_EXIT=%ERRORLEVEL%"
 echo [Lockstep_PhysX_build] robocopy exit code: %ROBOCOPY_EXIT%
 if %ROBOCOPY_EXIT% GEQ 8 (
     echo [Lockstep_PhysX_build] Error: Failed to copy PhysX binaries (robocopy exit %ROBOCOPY_EXIT%)
-    call :cleanup_and_exit 1
+    set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 
 echo [Lockstep_PhysX_build] PhysX built and installed to %PHYSX_LIB_OUTPUT%
-call :cleanup_and_exit 0
+set "LOCKSTEP_EXIT_CODE=0" & goto :cleanup_and_exit
 
 :cleanup_and_exit
-set "LOCKSTEP_EXIT_CODE=%~1"
 if exist "%PHYSX_PRESET_XML%" (
     del /f /q "%PHYSX_PRESET_XML%" >nul 2>&1
     if exist "%PHYSX_PRESET_XML%" (

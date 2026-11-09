@@ -234,6 +234,12 @@ namespace lockstep::render
     void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform,
         RenderLayers layers)
     {
+        if (m_state->meshes.isStale(mesh) || m_state->materials.isStale(material))
+        {
+            reportStaleHandle(*m_state, m_state->meshes.isStale(mesh) ? "submit: mesh" : "submit: material");
+            return;
+        }
+
         const MeshRecord* record = m_state->meshes.find(mesh);
         const MaterialRecord* materialRecord = m_state->materials.find(material);
 
@@ -392,6 +398,7 @@ namespace lockstep::render
         state.drawLists.clear();
         state.lights.clear();
         state.reflectors.clear();
+        releaseRetiredResources(state);
         ++state.frameIndex;
 
         return frame;

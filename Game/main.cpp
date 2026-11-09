@@ -7,16 +7,48 @@
 #include <Lockstep/Render/PresentMode.hpp>
 
 #include <cstddef>
+#include <filesystem>
 #include <iostream>
 #include <span>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace
 {
+    constexpr std::string_view k_dataFlag{"--data"};
+
     int reportError(const lockstep::Error& error)
     {
         std::cerr << "Error (" << lockstep::toString(error.code) << "): " << error.message << '\n';
         return 1;
+    }
+
+    std::filesystem::path dataFolder(std::span<const char* const> options)
+    {
+        for (std::size_t index = 0; index + 1 < options.size(); ++index)
+        {
+            if (options[index] != nullptr && options[index + 1] != nullptr && std::string_view(options[index]) == k_dataFlag)
+            {
+                return options[index + 1];
+            }
+        }
+
+        return LOCKSTEP_DATA_DIR;
+    }
+
+    void mountGameData(std::vector<std::filesystem::path>& content, std::span<const char* const> options)
+    {
+        const std::filesystem::path folder = dataFolder(options);
+        std::error_code error;
+
+        if (!std::filesystem::is_directory(folder, error))
+        {
+            std::clog << "Game: no data folder '" << folder.string() << "' (dialogue shows line ids)\n";
+            return;
+        }
+
+        content.push_back(folder);
     }
 } //namespace
 
@@ -44,6 +76,8 @@ int main(int argc, char** argv)
     {
         return reportError(content.error());
     }
+
+    mountGameData(content.value(), options);
 
     const char* title = "Lockstep";
 

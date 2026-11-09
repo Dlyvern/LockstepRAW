@@ -187,8 +187,8 @@ namespace game
     // before: the previous state.
     // after:  the new state.
     // player: the local player.
-    // Returns: the lines, in order.
-    [[nodiscard]] std::vector<const char*> describeRoomChanges(const RoomState& before, const RoomState& after,
+    // Returns: the dialogue ids of the lines ("morning.*", see lineText()), in order.
+    [[nodiscard]] std::vector<std::string_view> describeRoomChanges(const RoomState& before, const RoomState& after,
         std::size_t player);
 
     // Packs the state into a Game message (animations quantized to 1/255).

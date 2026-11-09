@@ -21,8 +21,12 @@ Every new asset gets a line here when it's added.
 | Shower Cabin | Heliona | https://sketchfab.com/models/e2c6a8dd490e4e4398378e1f6c9121a8 | Apartment: bathroom shower |
 | Old coat rack | Ehnri | https://sketchfab.com/models/f7125e65dd004381aa3e9882ef74e963 | Apartment: coat rack by the front door |
 | Straw Rug (petate) | ocelotlmx | https://sketchfab.com/models/1a5021f8623c4ddeb5eabf7eccb77bc2 | Apartment: rug between the beds |
-| [FREE] Ford Crown Victoria 2005 | Velrifea | https://sketchfab.com/models/91b2d4d7fe5b4197928c2f0315e24a67 | District: the players' car at CarSpot (repainted faded maroon) |
+| [FREE] Ford Crown Victoria 2005 | Velrifea | https://sketchfab.com/models/91b2d4d7fe5b4197928c2f0315e24a67 | District and station parking lot: the players' car at CarSpot (repainted faded maroon) |
 | S.W.A.T. Operator - 4k Followers Special Remaster | SpatialNeglect | Fab (fab.com, CC BY 4.0) | Player character placeholder (both players), incl. KRISS Vector |
+| Leather Office Chair - Low Polygon / Game Ready | RenendStudio | https://sketchfab.com/models/aee7ef0361b848d6b66bd3588fc2190c | Station: chief's chair |
+| Antique wooden desk | LorenzoDrago | https://sketchfab.com/models/67cc4558a0e74bb6be61a1af1eb13b66 | Station: chief's desk |
+| Desk lamp | 7ASSAN | https://sketchfab.com/models/b9458e04d30e4b6284d46d35880a9b95 | Station: chief's desk lamp |
+| Persian Malayer Carpet | mfb64 | https://sketchfab.com/models/1120ca810d0c46289d3b7071103067ac | Station: chief's office rug (decimated) |
 | POLICE CAP 2 | alexhanks1 | https://sketchfab.com/models/f6eaa9818b5c4b97a1ebb24c30926ae7 | Apartment: police caps on the coat rack (decimated to ~6%) |
 
 ## CC0 (Poly Haven, no attribution required)
@@ -43,6 +47,7 @@ Every new asset gets a line here when it's added.
 | Industrial Pipe Lamp | Mateusz Sadek | https://polyhaven.com/a/industrial_pipe_lamp |
 | Laminate Floor 03 (texture) | Charlotte Baglioni, Dario Barresi | https://polyhaven.com/a/laminate_floor_03 |
 | Plastered Wall 04 (texture) | Rob Tuytel | https://polyhaven.com/a/plastered_wall_04 |
+| Red Brick (texture) | Rob Tuytel | https://polyhaven.com/a/red_brick |
 | Interior Tiles (texture) | Charlotte Baglioni | https://polyhaven.com/a/interior_tiles |
 | Tree Small 02 | Rico Cilliers | https://polyhaven.com/a/tree_small_02 |
 | Rock Moss Set 01 | Kless Gyzen | https://polyhaven.com/a/rock_moss_set_01 |
@@ -62,6 +67,22 @@ Every new asset gets a line here when it's added.
 | Concrete Pavement 02 (texture) | Charlotte Baglioni | https://polyhaven.com/a/concrete_pavement_02 |
 | Concrete Pavement (texture) | Charlotte Baglioni | https://polyhaven.com/a/concrete_pavement |
 | Rusty Metal Shutter (texture) | Charlotte Baglioni | https://polyhaven.com/a/rusty_metal_shutter |
+| Wood Floor (texture) | Dimitrios Savva | https://polyhaven.com/a/wood_floor |
+| Wooden Panels (texture) | Dimitrios Savva | https://polyhaven.com/a/wooden_panels |
+| Sofa 02 | Kirill Sannikov | https://polyhaven.com/a/sofa_02 |
+| Vintage Wooden Drawer 01 | James Ray Cock | https://polyhaven.com/a/vintage_wooden_drawer_01 |
+| Decorative Book Set 01 | James Ray Cock | https://polyhaven.com/a/decorative_book_set_01 |
+| Modern Arm Chair 01 | Vibrant Nordic | https://polyhaven.com/a/modern_arm_chair_01 |
+| Potted Plant 01 | Rico Cilliers | https://polyhaven.com/a/potted_plant_01 |
+| Round Wooden Table 01 | Ulan Cabanilla | https://polyhaven.com/a/round_wooden_table_01 |
+| Dining Chair 02 | James Ray Cock | https://polyhaven.com/a/dining_chair_02 |
+| Floor Tiles 06 (texture) | Rob Tuytel | https://polyhaven.com/a/floor_tiles_06 |
+| School Chair 01 | Ethan Place | https://polyhaven.com/a/SchoolChair_01 |
+| Clipboard | ProgrammerOnCoffee | https://polyhaven.com/a/clipboard |
+| Stationery Supplies | Mateusz Sadek | https://polyhaven.com/a/stationery_supplies |
+| Hangar Concrete Floor (texture) | Dimitrios Savva | https://polyhaven.com/a/hangar_concrete_floor |
+| Concrete Wall 004 (texture) | Charlotte Baglioni, Dario Barresi | https://polyhaven.com/a/concrete_wall_004 |
+| Worn Metal Rack | Luca B | https://polyhaven.com/a/worn_metal_rack |
 
 ## User-provided packs (licence to confirm before shipping)
 

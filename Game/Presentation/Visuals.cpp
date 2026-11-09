@@ -224,9 +224,10 @@ namespace game
         }
     }
 
-    render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction, float zoom)
+    render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction, float zoom,
+        const math::Vec3& up)
     {
-        render::Camera camera{.position = eye, .target = eye + direction};
+        render::Camera camera{.position = eye, .target = eye + direction, .up = up};
         camera.verticalFov += (math::radians(k_aimFovDegrees) - camera.verticalFov) * math::clamp(zoom, 0.0f, 1.0f);
 
         return camera;

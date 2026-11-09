@@ -72,7 +72,9 @@ jobs:
           if-no-files-found: error
 
   build-windows:
-    runs-on: windows-latest
+    # PhysX's project generator only knows Visual Studio 2022 (vc17); newer runner images ship a
+    # newer Visual Studio, so this job is pinned to the image that has VS 2022.
+    runs-on: windows-2022
     env:
       VCPKG_TRIPLET: x64-windows-static
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite

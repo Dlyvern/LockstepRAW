@@ -3,6 +3,7 @@
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
 #include "Presentation/Hud.hpp"
+#include "Presentation/LevelLights.hpp"
 #include "Presentation/Mirrors.hpp"
 #include "Simulation/HostSimulation.hpp"
 
@@ -38,6 +39,8 @@ namespace game
         {
             math::Vec3 eye{0.0f, 0.0f, 0.0f};
             math::Vec3 direction{0.0f, 0.0f, -1.0f};
+            math::Vec3 cameraDirection{0.0f, 0.0f, -1.0f};
+            math::Vec3 up{0.0f, 1.0f, 0.0f};
         };
 
         void updateCursorCapture(platform::Window& window, const platform::Input& input)
@@ -87,7 +90,7 @@ namespace game
                 }
 
                 drawPawn(engine.renderer, state.visuals, pawnCharacters(state), entity->owner(), transform,
-                    remotePawnLook(state, entity->owner()), playerSeconds);
+                    remotePawnLook(state, entity->owner(), transform), playerSeconds);
             }
 
             if (const world::Entity* enemy = engine.entities.find(state.simulation.enemy.entity))
@@ -119,7 +122,7 @@ namespace game
                     if (entity->owner() != world::EntityOwner::Player2)
                     {
                         drawPawn(engine.renderer, state.visuals, pawnCharacters(state), entity->owner(), transform,
-                            remotePawnLook(state, entity->owner()), playerSeconds);
+                            remotePawnLook(state, entity->owner(), transform), playerSeconds);
                     }
 
                     continue;
@@ -179,8 +182,34 @@ namespace game
             drawToys(engine.renderer, state.level->scene, room.toys, engine.entities, alpha, localHeld);
         }
 
-        void presentViewModel(GameState& state, EngineContext& engine, const std::optional<math::Vec3>& eye,
+        HeadPose presentHead(GameState& state, const EngineContext& engine, const math::Transform& localPawn,
             float playerSeconds)
+        {
+            const PawnMotion& motion = localPawnMotion(state, engine);
+            const PawnLook look = localPawnLook(state, engine);
+            const math::Vec3 foot = pawnFootPosition(localPawn);
+            const PawnSettings& pawns = state.settings.pawns;
+
+            return updateHeadMotion(state.headMotion,
+                HeadMotionInput{.foot = foot,
+                    .eyeHeight = eyePosition(localPawn).y - foot.y,
+                    .yaw = state.local.command.yaw,
+                    .planarVelocity = motion.planarVelocity,
+                    .verticalSpeed = motion.verticalSpeed,
+                    .isGrounded = motion.isGrounded,
+                    .isCrouched = motion.stance != PawnStance::Stand,
+                    .isSliding = isSliding(motion),
+                    .isAiming = look.isAiming,
+                    .walkSpeed = pawns.walkSpeed,
+                    .runSpeed = pawns.runSpeed,
+                    .strafeSpeed = pawns.strafeSpeed,
+                    .shotCount = state.local.command.shotCount,
+                    .canKick = look.isArmed && !look.isLowered && !isHoldingToy(state, engine),
+                    .deltaSeconds = playerSeconds});
+        }
+
+        void presentViewModel(GameState& state, EngineContext& engine, const std::optional<math::Vec3>& eye,
+            const HeadPose& head, float playerSeconds)
         {
             if (!state.pawnCharacters || !state.pawnCharacters->firstPerson)
             {
@@ -201,8 +230,11 @@ namespace game
                 ViewModelInput{.eye = *eye,
                     .yaw = command.yaw,
                     .pitch = command.pitch,
-                    .speed = pawnCharacterSpeed(characters, localOwner(engine)),
-                    .walkSpeed = state.settings.pawns.walkSpeed,
+                    .cameraPitchOffset = head.pitchOffset,
+                    .cameraRoll = head.roll,
+                    .bobPhase = head.bobPhase,
+                    .bobStrength = head.bobStrength,
+                    .isCrouched = localPawnMotion(state, engine).stance != PawnStance::Stand,
                     .isAiming = look.isAiming,
                     .isLowered = look.isLowered,
                     .canFire = !isHoldingToy(state, engine),
@@ -233,7 +265,11 @@ namespace game
         }
 
         updateLighting(state.lighting, frameInfo.input, frameInfo.frameSeconds);
-        submitArenaLights(engine.renderer, state.lighting);
+
+        if (!state.level)
+        {
+            submitArenaLights(engine.renderer, state.lighting);
+        }
 
         std::optional<math::Transform> localPawn;
         const bool isClient = engine.session.role() == net::Role::Client;
@@ -259,38 +295,62 @@ namespace game
         if (localPawn)
         {
             drawPawn(engine.renderer, state.visuals, pawnCharacters(state), localOwner(engine), *localPawn,
-                localPawnLook(state, engine), playerSeconds, k_mirrorOnlyLayer);
+                localPawnLook(state, engine, localPawn), playerSeconds, k_mirrorOnlyLayer);
         }
 
-        const View view = localPawn
-            ? View{.eye = eyePosition(*localPawn),
-                .direction = lookDirection(state.local.command.yaw, state.local.command.pitch)}
-            : lobbyView(state);
+        HeadPose head{};
+        View view = lobbyView(state);
+
+        if (localPawn)
+        {
+            const float yaw = state.local.command.yaw;
+            const float pitch = state.local.command.pitch;
+            head = presentHead(state, engine, *localPawn, playerSeconds);
+            view = View{.eye = head.eye,
+                .direction = lookDirection(yaw, pitch),
+                .cameraDirection = lookDirection(yaw, pitch + head.pitchOffset),
+                .up = rolledUp(yaw, pitch + head.pitchOffset, head.roll)};
+        }
+        else
+        {
+            resetHeadMotion(state.headMotion);
+        }
+
         presentToys(state, engine, frameInfo.alpha, localPawn ? std::optional<View>(view) : std::nullopt);
-        presentViewModel(state, engine, localPawn ? std::optional<math::Vec3>(view.eye) : std::nullopt,
+        presentViewModel(state, engine, localPawn ? std::optional<math::Vec3>(view.eye) : std::nullopt, head,
             playerSeconds);
 
         if (state.level)
         {
             presentSceneCharacters(engine.renderer, state.level->scene, state.characters, frameInfo.frameSeconds,
                 view.eye, view.direction);
+            drawNpcPlaceholders(engine.renderer, state.npcs, pawnCharacters(state), playerSeconds);
         }
 
         drawHud(engine.renderer, state.hud);
+
+        if (state.level)
+        {
+            submitLevelLights(engine.renderer, state.level->scene,
+                state.flyCamera.isActive ? state.flyCamera.position : view.eye);
+        }
 
         if (presentFlyCamera(state, engine, frameInfo, view))
         {
             return;
         }
 
-        engine.renderer.setCamera(firstPersonCamera(view.eye, view.direction,
-            state.pawnCharacters ? viewModelZoom(state.pawnCharacters->viewModel) : 0.0f));
+        engine.renderer.setCamera(firstPersonCamera(view.eye, view.cameraDirection,
+            state.pawnCharacters ? viewModelZoom(state.pawnCharacters->viewModel) : 0.0f, view.up));
 
         if (localPawn)
         {
             drawCrosshair(engine.renderer, state.visuals, view.eye, view.direction);
 
-            if (state.room && !state.room->prompt.empty())
+            const bool hasRoomPrompt = state.room && !state.room->prompt.empty();
+            const bool hasStationPrompt = state.station && !state.station->prompt.empty();
+
+            if (hasRoomPrompt || hasStationPrompt)
             {
                 drawInteractPrompt(engine.renderer, state.visuals, view.eye, view.direction);
             }
@@ -298,7 +358,9 @@ namespace game
 
         const bool isHurt = status.isDead || status.health < state.settings.pawns.maxHealth;
 
-        if (status.isJoined && (!state.room || isHurt))
+        const bool isStoryLevel = state.room || state.station;
+
+        if (status.isJoined && (!isStoryLevel || isHurt))
         {
             drawHealth(engine.renderer, state.visuals, view.eye, view.direction, status,
                 state.settings.pawns.maxHealth);

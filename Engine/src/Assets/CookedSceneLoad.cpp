@@ -123,6 +123,7 @@ namespace lockstep::assets
                 }
 
                 handles[index] = handle.value();
+                context.scene.resources.textures.push_back(handle.value());
                 ++stats.textureCount;
                 stats.textureBytes += texture.view.pixels.size();
                 stats.compressedTextures += isBlockCompressed(format) ? 1u : 0u;
@@ -177,6 +178,7 @@ namespace lockstep::assets
                 }
 
                 materials[mesh.material] = created.value();
+                context.scene.resources.materials.push_back(created.value());
                 ++context.scene.stats.materialCount;
             }
 
@@ -211,6 +213,7 @@ namespace lockstep::assets
                     return uploaded.error();
                 }
 
+                context.scene.resources.meshes.push_back(uploaded.value());
                 const CookedMesh& cooked = level.meshes[index];
                 SceneMesh& mesh = context.scene.meshes[index];
                 mesh.mesh = uploaded.value();
@@ -265,6 +268,7 @@ namespace lockstep::assets
             }
 
             created[index] = material.value();
+            context.scene.resources.materials.push_back(material.value());
             ++context.scene.stats.materialCount;
 
             return render::MaterialHandle{created[index]};
@@ -331,6 +335,7 @@ namespace lockstep::assets
                     return mesh.error();
                 }
 
+                context.scene.resources.meshes.push_back(mesh.value());
                 model.parts.push_back(anim::SkinnedModelPart{.mesh = mesh.value(), .material = material.value()});
                 context.scene.stats.triangleCount += data.value().indices.size() / 3;
             }
@@ -399,33 +404,38 @@ namespace lockstep::assets
         scene.stats.contentBytes = bytes.value().size();
         LoadContext context{.renderer = renderer, .files = files, .workerThreads = options.workerThreads,
             .scene = scene, .error = std::nullopt};
+        const auto release = [&renderer, &scene](Error error)
+        {
+            releaseScene(renderer, scene);
+            return error;
+        };
         auto textures = loadTextures(context, level.value());
 
         if (!textures)
         {
-            return textures.error();
+            return release(textures.error());
         }
 
         auto materials = createMaterials(context, level.value(), textures.value());
 
         if (!materials)
         {
-            return materials.error();
+            return release(materials.error());
         }
 
         if (auto loaded = loadMeshes(context, level.value(), materials.value()); !loaded)
         {
-            return loaded.error();
+            return release(loaded.error());
         }
 
         if (auto loaded = loadCollisionShapes(context, level.value()); !loaded)
         {
-            return loaded.error();
+            return release(loaded.error());
         }
 
         if (auto loaded = loadSkinnedModels(context, level.value(), textures.value()); !loaded)
         {
-            return loaded.error();
+            return release(loaded.error());
         }
 
         placeInstances(scene, level.value());

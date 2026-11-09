@@ -20,7 +20,8 @@ namespace game
     // The weapon rule of a place. An armed player's weapon is up (ready) by default and may be
     // lowered with the lower key; a zone overrides that.
     // Open:    up by default, lowering allowed.
-    // Safe:    always lowered; no firing or aiming down sights.
+    // Safe:    always lowered; no firing or aiming down sights. A running combat situation turns
+    //          safe zones off (see effectiveWeaponZone()).
     // Hostile: always up; the weapon can't be lowered.
     enum class WeaponZone : uint8_t
     {
@@ -52,11 +53,21 @@ namespace game
     // Returns:  the zone kind there, Open outside every zone.
     [[nodiscard]] WeaponZone weaponZoneAt(std::span<const WeaponZoneBox> zones, const math::Vec3& position);
 
-    // Whether an armed player's weapon is lowered.
+    // The weapon rule that applies at a place right now: during combat a safe zone acts like an
+    // open area, so players can raise their weapons anywhere.
+    // zone:           the zone at the place (weaponZoneAt()).
+    // isCombatActive: a combat situation is running (host-authoritative, replicated).
+    // Returns:        Open for a safe zone during combat, else `zone`.
+    [[nodiscard]] WeaponZone effectiveWeaponZone(WeaponZone zone, bool isCombatActive);
+
+    // Whether an armed player's weapon is lowered. Carrying a toy lowers it like a safe zone; once
+    // the toy is dropped or thrown the toggle and zone rules apply again.
     // wantsLowered: the player's lower toggle (PlayerCommand::lower).
-    // zone:         the zone the pawn stands in.
-    // Returns:      true in a safe zone, false in a hostile one, else `wantsLowered`.
-    [[nodiscard]] bool isWeaponLowered(bool wantsLowered, WeaponZone zone);
+    // zone:         the zone rule in effect where the pawn stands (effectiveWeaponZone()).
+    // isHoldingToy: the player carries a toy (RoomState::heldToy).
+    // Returns:      true while holding a toy or in a safe zone, false in a hostile one, else
+    //               `wantsLowered`.
+    [[nodiscard]] bool isWeaponLowered(bool wantsLowered, WeaponZone zone, bool isHoldingToy);
 } //namespace game
 
 #endif //LOCKSTEP_GAME_WEAPONS_WEAPON_STANCE_HPP

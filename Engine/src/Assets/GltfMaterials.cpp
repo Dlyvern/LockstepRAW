@@ -53,6 +53,11 @@ namespace lockstep::assets
         m_handles[slot] = handle;
     }
 
+    const std::vector<render::TextureHandle>& TextureTable::handles() const
+    {
+        return m_handles;
+    }
+
     render::TextureHandle TextureTable::find(const cgltf_texture_view& view, bool srgb) const
     {
         const auto found = m_slots.find({sourceImage(view), srgb});

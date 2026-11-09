@@ -92,7 +92,7 @@ namespace game
         }
 
         void describeStreetDoor(const RoomState& before, const RoomState& after, std::size_t player,
-            std::vector<const char*>& lines)
+            std::vector<std::string_view>& lines)
         {
             if (before.isStreetDoorOpen == after.isStreetDoorOpen)
             {
@@ -103,14 +103,14 @@ namespace game
 
             if (after.isStreetDoorOpen)
             {
-                lines.push_back(isOwn ? "You push the street door open. Cold air." : "Your flatmate opened the street door.");
+                lines.push_back(isOwn ? "morning.street_door.open.self" : "morning.street_door.open.partner");
                 return;
             }
 
-            lines.push_back(isOwn ? "You pull the street door shut." : "Your flatmate shut the street door.");
+            lines.push_back(isOwn ? "morning.street_door.shut.self" : "morning.street_door.shut.partner");
         }
 
-        void describePhase(const RoomState& before, const RoomState& after, std::vector<const char*>& lines)
+        void describePhase(const RoomState& before, const RoomState& after, std::vector<std::string_view>& lines)
         {
             if (before.phase == after.phase)
             {
@@ -119,45 +119,45 @@ namespace game
 
             if (after.phase == MorningPhase::GoToCar)
             {
-                lines.push_back("You head out together. The car is parked across the park.");
+                lines.push_back("morning.narration.go_to_car");
             }
             else if (after.phase == MorningPhase::MorningComplete)
             {
-                lines.push_back("You get in the car. Off to the station.");
+                lines.push_back("morning.narration.drive");
             }
         }
 
-        const char* noticeText(RoomNotice notice)
+        std::string_view noticeId(RoomNotice notice)
         {
             switch (notice)
             {
                 case RoomNotice::AlarmAlreadyOff:
-                    return "The alarm is already off.";
+                    return "morning.notice.alarm_off";
                 case RoomNotice::StillBrewing:
-                    return "Still brewing. Smells good.";
+                    return "morning.notice.still_brewing";
                 case RoomNotice::CoffeeNotReady:
-                    return "Empty. Brew some coffee first.";
+                    return "morning.notice.coffee_not_ready";
                 case RoomNotice::AlreadyHaveCoffee:
-                    return "You already have your coffee.";
+                    return "morning.notice.have_coffee";
                 case RoomNotice::NotYourLocker:
-                    return "That's your flatmate's locker.";
+                    return "morning.notice.not_your_locker";
                 case RoomNotice::NeedGear:
-                    return "Not without your badge and sidearm.";
+                    return "morning.notice.need_gear";
                 case RoomNotice::PartnerNeedsGear:
-                    return "Your flatmate isn't geared up yet.";
+                    return "morning.notice.partner_needs_gear";
                 case RoomNotice::PartnerAbsent:
-                    return "You never leave without your flatmate.";
+                    return "morning.notice.partner_absent";
                 case RoomNotice::MirrorLook:
-                    return "You look tired. Same as yesterday.";
+                    return "morning.notice.mirror";
                 case RoomNotice::WallClockTime:
-                    return "07:40. Shift starts at eight.";
+                    return "morning.notice.wall_clock";
                 case RoomNotice::NothingHappens:
-                    return "Nothing happens.";
+                    return "morning.notice.nothing";
                 case RoomNotice::None:
                     break;
             }
 
-            return "";
+            return {};
         }
 
         std::size_t partnerOf(std::size_t player)
@@ -166,7 +166,7 @@ namespace game
         }
 
         void describeMugs(const RoomState& before, const RoomState& after, std::size_t player,
-            std::vector<const char*>& lines)
+            std::vector<std::string_view>& lines)
         {
             for (std::size_t mug = 0; mug < after.mugTakenBy.size(); ++mug)
             {
@@ -175,34 +175,34 @@ namespace game
                     continue;
                 }
 
-                lines.push_back(after.mugTakenBy[mug] == player ? "You take a mug of coffee."
-                    : "Your flatmate takes a mug of coffee.");
+                lines.push_back(after.mugTakenBy[mug] == player ? "morning.mug.self"
+                    : "morning.mug.partner");
             }
         }
 
         void describePlayers(const RoomState& before, const RoomState& after, std::size_t player,
-            std::vector<const char*>& lines)
+            std::vector<std::string_view>& lines)
         {
             const std::size_t partner = partnerOf(player);
 
             if (before.lockerOpen[player] == 0.0f && after.lockerOpen[player] > 0.0f)
             {
-                lines.push_back("Your locker door swings open.");
+                lines.push_back("morning.locker.open");
             }
 
             if (!before.hasBadge[player] && after.hasBadge[player])
             {
-                lines.push_back("You clip on your badge and holster your sidearm.");
+                lines.push_back("morning.gear.self");
             }
 
             if (!before.hasBadge[partner] && after.hasBadge[partner])
             {
-                lines.push_back("Your flatmate is geared up.");
+                lines.push_back("morning.gear.partner");
             }
 
             if (before.noticeCount[player] != after.noticeCount[player] && after.notice[player] != RoomNotice::None)
             {
-                lines.push_back(noticeText(after.notice[player]));
+                lines.push_back(noticeId(after.notice[player]));
             }
         }
     } //namespace
@@ -336,34 +336,34 @@ namespace game
         return "E: Inspect";
     }
 
-    std::vector<const char*> describeRoomChanges(const RoomState& before, const RoomState& after, std::size_t player)
+    std::vector<std::string_view> describeRoomChanges(const RoomState& before, const RoomState& after, std::size_t player)
     {
-        std::vector<const char*> lines;
+        std::vector<std::string_view> lines;
 
         if (before.isAlarmRinging && !after.isAlarmRinging)
         {
-            lines.push_back(after.alarmSilencedBy == player ? "You silence the alarm."
-                : "Your flatmate silenced the alarm before you got to it.");
+            lines.push_back(after.alarmSilencedBy == player ? "morning.alarm.self"
+                : "morning.alarm.partner");
         }
 
         if (before.coffee != after.coffee)
         {
-            lines.push_back(after.coffee == CoffeePhase::Brewing ? "The coffee machine starts to gurgle."
-                : "Coffee's ready. Two mugs on the counter.");
+            lines.push_back(after.coffee == CoffeePhase::Brewing ? "morning.coffee.brewing"
+                : "morning.coffee.ready");
         }
 
         describeMugs(before, after, player, lines);
 
         if (before.isRadioOn != after.isRadioOn)
         {
-            lines.push_back(after.isRadioOn ? "The radio crackles on." : "The radio goes quiet.");
+            lines.push_back(after.isRadioOn ? "morning.radio.on" : "morning.radio.off");
         }
 
         describePlayers(before, after, player, lines);
 
         if (before.door == DoorPhase::Closed && after.door != DoorPhase::Closed)
         {
-            lines.push_back("The front door swings open.");
+            lines.push_back("morning.front_door.open");
         }
 
         describeStreetDoor(before, after, player, lines);

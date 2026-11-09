@@ -139,6 +139,36 @@ namespace lockstep::render
         [[nodiscard]] Result<MaterialHandle> createMaterial(const PbrMaterialDescription& description,
             MeshKind kind = MeshKind::Static);
 
+        // Destroys a mesh (static or skinned). The handle, and every copy of it, is stale at once;
+        // the GPU memory is released once every frame in flight that could draw it has finished
+        // (draws submitted earlier this frame still render). Submitting a stale handle is a bug:
+        // it asserts in debug builds and is ignored, with one log line, in release builds.
+        // mesh:    the mesh. Invalid or already destroyed handles are ignored.
+        // Returns: true if a living mesh was destroyed.
+        bool destroyMesh(MeshHandle mesh);
+
+        // Destroys a material, deferred like destroyMesh(). The textures it binds stay alive until
+        // they are destroyed themselves.
+        // material: the material. Invalid or already destroyed handles are ignored.
+        // Returns:  true if a living material was destroyed.
+        bool destroyMaterial(MaterialHandle material);
+
+        // Destroys a texture, deferred like destroyMesh(). Materials created with it keep sampling
+        // it: its memory is released only after the last of them is destroyed as well.
+        // texture: the texture. Invalid or already destroyed handles are ignored.
+        // Returns: true if a living texture was destroyed.
+        bool destroyTexture(TextureHandle texture);
+
+        // Returns: GPU memory use and living resource counts.
+        [[nodiscard]] GpuMemoryStats memoryStats() const;
+
+        // Waits for the GPU to go idle, then frees the GPU memory of every destroyed mesh, material
+        // and texture at once instead of after the frames in flight. For level switches: destroy
+        // the old level, call this, then load the new one. Stalls the GPU, so not for every frame.
+        // Call it before submitting this frame's draws; draws already submitted are discarded.
+        // Returns: an error if waiting for the GPU failed.
+        [[nodiscard]] Status releaseDestroyed();
+
         // Sets the point of view for the next render().
         // camera: camera position, orientation and lens.
         void setCamera(const Camera& camera);
@@ -151,8 +181,8 @@ namespace lockstep::render
         // colour: the linear RGB colour faded to.
         void setScreenFade(float amount, const math::Vec3& colour = math::Vec3{0.0f, 0.0f, 0.0f});
 
-        // Queues one draw on k_defaultRenderLayer for the next render(). Invalid handles, and
-        // skinned meshes or materials (see submitSkinned()), are ignored (and assert in debug).
+        // Queues one draw on k_defaultRenderLayer for the next render(). Invalid or stale handles,
+        // and skinned meshes or materials (see submitSkinned()), are ignored (and assert in debug).
         // mesh:      the mesh to draw.
         // material:  the material to draw it with.
         // transform: world placement of the mesh.
@@ -184,8 +214,8 @@ namespace lockstep::render
         // previous frame by mesh, material and submission order, and the match's transform is
         // the previous model matrix, so a moving character gets object motion as well as joint
         // motion; a draw with no match (first frame, TAA off) uses `transform` for both.
-        // Invalid handles, mismatched mesh
-        // or material kinds and empty palettes are ignored (and assert in debug).
+        // Invalid or stale handles,
+        // mismatched mesh or material kinds and empty palettes are ignored (and assert in debug).
         // mesh:        a mesh created from SkinnedPbrVertex data.
         // material:    a material created for MeshKind::Skinned.
         // transform:   world placement of the model space the palette is in.

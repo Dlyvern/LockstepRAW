@@ -21,7 +21,7 @@ namespace game
 
         if (hit->controller.isNull())
         {
-            return ShotResult{.outcome = ShotOutcome::Level, .distance = hit->distance};
+            return ShotResult{.outcome = ShotOutcome::Level, .distance = hit->distance, .body = hit->body};
         }
 
         const bool isEnemy = !enemy.isNull() && hit->controller == enemy;

@@ -62,6 +62,6 @@ namespace lockstep::render
             return toError(texture.error());
         }
 
-        return m_state->textures.add(std::move(texture).value());
+        return m_state->textures.add(TextureRecord{.texture = std::move(texture).value(), .materialUses = 0});
     }
 } //namespace lockstep::render

@@ -23,7 +23,8 @@ namespace game
         const LevelSpawns& spawns);
 
     // Host: handles the E presses in a pawn's newest command (called after the command moved it).
-    // Taking the gear from the locker arms the pawn.
+    // Taking the gear from the locker arms the pawn. In the station level the presses go to the
+    // station mission instead (useStation()).
     // state:     the game state.
     // engine:    Engine services.
     // pawnIndex: whose command.

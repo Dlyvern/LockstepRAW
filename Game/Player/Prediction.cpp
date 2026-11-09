@@ -17,11 +17,17 @@ namespace game
 
         constexpr std::byte k_aliveBit{0x01};
         constexpr std::byte k_groundedBit{0x02};
+        constexpr std::byte k_crouchHeldBit{0x04};
         constexpr std::size_t k_flagsOffset{0};
         constexpr std::size_t k_lifeOffset{1};
         constexpr std::size_t k_footOffset{2};
         constexpr std::size_t k_verticalSpeedOffset{14};
         constexpr std::size_t k_planarVelocityOffset{18};
+        constexpr std::size_t k_stanceOffset{26};
+        constexpr std::size_t k_slideSecondsOffset{27};
+        constexpr std::size_t k_slideCooldownOffset{31};
+        constexpr uint8_t k_maxStance{static_cast<uint8_t>(PawnStance::Slide)};
+        constexpr float k_slideTimeTolerance{0.02f};
         constexpr std::size_t k_floatBytes{4};
         constexpr std::size_t k_maxHistory{240};
         constexpr float k_verticalSpeedTolerance{0.05f};
@@ -98,7 +104,8 @@ namespace game
             return true;
         }
 
-        void placeEntity(Prediction& prediction, world::Entities& entities, const math::Vec3& foot, bool isTeleport)
+        void placeEntity(Prediction& prediction, world::Entities& entities, const math::Vec3& foot,
+            const PawnSettings& settings, bool isTeleport)
         {
             world::Entity* entity = entities.find(prediction.entity);
 
@@ -107,7 +114,7 @@ namespace game
                 return;
             }
 
-            placePawnEntity(*entity, foot, yawOf(prediction));
+            placePawnEntity(*entity, foot, yawOf(prediction), stanceHeight(prediction.motion.stance, settings));
 
             if (isTeleport)
             {
@@ -128,7 +135,13 @@ namespace game
                     > k_verticalSpeedTolerance
                 || math::length(acked->motion.planarVelocity - state.motion.planarVelocity) > k_planarVelocityTolerance;
 
-            return error > k_correctionThreshold || isSpeedOff || acked->motion.isGrounded != state.motion.isGrounded;
+            const bool isStanceOff = acked->motion.stance != state.motion.stance
+                || acked->motion.isCrouchHeld != state.motion.isCrouchHeld
+                || std::abs(acked->motion.slideSeconds - state.motion.slideSeconds) > k_slideTimeTolerance
+                || std::abs(acked->motion.slideCooldown - state.motion.slideCooldown) > k_slideTimeTolerance;
+
+            return error > k_correctionThreshold || isSpeedOff || isStanceOff
+                || acked->motion.isGrounded != state.motion.isGrounded;
         }
 
         void restart(Prediction& prediction, world::Entities& entities, physics::PhysicsWorld& physics,
@@ -142,8 +155,10 @@ namespace game
             }
 
             prediction.motion = state.motion;
+            matchStanceHeight(physics, prediction.controller, prediction.motion, settings);
             replay(prediction, physics, settings, delta);
-            placeEntity(prediction, entities, physics.footPosition(prediction.controller).value_or(state.foot), true);
+            placeEntity(prediction, entities, physics.footPosition(prediction.controller).value_or(state.foot), settings,
+                true);
         }
     } //namespace
 
@@ -151,7 +166,8 @@ namespace game
     {
         std::array<std::byte, k_ownPawnStateBytes> bytes{};
         bytes[k_flagsOffset] = (state.isAlive ? k_aliveBit : std::byte{0})
-            | (state.motion.isGrounded ? k_groundedBit : std::byte{0});
+            | (state.motion.isGrounded ? k_groundedBit : std::byte{0})
+            | (state.motion.isCrouchHeld ? k_crouchHeldBit : std::byte{0});
         bytes[k_lifeOffset] = static_cast<std::byte>(state.life);
         writeFloat(bytes, k_footOffset, state.foot.x);
         writeFloat(bytes, k_footOffset + k_floatBytes, state.foot.y);
@@ -159,13 +175,16 @@ namespace game
         writeFloat(bytes, k_verticalSpeedOffset, state.motion.verticalSpeed);
         writeFloat(bytes, k_planarVelocityOffset, state.motion.planarVelocity.x);
         writeFloat(bytes, k_planarVelocityOffset + k_floatBytes, state.motion.planarVelocity.z);
+        bytes[k_stanceOffset] = static_cast<std::byte>(state.motion.stance);
+        writeFloat(bytes, k_slideSecondsOffset, state.motion.slideSeconds);
+        writeFloat(bytes, k_slideCooldownOffset, state.motion.slideCooldown);
 
         return bytes;
     }
 
     std::optional<OwnPawnState> decodeOwnPawnState(std::span<const std::byte> bytes)
     {
-        if (bytes.size() != k_ownPawnStateBytes)
+        if (bytes.size() != k_ownPawnStateBytes || static_cast<uint8_t>(bytes[k_stanceOffset]) > k_maxStance)
         {
             return std::nullopt;
         }
@@ -178,11 +197,16 @@ namespace game
             .motion = {.verticalSpeed = readFloat(bytes, k_verticalSpeedOffset),
                 .isGrounded = (bytes[k_flagsOffset] & k_groundedBit) != std::byte{0},
                 .planarVelocity = {readFloat(bytes, k_planarVelocityOffset), 0.0f,
-                    readFloat(bytes, k_planarVelocityOffset + k_floatBytes)}}};
+                    readFloat(bytes, k_planarVelocityOffset + k_floatBytes)},
+                .stance = static_cast<PawnStance>(bytes[k_stanceOffset]),
+                .isCrouchHeld = (bytes[k_flagsOffset] & k_crouchHeldBit) != std::byte{0},
+                .slideSeconds = readFloat(bytes, k_slideSecondsOffset),
+                .slideCooldown = readFloat(bytes, k_slideCooldownOffset)}};
 
         const bool isFinite = std::isfinite(state.foot.x) && std::isfinite(state.foot.y) && std::isfinite(state.foot.z)
             && std::isfinite(state.motion.verticalSpeed) && std::isfinite(state.motion.planarVelocity.x)
-            && std::isfinite(state.motion.planarVelocity.z);
+            && std::isfinite(state.motion.planarVelocity.z) && std::isfinite(state.motion.slideSeconds)
+            && std::isfinite(state.motion.slideCooldown);
 
         if (!isFinite)
         {
@@ -257,6 +281,7 @@ namespace game
         const math::Vec3 before = physics.footPosition(prediction.controller).value_or(state->foot);
         physics.setFootPosition(prediction.controller, state->foot);
         prediction.motion = state->motion;
+        matchStanceHeight(physics, prediction.controller, prediction.motion, settings);
         replay(prediction, physics, settings, delta);
         const math::Vec3 after = physics.footPosition(prediction.controller).value_or(state->foot);
 
@@ -265,11 +290,11 @@ namespace game
         if (math::length(prediction.visualOffset) > k_maxSmoothedOffset)
         {
             prediction.visualOffset = {};
-            placeEntity(prediction, entities, after, true);
+            placeEntity(prediction, entities, after, settings, true);
         }
         else
         {
-            placeEntity(prediction, entities, after, false);
+            placeEntity(prediction, entities, after, settings, false);
         }
 
         ++prediction.corrections;
@@ -298,7 +323,7 @@ namespace game
 
         if (move.foot)
         {
-            placeEntity(prediction, entities, *move.foot, false);
+            placeEntity(prediction, entities, *move.foot, settings, false);
         }
 
         prediction.visualOffset = prediction.visualOffset * k_offsetFadePerTick;

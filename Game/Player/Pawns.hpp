@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_PLAYER_PAWNS_HPP
 #define LOCKSTEP_GAME_PLAYER_PAWNS_HPP
 
+#include "Player/PawnMovement.hpp"
 #include "Player/PlayerCommand.hpp"
 
 #include <Lockstep/Core/Math.hpp>
@@ -30,27 +31,6 @@ namespace game
     // Players in a game: Player1 (the host) and Player2 (the client).
     inline constexpr std::size_t k_playerCount{2};
 
-    // Half the size of a pawn's body (its capsule's bounds), in metres.
-    inline constexpr math::Vec3 k_pawnHalfExtents{0.3f, 0.9f, 0.3f};
-
-    // Height of the eyes above the pawn's centre, in metres.
-    inline constexpr float k_pawnEyeOffset{0.7f};
-
-    // The movement state a pawn carries from tick to tick besides its controller's position.
-    // Host and client step it with the same code (stepPawn()), so the client can predict it.
-    // verticalSpeed:  upward speed in m/s (negative while falling).
-    // isGrounded:     whether the last move ended on the ground.
-    // planarVelocity: wanted horizontal velocity in m/s (y is always 0), eased towards what the
-    //                 command asks for by PawnSettings::acceleration / deceleration.
-    struct PawnMotion
-    {
-        float verticalSpeed{0.0f};
-        bool isGrounded{false};
-        math::Vec3 planarVelocity{0.0f, 0.0f, 0.0f};
-
-        friend bool operator==(const PawnMotion&, const PawnMotion&) = default;
-    };
-
     // One player's pawn on the host: its entity and controller plus the input, health and
     // counters that drive it.
     // entity:         the pawn entity (Player time domain); null while absent or dead.
@@ -59,7 +39,7 @@ namespace game
     // hasCommand:     false until the first command arrived after the player joined.
     // processedShots: the command shot counter the host already fired for.
     // processedInteracts: the command interact counter the host already handled.
-    // motion:         velocity and grounding.
+    // motion:         velocity, grounding, stance and slide timers.
     // life:           counts spawns (wrapping), so the client can tell a respawn from a move.
     // isJoined:       the player is in the game (alive or waiting to respawn).
     // health:         hit points left; 0 while dead.
@@ -89,38 +69,6 @@ namespace game
         uint32_t deaths{0};
     };
 
-    // Pawn movement and health settings. Speeds are metres per second of Player time; a diagonal
-    // move gets the speed of the ellipse through the forward/backward and strafe speeds.
-    // walkSpeed:    walking forward.
-    // runSpeed:     running forward while sprint is held (forward and forward-diagonal moves only).
-    // weaponUpRunSpeed: cap on running while the weapon is raised (PlayerCommand::isWeaponUp).
-    // backSpeed:    walking backward.
-    // strafeSpeed:  walking sideways.
-    // sprintStrafeSpeed: sideways part of a forward-diagonal run.
-    // aimSpeed:     cap on every direction while aiming (no running then).
-    // acceleration: m/s^2 while speeding up towards the wanted velocity.
-    // deceleration: m/s^2 while slowing down.
-    // gravity:      downward acceleration while airborne, in m/s^2.
-    // groundStick:  downward speed kept while grounded, so the pawn follows steps and ramps down.
-    // maxHealth:    hit points after (re)spawning.
-    // respawnDelay: Player seconds from death to respawn.
-    struct PawnSettings
-    {
-        float walkSpeed{1.6f};
-        float runSpeed{4.0f};
-        float weaponUpRunSpeed{2.8f};
-        float backSpeed{1.2f};
-        float strafeSpeed{1.6f};
-        float sprintStrafeSpeed{1.6f};
-        float aimSpeed{1.3f};
-        float acceleration{6.0f};
-        float deceleration{10.0f};
-        float gravity{18.0f};
-        float groundStick{3.0f};
-        int32_t maxHealth{100};
-        float respawnDelay{3.0f};
-    };
-
     // Settings of a pawn's capsule controller.
     // footPosition: where its feet start.
     // Returns:      the description, the same on host and client.
@@ -148,25 +96,13 @@ namespace game
     // physics:  the physics world.
     void despawnPawn(Pawn& pawn, lockstep::world::Entities& entities, lockstep::physics::PhysicsWorld& physics);
 
-    // Moves a pawn's controller by one command for one tick: walks or runs (easing its speed),
-    // falls, climbs steps and ramps. The one movement rule, used by the host for every pawn and by the client to predict
-    // and replay its own.
-    // motion:     the pawn's velocity and grounding, updated.
-    // controller: the pawn's controller.
-    // physics:    moves the controller.
-    // command:    the command of this tick.
-    // settings:   movement settings.
-    // delta:      the Player domain's delta for this tick, in seconds.
-    // Returns:    the new foot position, or nothing for a stale controller.
-    std::optional<math::Vec3> stepPawn(PawnMotion& motion, lockstep::physics::ControllerId controller,
-        lockstep::physics::PhysicsWorld& physics, const PlayerCommand& command, const PawnSettings& settings,
-        float delta);
-
-    // Places a pawn entity: centre above `footPosition`, turned to `yaw`, pawn-sized.
+    // Places a pawn entity: centre above `footPosition`, turned to `yaw`, sized like its capsule
+    // (the entity scale's y is the capsule height, so the replicated transform carries crouching).
     // entity:       the entity.
     // footPosition: the controller's foot position.
     // yaw:          look angle around the up axis.
-    void placePawnEntity(lockstep::world::Entity& entity, const math::Vec3& footPosition, float yaw);
+    // height:       the capsule height (stanceHeight()).
+    void placePawnEntity(lockstep::world::Entity& entity, const math::Vec3& footPosition, float yaw, float height);
 
     // Host: moves and turns a living pawn by its command for one tick with stepPawn(), then
     // copies the result into its entity.
@@ -183,8 +119,14 @@ namespace game
     [[nodiscard]] math::Vec3 pawnFootPosition(const math::Transform& transform);
 
     // transform: a pawn's transform.
-    // Returns:   the world position of the pawn's eyes.
+    // Returns:   the world position of the pawn's eyes, k_pawnEyeBelowTop under the top of its
+    //            capsule (lower while crouched or sliding).
     [[nodiscard]] math::Vec3 eyePosition(const math::Transform& transform);
+
+    // transform: a pawn entity's (interpolated) transform.
+    // settings:  movement settings (stand and crouch heights).
+    // Returns:   how far it is crouched: 0 standing, 1 at crouch height, above 1 lower (sliding).
+    [[nodiscard]] float pawnCrouchAmount(const math::Transform& transform, const PawnSettings& settings);
 
     // yaw:     look angle around the up axis, 0 looks along -z.
     // pitch:   look angle up (positive) or down.

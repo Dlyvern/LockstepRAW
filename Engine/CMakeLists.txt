@@ -25,6 +25,7 @@ add_library(LockstepEngine STATIC
     src/Assets/PakMount.cpp
     src/Assets/Scene.cpp
     src/Assets/SceneCollision.cpp
+    src/Assets/SceneLights.cpp
     src/Assets/TextureImport.cpp
     src/Core/Bounds.cpp
     src/Core/FixedTimestep.cpp
@@ -67,6 +68,7 @@ add_library(LockstepEngine STATIC
     src/Render/Renderer.cpp
     src/Render/RendererResources.cpp
     src/Render/RendererState.cpp
+    src/Render/ResourceLifetime.cpp
     src/Render/RenderPassAdapter.cpp
     src/Render/ShaderLoader.cpp
     src/Render/ShadowCascades.cpp

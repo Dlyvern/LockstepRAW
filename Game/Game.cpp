@@ -5,7 +5,9 @@
 #include "Player/LocalPlayer.hpp"
 #include "Presentation/Frame.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Simulation/LevelFlow.hpp"
 #include "Simulation/RoomSimulation.hpp"
+#include "Simulation/StationSimulation.hpp"
 
 #include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Assets/Scene.hpp>
@@ -55,31 +57,6 @@ namespace game
             {
                 return argument != nullptr && std::string_view(argument) == flag;
             });
-        }
-
-        lockstep::Status loadLevel(GameState& state, EngineContext& engine, const std::optional<SceneLaunch>& launch)
-        {
-            if (!launch)
-            {
-                state.arena = buildArena();
-                return startRoom(state, engine, LevelSpawns{});
-            }
-
-            auto level = loadSceneLevel(*launch, engine.renderer, engine.physics, engine.files);
-
-            if (!level)
-            {
-                return level.error();
-            }
-
-            state.level = std::move(level).value();
-            state.weaponZones = findWeaponZones(state.level->scene);
-            state.characters = createSceneCharacters(state.level->scene, engine.arguments);
-            const LevelSpawns spawns = findLevelSpawns(*state.level, engine.physics);
-            state.settings.spawnPoints = spawns.pawns;
-            state.settings.enemy.spawnPoint = spawns.enemy;
-
-            return startRoom(state, engine, spawns);
         }
 
         void startAmbience(EngineContext& engine)
@@ -135,7 +112,7 @@ namespace game
             state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
             applyArenaLook(engine.renderer);
 
-            if (auto loaded = loadLevel(*state, engine, launch.value()); !loaded)
+            if (auto loaded = startLevel(*state, engine, launch.value()); !loaded)
             {
                 return loaded.error();
             }
@@ -160,19 +137,20 @@ namespace game
             return state.release();
         }
 
-        void receiveStatuses(GameState& state, const EngineContext& engine)
+        void receiveStatuses(GameState& state, EngineContext& engine)
         {
             for (const std::vector<std::byte>& message : engine.session.received())
             {
-                if (receiveRoomMessage(state, message))
+                if (receiveLevelMessage(state, engine, message) || receiveRoomMessage(state, message)
+                    || receiveStationMessage(state, message))
                 {
                     continue;
                 }
 
-                if (const std::optional<PlayerStatuses> statuses = decodePlayerStatuses(message))
+                if (const std::optional<StatusMessage> status = decodeStatusMessage(message))
                 {
                     const PlayerStatus& before = state.local.statuses[k_clientPawn];
-                    const PlayerStatus& after = (*statuses)[k_clientPawn];
+                    const PlayerStatus& after = status->players[k_clientPawn];
 
                     if (after.isDead && !before.isDead)
                     {
@@ -183,7 +161,13 @@ namespace game
                         std::clog << "Game: health " << after.health << '\n';
                     }
 
-                    state.local.statuses = *statuses;
+                    if (status->isCombatActive != state.local.isCombatActive)
+                    {
+                        std::clog << "Game: combat " << (status->isCombatActive ? "started" : "ended") << '\n';
+                    }
+
+                    state.local.statuses = status->players;
+                    state.local.isCombatActive = status->isCombatActive;
                 }
             }
         }
@@ -237,11 +221,15 @@ namespace game
                 }
 
                 runRoomClientTick(state, engine);
+                runStationClientTick(state, engine);
+                presentLevel(state, engine);
 
                 return;
             }
 
             runHostTick(state, engine);
+            updateLevelFlowAsHost(state, engine);
+            presentLevel(state, engine);
         }
 
         void shutdown(GameState* state)

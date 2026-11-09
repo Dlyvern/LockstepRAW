@@ -116,6 +116,16 @@ namespace lockstep::physics
         float contactOffset{0.02f};
     };
 
+    // How PhysicsWorld::setControllerHeight() treats a controller that grows.
+    // MustFit: growing fails (nothing changes) when the taller capsule would overlap static or
+    //          kinematic geometry, e.g. standing up under a table.
+    // Force:   resize anyway, e.g. to match a size the host already checked.
+    enum class ControllerResize : uint8_t
+    {
+        MustFit,
+        Force
+    };
+
     // What a controller hit during one move().
     // grounded:   it touched ground below: standing, can jump, should not fall.
     // hitCeiling: it touched something above.

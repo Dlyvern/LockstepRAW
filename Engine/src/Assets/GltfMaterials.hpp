@@ -43,6 +43,9 @@ namespace lockstep::assets
         // handle: the texture, or an invalid handle if it could not be created.
         void setHandle(std::size_t slot, render::TextureHandle handle);
 
+        // Returns: the handle of every slot, invalid for slots not uploaded (yet).
+        [[nodiscard]] const std::vector<render::TextureHandle>& handles() const;
+
         // view:    a material's texture slot.
         // srgb:    the colour space the slot needs.
         // Returns: the uploaded texture for it, or an invalid handle if the slot is empty or the

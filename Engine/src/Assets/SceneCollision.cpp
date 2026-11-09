@@ -208,4 +208,11 @@ namespace lockstep::assets
 
         collision = SceneCollision{};
     }
+
+    void releaseScene(render::Renderer& renderer, physics::PhysicsWorld& physics, Scene& scene,
+        SceneCollision& collision)
+    {
+        destroySceneCollision(physics, collision);
+        releaseScene(renderer, scene);
+    }
 } //namespace lockstep::assets

@@ -109,8 +109,8 @@ namespace lockstep::assets
     };
 
     // A light authored in the source file (KHR_lights_punctual), with glTF's units: point and
-    // spot intensity in candela, directional in lux. Game decides how to map them onto
-    // render lights.
+    // spot intensity in candela, directional in lux. SceneLights.hpp converts them into render
+    // lights; Game decides which ones to use.
     // type:       directional, point or spot.
     // name:       the light's name, or its node's name.
     // color:      linear RGB.
@@ -154,9 +154,21 @@ namespace lockstep::assets
         uint64_t contentBytes{0};
     };
 
+    // Every GPU resource a scene load created, each listed once, so releaseScene() can destroy
+    // them. Shared ones (a material used by several meshes) appear once.
+    // meshes:    static and skinned meshes.
+    // materials: static and skinned materials.
+    // textures:  textures.
+    struct SceneResources
+    {
+        std::vector<render::MeshHandle> meshes;
+        std::vector<render::MaterialHandle> materials;
+        std::vector<render::TextureHandle> textures;
+    };
+
     // A loaded scene (an imported glTF or a cooked level): GPU resources (owned by the Renderer;
     // the scene holds handles) and where to draw them. Plain data; copying it copies handles, not
-    // resources.
+    // resources. Free the resources with releaseScene() (each scene once, not each copy).
     // meshes:          drawable parts.
     // instances:       placed copies of the parts, in node order.
     // nodes:           every named node with its world transform (markers such as
@@ -170,6 +182,7 @@ namespace lockstep::assets
     // warnings:        source features the import skipped or approximated, one line each,
     //                  deduplicated.
     // stats:           counts, timing and memory.
+    // resources:       the GPU resources the load created, for releaseScene().
     struct Scene
     {
         std::vector<SceneMesh> meshes;
@@ -182,6 +195,7 @@ namespace lockstep::assets
         math::Aabb bounds{};
         std::vector<std::string> warnings;
         SceneStats stats{};
+        SceneResources resources;
     };
 
     // Settings for importGltf().
@@ -278,6 +292,16 @@ namespace lockstep::assets
     // Returns: indices into Scene::instances of every instance whose node is in the subtree of
     //          `root`, in order.
     [[nodiscard]] std::vector<uint32_t> subtreeInstances(const Scene& scene, uint32_t root);
+
+    // Destroys every GPU resource the scene's load created (static and skinned meshes, materials,
+    // textures; see Renderer::destroyMesh() for when the memory is handed back) and clears the
+    // scene, so its handles can no longer be submitted. Copies of the scene's handles held
+    // elsewhere (skinned instances, mirrors) become stale: drop them first. The static colliders
+    // are separate: destroySceneCollision(), or the releaseScene() overload in SceneCollision.hpp.
+    // A failed importGltf() or loadCookedScene() releases what it created by itself.
+    // renderer: the renderer the scene was loaded with.
+    // scene:    the scene; empty afterwards.
+    void releaseScene(render::Renderer& renderer, Scene& scene);
 
     // Submits every visible static instance of the scene for the next render(). Skinned
     // instances are drawn by Game through anim::SkinnedInstance.

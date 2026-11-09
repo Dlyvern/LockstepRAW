@@ -58,6 +58,7 @@ namespace lockstep::assets
                 }
 
                 slot = created.value();
+                context.scene.resources.materials.push_back(created.value());
                 ++context.scene.stats.materialCount;
             }
 
@@ -92,6 +93,7 @@ namespace lockstep::assets
                 return uploaded.error();
             }
 
+            context.scene.resources.meshes.push_back(uploaded.value());
             SceneMesh part{};
             part.mesh = uploaded.value();
             part.material = material.value();
@@ -200,6 +202,7 @@ namespace lockstep::assets
                     return mesh.error();
                 }
 
+                context.scene.resources.meshes.push_back(mesh.value());
                 model.parts.push_back(anim::SkinnedModelPart{.mesh = mesh.value(), .material = material.value()});
                 context.scene.stats.triangleCount += part.geometry.indices.size() / 3;
             }
@@ -269,9 +272,19 @@ namespace lockstep::assets
         const std::size_t slash = path.find_last_of('/');
         const std::string_view directory = slash == std::string_view::npos ? std::string_view{} : path.substr(0, slash);
 
-        if (auto imported = importTextures(renderer, textures, files, directory, options, scene.stats, warnings);
-            !imported)
+        auto imported = importTextures(renderer, textures, files, directory, options, scene.stats, warnings);
+
+        for (const render::TextureHandle texture : textures.handles())
         {
+            if (texture.isValid())
+            {
+                scene.resources.textures.push_back(texture);
+            }
+        }
+
+        if (!imported)
+        {
+            releaseScene(renderer, scene);
             return imported.error();
         }
 
@@ -290,11 +303,13 @@ namespace lockstep::assets
 
         if (auto added = addNodeTree(context); !added)
         {
+            releaseScene(renderer, scene);
             return added.error();
         }
 
         if (scene.instances.empty() && scene.skinnedInstances.empty())
         {
+            releaseScene(renderer, scene);
             return Error{ErrorCode::AssetLoadFailed, "importGltf: '" + std::string(path) + "' has no drawable triangles"};
         }
 

@@ -3,6 +3,7 @@
 #include "GameState.hpp"
 #include "Level/MorningRoutine.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Simulation/StationSimulation.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
@@ -25,7 +26,7 @@ namespace game
         constexpr float k_throwSpeed{9.0f};
         constexpr float k_throwLift{1.5f};
         constexpr float k_dropSpeed{1.0f};
-        constexpr const char* k_driveCaption{"Driving to the station..."};
+        constexpr std::string_view k_driveCaptionId{"morning.caption.drive"};
 
         std::optional<ToyPlayer> toyPlayer(const GameState& state, const EngineContext& engine, std::size_t pawnIndex)
         {
@@ -179,14 +180,15 @@ namespace game
             applyRoomState(room, *state.level, engine.physics, engine.timeDomains.delta(world::TimeDomain::World));
             stepHud(hud, playerDelta);
 
-            for (const char* line : takeRoomChanges(room, localPlayer))
+            for (const std::string_view id : takeRoomChanges(room, localPlayer))
             {
-                addHudLine(hud, line);
+                addHudLine(hud, lineText(state.dialogue, id));
             }
 
             stepDrive(room, playerDelta);
             hud.fade = driveFade(room);
-            hud.caption = room.state.phase == MorningPhase::MorningComplete ? k_driveCaption : "";
+            hud.caption = room.state.phase == MorningPhase::MorningComplete ? lineText(state.dialogue, k_driveCaptionId)
+                : std::string_view{};
 
             if (localPawn == nullptr)
             {
@@ -198,7 +200,8 @@ namespace game
             }
 
             const bool isAtCar = isNearCar(room, pawnFootPosition(localPawn->transform()));
-            setHudObjective(hud, objectiveText(room.state, localPlayer, isAtCar));
+            const std::string_view objective = objectiveId(room.state, localPlayer, isAtCar);
+            setHudObjective(hud, objective.empty() ? objective : lineText(state.dialogue, objective));
             updateLookPrompt(room, *state.level, engine.physics, engine.entities, eyePosition(localPawn->transform()),
                 lookDirection(state.local.command.yaw, state.local.command.pitch), localController, localPlayer);
             setHudPrompt(hud, room.state.phase == MorningPhase::MorningComplete ? "" : room.prompt);
@@ -259,6 +262,13 @@ namespace game
         while (pawn.hasCommand && pawn.processedInteracts != pawn.command.interactCount)
         {
             ++pawn.processedInteracts;
+
+            if (state.station)
+            {
+                useStation(state, engine, pawnIndex);
+                continue;
+            }
+
             const world::Entity* entity = engine.entities.find(pawn.entity);
 
             if (!state.room || !state.level || entity == nullptr)

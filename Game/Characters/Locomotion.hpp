@@ -15,7 +15,8 @@ namespace game
     namespace math = lockstep::math;
 
     // Names of the locomotion clips in a character model (compared case-insensitively). The turn
-    // clips are optional; an empty name means the model has none.
+    // clips are optional; an empty name means the model has none. reverseWalkBack plays the
+    // walkBack clip backwards (for sets that reuse a forward walk, e.g. crouching).
     struct LocomotionClipNames
     {
         std::string_view idle{"Idle"};
@@ -26,16 +27,19 @@ namespace game
         std::string_view strafeRight{"StrafeRight"};
         std::string_view turnLeft{"TurnLeft"};
         std::string_view turnRight{"TurnRight"};
+        bool reverseWalkBack{false};
     };
 
     // A moving clip and the ground speed its feet cover at authored playback speed, so playback
     // can be scaled until the feet stop sliding.
     // clip:        index into the model's clips.
     // strideSpeed: metres per second of the planted foot relative to the body.
+    // direction:   1 plays the clip forwards, -1 backwards.
     struct StrideClip
     {
         uint32_t clip{0};
         float strideSpeed{1.0f};
+        float direction{1.0f};
     };
 
     // The locomotion clips of one character model.

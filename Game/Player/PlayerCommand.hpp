@@ -35,6 +35,8 @@ namespace game
     // isWeaponUp: the player is armed with the weapon raised; caps running at
     //             PawnSettings::weaponUpRunSpeed. The client sets it to predict its own pawn; the
     //             host overwrites it from its own armed and lowered state.
+    // crouch:     the player wants to crouch (Ctrl held or the C toggle on). A fresh crouch while
+    //             running starts a slide (see stepPawn()).
     struct PlayerCommand
     {
         math::Vec2 move{0.0f, 0.0f};
@@ -47,6 +49,7 @@ namespace game
         bool aim{false};
         bool lower{false};
         bool isWeaponUp{false};
+        bool crouch{false};
     };
 
     // The local player's look, shot and interact counters, kept between ticks to build
@@ -55,6 +58,7 @@ namespace game
     // shotCount:     shots fired so far, wrapping at 256.
     // interactCount: interact presses so far, wrapping at 256.
     // wantsLowered:  the lower toggle; fire or aim clears it to raise the weapon.
+    // isCrouchToggled: the crouch toggle (C); a fresh press of run (Shift) clears it.
     struct LocalControls
     {
         float yaw{0.0f};
@@ -62,6 +66,7 @@ namespace game
         uint8_t shotCount{0};
         uint8_t interactCount{0};
         bool wantsLowered{false};
+        bool isCrouchToggled{false};
     };
 
     // The key that lowers or raises the weapon.
@@ -70,7 +75,8 @@ namespace game
     // What decides how fire, aim and the lower key act this tick, as the local machine predicts it.
     // isArmed:      the player carries a weapon (as last replicated).
     // zone:         the weapon zone the local pawn stands in.
-    // isHoldingToy: the player carries a toy; a click then throws it, even with the weapon lowered.
+    // isHoldingToy: the player carries a toy: the weapon is lowered (as in a safe zone), a click
+    //               throws the toy, aim and the lower key do nothing.
     struct WeaponControl
     {
         bool isArmed{false};
@@ -87,7 +93,8 @@ namespace game
         float maxPitch{1.45f};
     };
 
-    // Builds this tick's command from local input: WASD to move, Shift to run, mouse to look,
+    // Builds this tick's command from local input: WASD to move, Shift to run, hold Ctrl or toggle
+    // C to crouch (Ctrl or C while running slides), mouse to look,
     // left mouse to fire, right mouse to aim down sights, X (k_lowerWeaponKey) to lower or raise
     // the weapon, E to interact, Space for bullet-time. Look, fire, aim, lower and interact only
     // count while the cursor is captured. With the weapon lowered, a click or aim raises it

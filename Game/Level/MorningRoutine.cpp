@@ -37,24 +37,24 @@ namespace game
         std::clog << "Game: room: both players are at the car; morning complete\n";
     }
 
-    const char* objectiveText(const RoomState& state, std::size_t player, bool isAtCar)
+    std::string_view objectiveId(const RoomState& state, std::size_t player, bool isAtCar)
     {
         switch (state.phase)
         {
             case MorningPhase::Apartment:
                 if (!state.hasBadge[player] || !state.hasSidearm[player])
                 {
-                    return "Get your gear";
+                    return "morning.objective.gear";
                 }
 
-                return "Head out with your flatmate";
+                return "morning.objective.head_out";
             case MorningPhase::GoToCar:
-                return isAtCar ? "Wait for your flatmate at the car" : "Head to the car";
+                return isAtCar ? "morning.objective.wait_car" : "morning.objective.car";
             case MorningPhase::MorningComplete:
                 break;
         }
 
-        return "";
+        return {};
     }
 
     void stepDrive(ApartmentRoom& room, float playerDelta)

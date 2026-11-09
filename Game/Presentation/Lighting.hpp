@@ -39,8 +39,9 @@ namespace game
 
     // Submits the arena's lights (the sun comes from the renderer's sky; this adds a few warm lamps)
     // and draws the PBR material showcase along the north wall, creating it on the first call.
-    // renderer: the renderer.
-    // state:    the lighting state.
+    // Only for the arena: a loaded level brings its own lights and has no showcase.
+    // renderer:  the renderer.
+    // state:     the lighting state.
     void submitArenaLights(lockstep::render::Renderer& renderer, LightingState& state);
 } //namespace game
 

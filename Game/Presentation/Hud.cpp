@@ -23,13 +23,16 @@ namespace game
         constexpr math::Vec2 k_objectivePosition{0.03f, 0.04f};
         constexpr math::Vec2 k_linesPosition{0.5f, 0.64f};
         constexpr math::Vec2 k_captionPosition{0.5f, 0.47f};
+        constexpr math::Vec2 k_subtitlePosition{0.5f, 0.88f};
         constexpr math::Vec4 k_promptColor{1.0f, 0.86f, 0.55f, 1.0f};
         constexpr math::Vec4 k_objectiveColor{0.85f, 0.88f, 0.9f, 0.9f};
         constexpr math::Vec4 k_lineColor{1.0f, 1.0f, 1.0f, 1.0f};
+        constexpr math::Vec4 k_subtitleColor{0.95f, 0.95f, 0.85f, 1.0f};
         constexpr float k_promptSize{28.0f};
         constexpr float k_objectiveSize{24.0f};
         constexpr float k_lineSize{26.0f};
         constexpr float k_captionSize{40.0f};
+        constexpr float k_subtitleSize{26.0f};
         constexpr float k_captionFadeStart{0.5f};
     } //namespace
 
@@ -58,6 +61,23 @@ namespace game
         hud.objective = objective;
         std::clog << "Game: [" << playerName(hud.localPlayer) << "] objective: "
             << (objective.empty() ? "-" : objective) << '\n';
+    }
+
+    void setHudSubtitle(Hud& hud, std::string_view subtitle)
+    {
+        if (subtitle == hud.subtitle)
+        {
+            return;
+        }
+
+        hud.subtitle = subtitle;
+
+        if (!subtitle.empty())
+        {
+            std::string line(subtitle);
+            std::replace(line.begin(), line.end(), '\n', ' ');
+            std::clog << "Game: [" << playerName(hud.localPlayer) << "] subtitle: " << line << '\n';
+        }
     }
 
     void addHudLine(Hud& hud, std::string_view text)
@@ -114,6 +134,12 @@ namespace game
             const math::Vec2 position{k_linesPosition.x, k_linesPosition.y + k_lineSpacing * static_cast<float>(index)};
             renderer.submitText(line.text, position,
                 render::TextStyle{.size = k_lineSize, .color = color, .align = render::TextAlign::Center});
+        }
+
+        if (!hud.subtitle.empty())
+        {
+            renderer.submitText(hud.subtitle, k_subtitlePosition,
+                render::TextStyle{.size = k_subtitleSize, .color = k_subtitleColor, .align = render::TextAlign::Center});
         }
 
         if (!hud.caption.empty() && hud.fade > k_captionFadeStart)

@@ -1,7 +1,9 @@
 #ifndef LOCKSTEP_GAME_GAME_STATE_HPP
 #define LOCKSTEP_GAME_GAME_STATE_HPP
 
+#include "Characters/NpcPlaceholders.hpp"
 #include "Characters/PawnCharacters.hpp"
+#include "Dialogue/Dialogue.hpp"
 #include "Echo/EchoRecording.hpp"
 #include "Enemies/Enemy.hpp"
 #include "Level/ApartmentRoom.hpp"
@@ -12,10 +14,13 @@
 #include "Player/PlayerStatus.hpp"
 #include "Player/Prediction.hpp"
 #include "Presentation/FlyCamera.hpp"
+#include "Presentation/HeadMotion.hpp"
 #include "Presentation/Hud.hpp"
 #include "Presentation/Lighting.hpp"
 #include "Presentation/SceneCharacters.hpp"
 #include "Presentation/Visuals.hpp"
+#include "Simulation/LevelFlow.hpp"
+#include "Station/StationMission.hpp"
 #include "Weapons/Hitscan.hpp"
 #include "Weapons/LagCompensation.hpp"
 #include "Weapons/WeaponStance.hpp"
@@ -56,7 +61,10 @@ namespace lockstep::app
         // statuses:   both players' health as this machine knows it (the client's comes from the
         //             host's status messages).
         // prediction: the client's predicted pawn. Unused on the host.
-        // weaponZone: the weapon zone the local pawn stood in on the last tick.
+        // weaponZone: the weapon zone rule in effect where the local pawn stood on the last tick
+        //             (a safe zone counts as open during combat).
+        // isCombatActive: a combat situation runs, as this machine knows it (the client's comes
+        //             from the host's status messages).
         struct Local
         {
             game::LocalControls controls{};
@@ -64,6 +72,7 @@ namespace lockstep::app
             game::WeaponZone weaponZone{game::WeaponZone::Open};
             game::PlayerStatuses statuses{};
             game::Prediction prediction{};
+            bool isCombatActive{false};
         };
 
         // The host's simulation. Unused on a client.
@@ -71,18 +80,21 @@ namespace lockstep::app
         // enemy:              the enemy.
         // lastShot:           what the most recent shot struck.
         // isRemoteBulletTime: true while the client holds bullet-time.
-        // sentStatuses:       the statuses last sent to the client; nothing forces a resend.
+        // sentStatuses:       the status message last sent to the client; nothing forces a resend.
         // lagHistory:         where pawns and the enemy stood on recent ticks, for client shots.
         // lastRewindTicks:    how far back the most recent shot was checked.
+        // isCombatActive:     a combat situation runs: safe zones stop lowering weapons. The
+        //                     authority; missions will set it (for now only the dev panel does).
         struct Simulation
         {
             std::array<game::Pawn, game::k_playerCount> pawns{};
             game::Enemy enemy{};
             game::ShotResult lastShot{};
             bool isRemoteBulletTime{false};
-            std::optional<game::PlayerStatuses> sentStatuses{};
+            std::optional<game::StatusMessage> sentStatuses{};
             game::LagHistory lagHistory{};
             double lastRewindTicks{0.0};
+            bool isCombatActive{false};
         };
 
         game::Visuals visuals{};
@@ -94,8 +106,14 @@ namespace lockstep::app
         game::SceneCharacters characters{};
         std::optional<game::PawnCharacters> pawnCharacters{};
         std::optional<game::ApartmentRoom> room{};
+        std::optional<game::StationMission> station{};
+        game::DialogueBook dialogue{};
+        game::Subtitles subtitles{};
+        game::NpcPlaceholders npcs{};
+        game::LevelFlow levelFlow{};
         std::optional<game::EchoPlayback> echo{};
         game::FlyCamera flyCamera{};
+        game::HeadMotionState headMotion{};
         Settings settings{};
         Local local{};
         Simulation simulation{};

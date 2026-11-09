@@ -1,0 +1,46 @@
+# The morning in the flat and the walk to the car, level 1 part 1. Format: id | speaker | text
+# Included by apartment.txt and district.txt (both levels play the morning).
+# All lines are "hud" (on-screen narration, notices, objectives), not spoken.
+# "Your flatmate" is the other player.
+
+# --- Objectives (HUD) ---
+morning.objective.gear | hud | Get your gear
+morning.objective.head_out | hud | Head out with your flatmate
+morning.objective.car | hud | Head to the car
+morning.objective.wait_car | hud | Wait at the car for your flatmate
+
+# --- Narration (HUD) ---
+morning.alarm.self | hud | You silence the alarm.
+morning.alarm.partner | hud | Your flatmate got to the alarm first.
+morning.coffee.brewing | hud | The coffee machine starts to gurgle.
+morning.coffee.ready | hud | Coffee's ready. Two mugs on the counter.
+morning.mug.self | hud | You take a mug of coffee.
+morning.mug.partner | hud | Your flatmate takes a mug of coffee.
+morning.radio.on | hud | The radio crackles on.
+morning.radio.off | hud | The radio goes quiet.
+morning.locker.open | hud | Your locker squeaks open.
+morning.gear.self | hud | Badge clipped on. Sidearm holstered.
+morning.gear.partner | hud | Your flatmate is geared up.
+morning.front_door.open | hud | The front door swings open.
+morning.street_door.open.self | hud | You push the street door open. Cold air.
+morning.street_door.open.partner | hud | Your flatmate opened the street door.
+morning.street_door.shut.self | hud | You pull the street door shut.
+morning.street_door.shut.partner | hud | Your flatmate shut the street door.
+morning.narration.go_to_car | hud | You head out together. The car's across the park.
+morning.narration.drive | hud | You get in the car. Station, then.
+
+# --- Notices (HUD), when E does nothing ---
+morning.notice.alarm_off | hud | The alarm's already off.
+morning.notice.still_brewing | hud | Still brewing. Smells almost like coffee.
+morning.notice.coffee_not_ready | hud | Empty. Brew some coffee first.
+morning.notice.have_coffee | hud | You already have your coffee.
+morning.notice.not_your_locker | hud | That's your flatmate's locker.
+morning.notice.need_gear | hud | Not without your badge and sidearm.
+morning.notice.partner_needs_gear | hud | Your flatmate isn't geared up yet.
+morning.notice.partner_absent | hud | Not without your flatmate.
+morning.notice.mirror | hud | You look tired. Same as yesterday.
+morning.notice.wall_clock | hud | 07:40. Shift starts at eight.
+morning.notice.nothing | hud | Nothing happens.
+
+# --- Caption (HUD), over the fade at the end of the morning ---
+morning.caption.drive | hud | Driving to the station...

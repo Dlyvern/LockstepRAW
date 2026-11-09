@@ -24,6 +24,23 @@ namespace game
 
         constexpr math::Vec3 k_upAxis{0.0f, 1.0f, 0.0f};
         constexpr math::Vec3 k_pawnForward{0.0f, 0.0f, -1.0f};
+        constexpr math::Vec3 k_modelRight{1.0f, 0.0f, 0.0f};
+        constexpr float k_minSquash{0.3f};
+
+        math::Transform posedTransform(PawnCharacter& pawn, const PawnPoseTuning& tuning, const math::Vec3& foot,
+            float yaw, const PawnLook& look, bool hasCrouchClips, float deltaSeconds)
+        {
+            const float slideTarget = look.isSliding ? 1.0f : 0.0f;
+            pawn.slideBlend += (slideTarget - pawn.slideBlend) * (1.0f - std::exp(-tuning.slideBlendRate * deltaSeconds));
+            const float crouch = hasCrouchClips ? 0.0f : math::clamp(look.crouch, 0.0f, 1.0f);
+            const float squash = std::max(1.0f - tuning.crouchSquash * crouch - tuning.slideSquash * pawn.slideBlend,
+                k_minSquash);
+
+            return math::Transform{.position = foot,
+                .rotation = math::angleAxis(yaw + math::k_pi, k_upAxis)
+                    * math::angleAxis(-tuning.slideLean * pawn.slideBlend, k_modelRight),
+                .scale = math::Vec3{1.0f, squash, 1.0f}};
+        }
 
         void logStrides(std::string_view label, const anim::SkinnedModel& model, const LocomotionSet& set)
         {
@@ -83,8 +100,7 @@ namespace game
                 return std::nullopt;
             }
 
-            auto model = createFirstPersonModel(std::move(*arms), k_pawnCharacter.firstPersonAim,
-                k_pawnCharacter.firstPersonLow);
+            auto model = createFirstPersonModel(std::move(*arms), k_pawnCharacter.firstPersonAim);
 
             if (!model)
             {
@@ -123,7 +139,24 @@ namespace game
         }
 
         logStrides("unarmed", unarmed->skinned(), locomotion.value());
+        auto crouch = findLocomotionSet(unarmed->skinned(), k_pawnCharacter.unarmedCrouch);
+
+        if (crouch)
+        {
+            logStrides("unarmed crouch", unarmed->skinned(), crouch.value());
+        }
+        else
+        {
+            std::clog << "Game: no unarmed crouch clips (" << crouch.error().message << "); crouching squashes the body\n";
+        }
+
         PawnCharacters characters{.unarmed = std::move(*unarmed), .locomotion = locomotion.value()};
+
+        if (crouch)
+        {
+            characters.crouch = crouch.value();
+        }
+
         characters.armed = loadArmed(renderer, files);
         characters.firstPerson = loadFirstPerson(renderer, files);
 
@@ -152,8 +185,10 @@ namespace game
         PawnCharacter& pawn = characters->pawns[pawnIndex(owner)];
         const ArmedCharacter* armed = look.isArmed && characters->armed ? &*characters->armed : nullptr;
         const anim::SkinnedModel& model = armed != nullptr ? armed->body.skinned() : characters->unarmed.skinned();
-        const LocomotionSet& set = armed == nullptr ? characters->locomotion
-            : (look.isLowered ? armed->rifle : armed->aiming);
+        const bool isCrouchClip = armed == nullptr && characters->crouch && !look.isSliding
+            && look.crouch >= characters->pose.crouchClipThreshold;
+        const LocomotionSet& set = armed != nullptr ? (look.isLowered ? armed->rifle : armed->aiming)
+            : (isCrouchClip ? *characters->crouch : characters->locomotion);
         const math::Vec3 foot = pawnFootPosition(transform);
         const float yaw = yawOf(transform.rotation);
 
@@ -166,8 +201,9 @@ namespace game
         pawn.isArmedModel = armed != nullptr;
         updateLocomotion(pawn.locomotion, set, pawn.instance.animator(), foot, yaw, deltaSeconds);
         pawn.instance.update(model, deltaSeconds);
-        pawn.instance.submit(renderer, model,
-            math::Transform{.position = foot, .rotation = math::angleAxis(yaw + math::k_pi, k_upAxis)}, layers);
+        pawn.instance.submit(renderer, model, posedTransform(pawn, characters->pose, foot, yaw, look,
+            armed == nullptr && characters->crouch.has_value(), deltaSeconds),
+            layers);
     }
 
     float pawnCharacterSpeed(const PawnCharacters& characters, world::EntityOwner owner)
@@ -211,6 +247,17 @@ namespace game
             ImGui::Text("Player %zu: %s%s  %.2f m/s  turn %.2f rad/s  phase %.2f", index + 1, gaitName(locomotion.gait),
                 pawn.isArmedModel ? " (armed)" : "", math::length(locomotion.velocity), locomotion.yawRate,
                 pawn.instance.animator().phase());
+        }
+
+        if (ImGui::TreeNode("Crouch / slide stand-in pose"))
+        {
+            PawnPoseTuning& pose = characters->pose;
+            ImGui::SliderFloat("Crouch squash", &pose.crouchSquash, 0.0f, 0.6f);
+            ImGui::SliderFloat("Crouch clip threshold", &pose.crouchClipThreshold, 0.05f, 1.0f);
+            ImGui::SliderFloat("Slide squash", &pose.slideSquash, 0.0f, 0.6f);
+            ImGui::SliderFloat("Slide lean (rad)", &pose.slideLean, -1.0f, 1.0f);
+            ImGui::SliderFloat("Slide blend rate", &pose.slideBlendRate, 1.0f, 30.0f);
+            ImGui::TreePop();
         }
 
         if (characters->firstPerson)

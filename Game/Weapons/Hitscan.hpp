@@ -32,11 +32,13 @@ namespace game
     // outcome:    what it struck.
     // distance:   distance to the struck thing; 0 on a miss.
     // controller: the controller struck, for Enemy and Player.
+    // body:       the body struck, for Level.
     struct ShotResult
     {
         ShotOutcome outcome{ShotOutcome::Miss};
         float distance{0.0f};
         lockstep::physics::ControllerId controller{};
+        lockstep::physics::BodyId body{};
     };
 
     // Hitscan weapon settings.

@@ -5,6 +5,7 @@
 #include "GameState.hpp"
 #include "Level/RoomDevPanel.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Station/StationDevPanel.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
@@ -34,6 +35,29 @@ namespace game
         constexpr int k_maxPlayerHealth{255};
         constexpr float k_panelMargin{10.0f};
         constexpr double k_millisecondsPerTick{1000.0 / 60.0};
+        constexpr float k_minCapsuleHeight{2.0f * k_pawnRadius + 0.05f};
+        constexpr float k_maxSlideSeconds{3.0f};
+        constexpr float k_maxSlideSteer{6.0f};
+
+        const char* stanceName(const PawnMotion& motion)
+        {
+            if (isSliding(motion))
+            {
+                return "sliding";
+            }
+
+            switch (motion.stance)
+            {
+                case PawnStance::Crouch:
+                    return "crouched";
+                case PawnStance::Slide:
+                    return "low";
+                case PawnStance::Stand:
+                    break;
+            }
+
+            return "standing";
+        }
 
         void positionText(const char* label, const world::Entity* entity)
         {
@@ -84,6 +108,7 @@ namespace game
             GameState::Settings& settings = state.settings;
             const GameState::Simulation& simulation = state.simulation;
             armedSection(state);
+            ImGui::Checkbox("Combat active (safe zones off)", &state.simulation.isCombatActive);
 
             const bool isClientConnected = engine.session.state() == net::ConnectionState::Connected;
 
@@ -95,6 +120,15 @@ namespace game
             ImGui::SliderFloat("Strafe speed", &settings.pawns.strafeSpeed, 0.0f, k_maxMoveSpeed);
             ImGui::SliderFloat("Run strafe speed", &settings.pawns.sprintStrafeSpeed, 0.0f, k_maxMoveSpeed);
             ImGui::SliderFloat("Aim speed", &settings.pawns.aimSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Crouch speed", &settings.pawns.crouchSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Crouch height (m)", &settings.pawns.crouchHeight, k_minCapsuleHeight, k_pawnStandHeight);
+            ImGui::SliderFloat("Slide height (m)", &settings.pawns.slideHeight, k_minCapsuleHeight, k_pawnStandHeight);
+            ImGui::SliderFloat("Slide start speed", &settings.pawns.slideSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Slide end speed", &settings.pawns.slideEndSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Slide time (s)", &settings.pawns.slideSeconds, 0.0f, k_maxSlideSeconds);
+            ImGui::SliderFloat("Slide cooldown (s)", &settings.pawns.slideCooldown, 0.0f, k_maxSlideSeconds);
+            ImGui::SliderFloat("Slide min speed", &settings.pawns.slideMinSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Slide steer (rad/s)", &settings.pawns.slideSteerRate, 0.0f, k_maxSlideSteer);
             ImGui::SliderFloat("Acceleration", &settings.pawns.acceleration, 0.1f, k_maxAcceleration);
             ImGui::SliderFloat("Deceleration", &settings.pawns.deceleration, 0.1f, k_maxAcceleration);
             ImGui::SliderInt("Player health", &settings.pawns.maxHealth, 1, k_maxPlayerHealth);
@@ -120,8 +154,9 @@ namespace game
                 const Pawn& pawn = simulation.pawns[index];
                 positionText(names[index], engine.entities.find(pawn.entity));
                 ImGui::SameLine();
-                ImGui::Text("  hp %d  %s  shots %u  hits %u  deaths %u", pawn.health,
-                    pawn.motion.isGrounded ? "ground" : "air", pawn.shots, pawn.hits, pawn.deaths);
+                ImGui::Text("  hp %d  %s  %s  shots %u  hits %u  deaths %u", pawn.health,
+                    pawn.motion.isGrounded ? "ground" : "air", stanceName(pawn.motion), pawn.shots, pawn.hits,
+                    pawn.deaths);
 
                 if (pawn.isJoined && pawn.entity.isNull())
                 {
@@ -143,6 +178,8 @@ namespace game
             ImGui::Text("Health      %d%s  %s", own.health, own.isDead ? "  (dead)" : "",
                 own.isArmed ? (own.isAiming ? "armed, aiming" : (own.isLowered ? "armed, lowered" : "armed")) : "unarmed");
             ImGui::TextDisabled("Arming is host-side (host dev panel or --armed on the host)");
+            ImGui::Text("Combat      %s  stance %s", state.local.isCombatActive ? "active" : "off",
+                stanceName(state.local.prediction.motion));
 
             const Prediction& prediction = state.local.prediction;
             positionText("Predicted", engine.entities.find(prediction.entity));
@@ -198,7 +235,9 @@ namespace game
             }
 
             roomDevSection(state);
+            stationDevSection(state, engine);
             pawnCharactersDevSection(state.pawnCharacters ? &*state.pawnCharacters : nullptr);
+            headMotionDevSection(state.headMotion);
 
             if (state.level)
             {
@@ -206,8 +245,10 @@ namespace game
             }
             ImGui::Separator();
             ImGui::TextDisabled("WASD walk, hold Shift to run, mouse look, left click fire, E use");
+            ImGui::TextDisabled("Hold Ctrl or toggle C to crouch; Ctrl or C while running slides");
             ImGui::TextDisabled("Armed: weapon up by default; hold right mouse to aim down sights (slower)");
             ImGui::TextDisabled("X lowers / raises the weapon (fire or aim raises it); safe zones keep it lowered");
+            ImGui::TextDisabled("unless combat is active");
             ImGui::TextDisabled("Hold Space for bullet-time (either player)");
             ImGui::TextDisabled("Click to capture the mouse, Esc releases it");
         }

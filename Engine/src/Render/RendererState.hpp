@@ -80,12 +80,22 @@ namespace lockstep::render
         float flags[4]{0.0f, 0.0f, 0.0f, 0.0f};
     };
 
+    // A texture and how many living or retired materials bind it; a destroyed texture is
+    // released only once that count is 0.
+    struct TextureRecord
+    {
+        vela::graphics::Texture texture;
+        uint32_t materialUses{0};
+    };
+
     // A material and everything its draws need.
     // material:     the Vela material for the scene pass (pipeline and set-1 bindings).
     // maskedShadow: for alpha-masked lit materials, the shadow-pass material that discards by
     //               the base colour alpha.
     // maskedShadowBaseColor: the texture maskedShadow masks by, for rebuilding it (null when
     //               there is no maskedShadow). Owned by the RendererState.
+    // textureSlots: pool indices of the Game textures it binds (defaults excluded); each counts
+    //               once in TextureRecord::materialUses while the material exists.
     // shading:      lit (PBR) or unlit.
     // kind:         the mesh kind its pipelines read (skinned materials skin on the GPU).
     // alphaMode:    opaque, masked or blended; blended draws are sorted after opaque ones and
@@ -96,6 +106,7 @@ namespace lockstep::render
         vela::graphics::Material material;
         std::optional<vela::graphics::Material> maskedShadow;
         const vela::graphics::Texture* maskedShadowBaseColor{nullptr};
+        std::vector<uint32_t> textureSlots;
         Shading shading{Shading::Lit};
         MeshKind kind{MeshKind::Static};
         AlphaMode alphaMode{AlphaMode::Opaque};
@@ -225,7 +236,7 @@ namespace lockstep::render
 
         MaterialShaders shaders;
 
-        ResourcePool<TextureHandle, vela::graphics::Texture> textures;
+        ResourcePool<TextureHandle, TextureRecord> textures;
         EnvironmentResources environment;
         ResourcePool<MeshHandle, MeshRecord> meshes;
         vela::graphics::DynamicBuffer lightBuffer;
@@ -253,6 +264,7 @@ namespace lockstep::render
         math::Vec4 screenFade{0.0f, 0.0f, 0.0f, 0.0f};
         FrameStats lastFrame{};
         uint32_t frameIndex{0};
+        bool hasLoggedStaleHandle{false};
 
         std::optional<vela::graphics::RenderGraph> graph;
 
@@ -262,6 +274,18 @@ namespace lockstep::render
         math::Mat4 projection{1.0f};
         math::Mat4 unjitteredProjection{1.0f};
     };
+
+    // Notes a stale handle passed to a submit function: asserts in debug builds, logs once in
+    // release builds.
+    // state: the renderer state.
+    // what:  the function and handle kind, e.g. "submit: mesh".
+    void reportStaleHandle(RendererState& state, const char* what);
+
+    // Destroys the resources retired since the last call (see ResourcePool), materials first so the
+    // textures they bind are released in the same call. Called at the end of render(), after the
+    // frame's draws are cleared.
+    // state: the renderer state.
+    void releaseRetiredResources(RendererState& state);
 
     // Engine-internal access to a Renderer's state, for Engine modules that extend rendering
     // (Debug adds its overlay pass through it). Game cannot use it: RendererState is private.

@@ -36,12 +36,13 @@ namespace game
     // firstPersonScene: the arms and weapon the armed local player sees (the viewmodel).
     // model:            name of the skinned model in those scenes; empty takes the first.
     // unarmed:          locomotion clips of the unarmed body.
+    // unarmedCrouch:    its crouched locomotion. There is only a crouched forward walk: walking
+    //                   back plays it backwards and strafes reuse it.
     // rifle:            locomotion clips while armed with the weapon lowered. There is no relaxed
     //                   rifle strafe; the aiming strafes are used (the feet match, the weapon rises).
     // aiming:           locomotion clips while armed with the weapon up (ready and aiming down
     //                   sights), with its own idle and turns on the spot.
     // firstPersonAim:   viewmodel pose with the weapon up (ready and aiming down sights).
-    // firstPersonLow:   viewmodel pose with the weapon lowered.
     struct PawnCharacterChoice
     {
         std::string_view unarmedScene;
@@ -49,10 +50,10 @@ namespace game
         std::string_view firstPersonScene;
         std::string_view model;
         LocomotionClipNames unarmed{};
+        LocomotionClipNames unarmedCrouch{};
         LocomotionClipNames rifle{};
         LocomotionClipNames aiming{};
         std::string_view firstPersonAim;
-        std::string_view firstPersonLow;
     };
 
     // Both players use the SWAT placeholder from Content/cooked/characters.pak for now.
@@ -60,24 +61,47 @@ namespace game
         .armedScene = "characters/swat_armed/scene",
         .firstPersonScene = "characters/swat_fp_kriss/scene",
         .model = "SWAT",
+        .unarmedCrouch = {.idle = "CrouchIdle", .walk = "CrouchWalk", .run = "CrouchWalk", .walkBack = "CrouchWalk",
+            .strafeLeft = "CrouchWalk", .strafeRight = "CrouchWalk", .turnLeft = "", .turnRight = "",
+            .reverseWalkBack = true},
         .rifle = {.idle = "RifleIdle", .walk = "RifleWalk", .run = "RifleRun", .walkBack = "RifleWalkBack",
             .strafeLeft = "AimStrafeLeft", .strafeRight = "AimStrafeRight", .turnLeft = "", .turnRight = ""},
         .aiming = {.idle = "AimIdle", .walk = "AimWalk", .run = "AimRun", .walkBack = "AimWalkBack",
             .strafeLeft = "AimStrafeLeft", .strafeRight = "AimStrafeRight", .turnLeft = "AimTurnLeft",
             .turnRight = "AimTurnRight"},
-        .firstPersonAim = "FPAim",
-        .firstPersonLow = "FPLow"};
+        .firstPersonAim = "FPAim"};
 
     // How a pawn is drawn this frame, from replicated (or, for the local player, predicted) state.
     // isArmed:  the player carries the weapon.
     // isAiming: the player aims down sights (only while armed).
     // isLowered: the armed player's weapon is lowered (relaxed rifle set); otherwise it is up
     //            (ready stance, the aiming set).
+    // crouch:   how far the pawn is crouched (pawnCrouchAmount(): 0 standing, 1 crouched).
+    // isSliding: the pawn slides.
     struct PawnLook
     {
         bool isArmed{false};
         bool isAiming{false};
         bool isLowered{false};
+        float crouch{0.0f};
+        bool isSliding{false};
+    };
+
+    // Stand-in for the crouch and slide clips that are missing (armed crouch, slide): the
+    // character is squashed towards its feet and leans back while sliding. Editable from the dev
+    // panel.
+    // crouchSquash:  fraction of height taken off when fully crouched without crouch clips.
+    // crouchClipThreshold: crouch amount from which the unarmed crouch clips play.
+    // slideSquash:   extra fraction taken off while sliding.
+    // slideLean:     backward lean while sliding, radians.
+    // slideBlendRate: how fast the slide pose blends in and out, 1/s.
+    struct PawnPoseTuning
+    {
+        float crouchSquash{0.3f};
+        float crouchClipThreshold{0.5f};
+        float slideSquash{0.1f};
+        float slideLean{0.35f};
+        float slideBlendRate{10.0f};
     };
 
     // One player pawn's animated character. Presentation only, never replicated.
@@ -86,6 +110,7 @@ namespace game
     // isDrawn:       drawn this frame.
     // wasDrawn:      drawn last frame; a pawn that skipped a frame (dead, absent) restarts tracking.
     // isArmedModel:  drawn with the armed body last time; a switch restarts tracking.
+    // slideBlend:    0 upright to 1 in the slide pose, eased.
     struct PawnCharacter
     {
         lockstep::anim::SkinnedInstance instance{};
@@ -93,6 +118,7 @@ namespace game
         bool isDrawn{false};
         bool wasDrawn{false};
         bool isArmedModel{false};
+        float slideBlend{0.0f};
     };
 
     // The armed body and its two locomotion sets.
@@ -106,18 +132,23 @@ namespace game
     // The character models loaded for the pawns and one animated character per player.
     // unarmed:     the unarmed body.
     // locomotion:  its locomotion clips.
+    // crouch:      its crouched locomotion, or nothing when the clips are missing (the squash
+    //              stand-in is used then).
     // armed:       the armed body, or nothing (armed pawns then use the unarmed body).
     // firstPerson: the viewmodel, or nothing (armed players then see no weapon).
     // pawns:       Player1's and Player2's characters.
     // viewModel:   the local player's viewmodel state.
+    // pose:        the crouch and slide stand-in pose.
     struct PawnCharacters
     {
         CharacterModel unarmed;
         LocomotionSet locomotion{};
+        std::optional<LocomotionSet> crouch{};
         std::optional<ArmedCharacter> armed{};
         std::optional<FirstPersonModel> firstPerson{};
         std::array<PawnCharacter, k_playerCount> pawns{};
         ViewModelState viewModel{};
+        PawnPoseTuning pose{};
     };
 
     // Loads the k_pawnCharacter models from the mounted content and logs their stride speeds.
@@ -141,7 +172,7 @@ namespace game
     // characters:   the pawn characters, or null to draw boxes.
     // owner:        the pawn's player (Player1 or Player2); picks the character and the colour.
     // transform:    the pawn's interpolated or predicted transform.
-    // look:         armed, aiming and lowered.
+    // look:         armed, aiming, lowered, crouch and slide.
     // deltaSeconds: Player time since the previous frame; animates the character.
     // layers:       render layers to draw on (k_mirrorOnlyLayer for the local pawn).
     void drawPawn(lockstep::render::Renderer& renderer, const Visuals& visuals, PawnCharacters* characters,

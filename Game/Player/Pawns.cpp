@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <optional>
 
 namespace game
@@ -18,63 +17,16 @@ namespace game
         namespace world = lockstep::world;
 
         constexpr math::Vec3 k_upAxis{0.0f, 1.0f, 0.0f};
-        constexpr math::Vec3 k_footToCentre{0.0f, k_pawnHalfExtents.y, 0.0f};
-        constexpr float k_minSpeed{0.01f};
-        constexpr float k_minMoveLength{0.001f};
+        constexpr float k_minCrouchRange{0.01f};
 
         math::Quat yawRotation(float yaw)
         {
             return math::angleAxis(yaw, k_upAxis);
         }
 
-        float ellipseSpeed(const math::Vec2& direction, float sideSpeed, float forwardSpeed)
+        math::Vec3 pawnScale(float height)
         {
-            const float side = direction.x / std::max(sideSpeed, k_minSpeed);
-            const float forward = direction.y / std::max(forwardSpeed, k_minSpeed);
-
-            return 1.0f / std::sqrt(side * side + forward * forward);
-        }
-
-        math::Vec3 wantedVelocity(const PlayerCommand& command, const PawnSettings& settings)
-        {
-            math::Vec2 move = command.move;
-            const float moveLength = math::length(move);
-
-            if (moveLength < k_minMoveLength)
-            {
-                return math::Vec3{0.0f, 0.0f, 0.0f};
-            }
-
-            const bool isRunning = command.sprint && !command.aim && move.y > 0.0f;
-            const float speedCap = command.aim ? settings.aimSpeed : std::numeric_limits<float>::max();
-            const float runSpeed = command.isWeaponUp ? std::min(settings.runSpeed, settings.weaponUpRunSpeed)
-                                                      : settings.runSpeed;
-            const float forwardSpeed = std::min(speedCap, move.y < 0.0f ? settings.backSpeed
-                                                     : (isRunning ? runSpeed : settings.walkSpeed));
-            const float sideSpeed = std::min(speedCap, isRunning ? settings.sprintStrafeSpeed : settings.strafeSpeed);
-            const math::Vec2 direction = move * (1.0f / moveLength);
-            const float speed = std::min(moveLength, 1.0f) * ellipseSpeed(direction, sideSpeed, forwardSpeed);
-
-            const math::Vec3 forward{-std::sin(command.yaw), 0.0f, -std::cos(command.yaw)};
-            const math::Vec3 right{std::cos(command.yaw), 0.0f, -std::sin(command.yaw)};
-
-            return (forward * direction.y + right * direction.x) * speed;
-        }
-
-        math::Vec3 easeVelocity(const math::Vec3& current, const math::Vec3& wanted, const PawnSettings& settings,
-            float delta)
-        {
-            const math::Vec3 difference = wanted - current;
-            const float distance = math::length(difference);
-            const bool isSpeedingUp = math::length(wanted) > math::length(current);
-            const float maxChange = (isSpeedingUp ? settings.acceleration : settings.deceleration) * delta;
-
-            if (distance <= maxChange)
-            {
-                return wanted;
-            }
-
-            return current + difference * (maxChange / distance);
+            return math::Vec3{2.0f * k_pawnRadius, height, 2.0f * k_pawnRadius};
         }
     } //namespace
 
@@ -83,8 +35,8 @@ namespace game
         const PawnSettings& settings)
     {
         auto entity = entities.create({
-            .transform = {.position = footPosition + k_footToCentre, .rotation = yawRotation(pawn.command.yaw),
-                .scale = k_pawnHalfExtents * 2.0f},
+            .transform = {.position = footPosition + k_upAxis * (0.5f * k_pawnStandHeight),
+                .rotation = yawRotation(pawn.command.yaw), .scale = pawnScale(k_pawnStandHeight)},
             .domain = world::TimeDomain::Player,
             .owner = owner});
 
@@ -126,37 +78,12 @@ namespace game
         pawn.controller = {};
     }
 
-    std::optional<math::Vec3> stepPawn(PawnMotion& motion, physics::ControllerId controller,
-        physics::PhysicsWorld& physics, const PlayerCommand& command, const PawnSettings& settings, float delta)
-    {
-        motion.verticalSpeed = motion.isGrounded ? -settings.groundStick : motion.verticalSpeed - settings.gravity * delta;
-
-        motion.planarVelocity = easeVelocity(motion.planarVelocity, wantedVelocity(command, settings), settings, delta);
-
-        const math::Vec3 velocity = motion.planarVelocity + k_upAxis * motion.verticalSpeed;
-        const std::optional<physics::ControllerMove> moved = physics.move(controller, velocity * delta, delta);
-
-        if (!moved)
-        {
-            return std::nullopt;
-        }
-
-        motion.isGrounded = moved->grounded;
-
-        if (moved->hitCeiling && motion.verticalSpeed > 0.0f)
-        {
-            motion.verticalSpeed = 0.0f;
-        }
-
-        return physics.footPosition(controller);
-    }
-
-    void placePawnEntity(world::Entity& entity, const math::Vec3& footPosition, float yaw)
+    void placePawnEntity(world::Entity& entity, const math::Vec3& footPosition, float yaw, float height)
     {
         math::Transform& transform = entity.transform();
-        transform.position = footPosition + k_footToCentre;
+        transform.position = footPosition + k_upAxis * (0.5f * height);
         transform.rotation = yawRotation(yaw);
-        transform.scale = k_pawnHalfExtents * 2.0f;
+        transform.scale = pawnScale(height);
     }
 
     void movePawn(Pawn& pawn, world::Entity& entity, physics::PhysicsWorld& physics, const PawnSettings& settings,
@@ -164,23 +91,31 @@ namespace game
     {
         const std::optional<math::Vec3> foot = stepPawn(pawn.motion, pawn.controller, physics, pawn.command, settings,
             delta);
-        placePawnEntity(entity, foot.value_or(pawnFootPosition(entity.transform())), pawn.command.yaw);
+        placePawnEntity(entity, foot.value_or(pawnFootPosition(entity.transform())), pawn.command.yaw,
+            stanceHeight(pawn.motion.stance, settings));
     }
 
     math::Vec3 pawnFootPosition(const math::Transform& transform)
     {
-        return transform.position - k_footToCentre;
+        return transform.position - k_upAxis * (0.5f * transform.scale.y);
     }
 
     physics::ControllerDescription pawnController(const math::Vec3& footPosition)
     {
         return physics::ControllerDescription{
-            .footPosition = footPosition, .radius = k_pawnHalfExtents.x, .height = k_pawnHalfExtents.y * 2.0f};
+            .footPosition = footPosition, .radius = k_pawnRadius, .height = k_pawnStandHeight};
     }
 
     math::Vec3 eyePosition(const math::Transform& transform)
     {
-        return transform.position + math::Vec3{0.0f, k_pawnEyeOffset, 0.0f};
+        return pawnFootPosition(transform) + k_upAxis * (transform.scale.y - k_pawnEyeBelowTop);
+    }
+
+    float pawnCrouchAmount(const math::Transform& transform, const PawnSettings& settings)
+    {
+        const float range = std::max(k_pawnStandHeight - settings.crouchHeight, k_minCrouchRange);
+
+        return std::max((k_pawnStandHeight - transform.scale.y) / range, 0.0f);
     }
 
     math::Vec3 lookDirection(float yaw, float pitch)

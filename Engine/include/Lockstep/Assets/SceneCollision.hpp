@@ -89,6 +89,15 @@ namespace lockstep::assets
     // physics:   the physics world the bodies live in.
     // collision: the bodies.
     void destroySceneCollision(physics::PhysicsWorld& physics, SceneCollision& collision);
+
+    // Drops a whole level: destroys its static bodies (destroySceneCollision()) and its GPU
+    // resources (releaseScene() in Scene.hpp), and clears both.
+    // renderer:  the renderer the scene was loaded with.
+    // physics:   the physics world the bodies live in.
+    // scene:     the scene; empty afterwards.
+    // collision: its bodies; empty afterwards.
+    void releaseScene(render::Renderer& renderer, physics::PhysicsWorld& physics, Scene& scene,
+        SceneCollision& collision);
 } //namespace lockstep::assets
 
 #endif //LOCKSTEP_ASSETS_SCENE_COLLISION_HPP

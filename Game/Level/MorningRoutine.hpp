@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <string_view>
 
 namespace game
 {
@@ -32,8 +33,9 @@ namespace game
     // state:     the room state.
     // player:    the player.
     // isAtCar:   whether that player already stands by the car.
-    // Returns:   the line, empty when there is nothing to do.
-    [[nodiscard]] const char* objectiveText(const RoomState& state, std::size_t player, bool isAtCar);
+    // Returns:   the line's dialogue id ("morning.objective.*", see lineText()), empty when there
+    //            is nothing to do.
+    [[nodiscard]] std::string_view objectiveId(const RoomState& state, std::size_t player, bool isAtCar);
 
     // Both machines, every tick: counts the drive's fade and logs when the drive starts.
     // room:        the room.
