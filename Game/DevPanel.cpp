@@ -26,7 +26,8 @@ namespace game
         using lockstep::app::GameState;
 
         constexpr float k_maxWorldScale{2.0f};
-        constexpr float k_maxMoveSpeed{15.0f};
+        constexpr float k_maxMoveSpeed{8.0f};
+        constexpr float k_maxAcceleration{30.0f};
         constexpr float k_maxEnemySpeed{10.0f};
         constexpr float k_maxRespawnDelay{10.0f};
         constexpr int k_maxEnemyHealth{20};
@@ -63,21 +64,45 @@ namespace game
                 state.local.command.pitch, static_cast<unsigned>(state.local.command.shotCount));
         }
 
+        void armedSection(GameState& state)
+        {
+            const char* labels[] = {"Player1 armed", "Player2 armed"};
+
+            for (std::size_t index = 0; index < state.simulation.pawns.size(); ++index)
+            {
+                if (index > 0)
+                {
+                    ImGui::SameLine();
+                }
+
+                ImGui::Checkbox(labels[index], &state.simulation.pawns[index].isArmed);
+            }
+        }
+
         void hostSection(GameState& state, const EngineContext& engine)
         {
             GameState::Settings& settings = state.settings;
             const GameState::Simulation& simulation = state.simulation;
+            armedSection(state);
 
             const bool isClientConnected = engine.session.state() == net::ConnectionState::Connected;
 
             ImGui::BeginDisabled(isClientConnected);
-            ImGui::SliderFloat("Move speed", &settings.pawns.moveSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Walk speed", &settings.pawns.walkSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Run speed (Shift)", &settings.pawns.runSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Run speed, weapon up", &settings.pawns.weaponUpRunSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Back speed", &settings.pawns.backSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Strafe speed", &settings.pawns.strafeSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Run strafe speed", &settings.pawns.sprintStrafeSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Aim speed", &settings.pawns.aimSpeed, 0.0f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Acceleration", &settings.pawns.acceleration, 0.1f, k_maxAcceleration);
+            ImGui::SliderFloat("Deceleration", &settings.pawns.deceleration, 0.1f, k_maxAcceleration);
             ImGui::SliderInt("Player health", &settings.pawns.maxHealth, 1, k_maxPlayerHealth);
             ImGui::EndDisabled();
 
             if (isClientConnected)
             {
-                ImGui::TextDisabled("Move speed and player health are locked while a client is connected.");
+                ImGui::TextDisabled("Movement and player health are locked while a client is connected.");
             }
 
             ImGui::SliderFloat("Enemy speed", &settings.enemy.walkSpeed, 0.0f, k_maxEnemySpeed);
@@ -115,7 +140,9 @@ namespace game
         void clientSection(const GameState& state, const EngineContext& engine)
         {
             const PlayerStatus& own = state.local.statuses[k_clientPawn];
-            ImGui::Text("Health      %d%s", own.health, own.isDead ? "  (dead)" : "");
+            ImGui::Text("Health      %d%s  %s", own.health, own.isDead ? "  (dead)" : "",
+                own.isArmed ? (own.isAiming ? "armed, aiming" : (own.isLowered ? "armed, lowered" : "armed")) : "unarmed");
+            ImGui::TextDisabled("Arming is host-side (host dev panel or --armed on the host)");
 
             const Prediction& prediction = state.local.prediction;
             positionText("Predicted", engine.entities.find(prediction.entity));
@@ -171,8 +198,16 @@ namespace game
             }
 
             roomDevSection(state);
+            pawnCharactersDevSection(state.pawnCharacters ? &*state.pawnCharacters : nullptr);
+
+            if (state.level)
+            {
+                sceneCharactersDevSection(state.level->scene, state.characters);
+            }
             ImGui::Separator();
-            ImGui::TextDisabled("WASD move, mouse look, left click fire, E use");
+            ImGui::TextDisabled("WASD walk, hold Shift to run, mouse look, left click fire, E use");
+            ImGui::TextDisabled("Armed: weapon up by default; hold right mouse to aim down sights (slower)");
+            ImGui::TextDisabled("X lowers / raises the weapon (fire or aim raises it); safe zones keep it lowered");
             ImGui::TextDisabled("Hold Space for bullet-time (either player)");
             ImGui::TextDisabled("Click to capture the mouse, Esc releases it");
         }

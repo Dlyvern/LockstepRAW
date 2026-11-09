@@ -12,6 +12,25 @@ namespace lockstep::physics
         constexpr float k_minMoveDistance{1.0e-4f};
         const physx::PxVec3 k_upDirection{0.0f, 1.0f, 0.0f};
 
+        class IgnoreSimulatedBodiesFilter final : public physx::PxQueryFilterCallback
+        {
+        public:
+            physx::PxQueryHitType::Enum preFilter(const physx::PxFilterData&, const physx::PxShape*,
+                const physx::PxRigidActor* actor, physx::PxHitFlags&) override
+            {
+                const auto* dynamic = actor != nullptr ? actor->is<physx::PxRigidDynamic>() : nullptr;
+                const bool isSimulated = dynamic != nullptr
+                    && !dynamic->getRigidBodyFlags().isSet(physx::PxRigidBodyFlag::eKINEMATIC);
+                return isSimulated ? physx::PxQueryHitType::eNONE : physx::PxQueryHitType::eBLOCK;
+            }
+
+            physx::PxQueryHitType::Enum postFilter(const physx::PxFilterData&, const physx::PxQueryHit&,
+                const physx::PxShape*, const physx::PxRigidActor*) override
+            {
+                return physx::PxQueryHitType::eBLOCK;
+            }
+        };
+
         Status validate(const ControllerDescription& description)
         {
             const bool isSizeValid = description.radius > 0.0f && description.height > 2.0f * description.radius;
@@ -110,7 +129,8 @@ namespace lockstep::physics
             return std::nullopt;
         }
 
-        const physx::PxControllerFilters filters;
+        IgnoreSimulatedBodiesFilter ignoreSimulatedBodies;
+        const physx::PxControllerFilters filters(nullptr, &ignoreSimulatedBodies);
         const physx::PxControllerCollisionFlags flags =
             slot->controller->move(toPx(displacement), k_minMoveDistance, deltaSeconds, filters);
 

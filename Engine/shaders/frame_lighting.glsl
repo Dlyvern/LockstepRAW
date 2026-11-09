@@ -19,6 +19,9 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     mat4 viewProjection;
     mat4 previousViewProjection;
     mat4 reflectionViewProjection;
+    mat4 viewModelViewProjection;
+    mat4 viewModelMotionViewProjection;
+    mat4 previousViewModelMotionViewProjection;
     vec4 reflectionCamera;
     vec4 reflectionPlane;
     vec4 reflectionTint;
@@ -39,6 +42,7 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     vec4 skyZenith;
     vec4 skyGround;
     vec4 sunDisk;
+    vec4 sceneDepthParams;
     uvec4 counts;
     LocalLight lights[k_maxLocalLights];
 } frame;

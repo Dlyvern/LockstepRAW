@@ -5,6 +5,11 @@
 
 #include <memory>
 
+namespace lockstep::audio
+{
+    class AudioSystem;
+} //namespace lockstep::audio
+
 namespace lockstep::net
 {
     class Network;
@@ -100,6 +105,12 @@ namespace lockstep::debug
         // renderer.render().
         // physics: the physics world to report on.
         void drawPhysicsSection(const physics::PhysicsWorld& physics);
+
+        // Draws the Audio panel: backend, sound and voice counts, mixer CPU use, bus volumes,
+        // the World bus' bullet-time effect and test-tone buttons. Does nothing while the overlay
+        // is hidden. Call once per frame, after beginFrame() and before renderer.render().
+        // audio: the audio system to show and control.
+        void drawAudioPanel(audio::AudioSystem& audio);
 
         // Records one frame for the Engine panel's frame time, CPU work and Vela frame figures
         // (min/avg/max over the last few seconds). CPU work is the frame minus the time spent

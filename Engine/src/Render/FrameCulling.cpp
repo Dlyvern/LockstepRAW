@@ -1,9 +1,11 @@
 #include "FrameCulling.hpp"
 
 #include "RendererState.hpp"
+#include "ViewModel.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace lockstep::render
 {
@@ -25,6 +27,23 @@ namespace lockstep::render
         bool castsShadow(const DrawItem& item)
         {
             return item.material->shading == Shading::Lit && item.material->alphaMode != AlphaMode::Blend;
+        }
+
+        bool castsIntoTile(const DrawItem& item, uint32_t tile, const PreparedLighting& prepared,
+            const ShadowSettings& settings)
+        {
+            const bool isSunCascade = tile < prepared.cascadeCount;
+
+            return !isSunCascade || item.material->alphaMode != AlphaMode::Mask || tile < settings.maskedCasterCascades;
+        }
+
+        void sortByDistance(std::vector<uint32_t>& list, const std::vector<DrawItem>& draws, bool isFrontToBack)
+        {
+            std::sort(list.begin(), list.end(), [&draws, isFrontToBack](uint32_t left, uint32_t right)
+            {
+                return isFrontToBack ? draws[left].cameraDistance < draws[right].cameraDistance
+                    : draws[left].cameraDistance > draws[right].cameraDistance;
+            });
         }
     } //namespace
 
@@ -69,6 +88,8 @@ namespace lockstep::render
     {
         opaque.clear();
         blended.clear();
+        viewModelOpaque.clear();
+        viewModelBlended.clear();
 
         for (std::vector<uint32_t>& casters : shadowCasters)
         {
@@ -76,13 +97,15 @@ namespace lockstep::render
         }
     }
 
-    void buildDrawLists(RendererState& state, const math::Mat4& viewProjection)
+    void buildDrawLists(RendererState& state, const math::Mat4& viewProjection,
+        const math::Mat4& viewModelViewProjection)
     {
         FrameDrawLists& lists = state.drawLists;
         lists.clear();
 
         const bool cull = state.settings.culling.frustumCulling;
         const Frustum cameraFrustum = frustumFromMatrix(viewProjection);
+        const Frustum viewModelFrustum = frustumFromMatrix(viewModelViewProjection);
         const PreparedLighting& prepared = state.prepared;
 
         std::array<Frustum, k_maxShadowTiles> tileFrusta{};
@@ -97,13 +120,23 @@ namespace lockstep::render
         for (uint32_t index = 0; index < state.draws.size(); ++index)
         {
             DrawItem& item = state.draws[index];
+            item.cameraDistance = math::length((item.worldBounds.min + item.worldBounds.max) * 0.5f - state.camera.position);
+
+            if (isViewModelDraw(item.layers))
+            {
+                if (!cull || intersects(viewModelFrustum, item.worldBounds))
+                {
+                    (item.material->alphaMode == AlphaMode::Blend ? lists.viewModelBlended : lists.viewModelOpaque)
+                        .push_back(index);
+                }
+
+                continue;
+            }
 
             if ((item.layers & state.camera.layers) == 0)
             {
                 continue;
             }
-
-            item.cameraDistance = math::length((item.worldBounds.min + item.worldBounds.max) * 0.5f - state.camera.position);
 
             if (!cull || intersects(cameraFrustum, item.worldBounds))
             {
@@ -117,23 +150,17 @@ namespace lockstep::render
 
             for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
             {
-                if (tileActive[tile] && (!cull || intersects(tileFrusta[tile], item.worldBounds)))
+                if (tileActive[tile] && castsIntoTile(item, tile, prepared, state.settings.shadows)
+                    && (!cull || intersects(tileFrusta[tile], item.worldBounds)))
                 {
                     lists.shadowCasters[tile].push_back(index);
                 }
             }
         }
 
-        const std::vector<DrawItem>& draws = state.draws;
-
-        std::sort(lists.opaque.begin(), lists.opaque.end(), [&draws](uint32_t left, uint32_t right)
-        {
-            return draws[left].cameraDistance < draws[right].cameraDistance;
-        });
-
-        std::sort(lists.blended.begin(), lists.blended.end(), [&draws](uint32_t left, uint32_t right)
-        {
-            return draws[left].cameraDistance > draws[right].cameraDistance;
-        });
+        sortByDistance(lists.opaque, state.draws, true);
+        sortByDistance(lists.blended, state.draws, false);
+        sortByDistance(lists.viewModelOpaque, state.draws, true);
+        sortByDistance(lists.viewModelBlended, state.draws, false);
     }
 } //namespace lockstep::render

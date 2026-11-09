@@ -152,6 +152,19 @@ namespace game
                 << level.collision.triangleCount << " triangles, " << level.collision.skipped << " instances skipped, "
                 << level.collision.seconds << " s\n";
 
+            for (const lockstep::anim::SkinnedModel& model : level.scene.skinnedModels)
+            {
+                std::clog << "Game: skinned model '" << model.name << "': " << model.skeleton.joints.size() << " joints, "
+                    << model.parts.size() << " parts, " << model.clips.size() << " clips";
+
+                for (const lockstep::anim::AnimationClip& clip : model.clips)
+                {
+                    std::clog << " '" << clip.name << "' " << clip.duration << " s";
+                }
+
+                std::clog << '\n';
+            }
+
             for (const std::string& warning : level.scene.warnings)
             {
                 std::clog << "Game: scene import: " << warning << '\n';

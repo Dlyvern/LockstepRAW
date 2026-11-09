@@ -12,6 +12,10 @@ namespace game
         namespace platform = lockstep::platform;
 
         constexpr std::byte k_bulletTimeBit{0x01};
+        constexpr std::byte k_sprintBit{0x02};
+        constexpr std::byte k_aimBit{0x04};
+        constexpr std::byte k_lowerBit{0x08};
+        constexpr std::byte k_weaponUpBit{0x10};
         constexpr float k_moveQuantization{127.0f};
         constexpr std::size_t k_flagsOffset{0};
         constexpr std::size_t k_moveXOffset{1};
@@ -39,8 +43,12 @@ namespace game
     } //namespace
 
     PlayerCommand sampleLocalCommand(LocalControls& controls, const ControlSettings& settings,
-        const platform::Input& input, bool isCursorCaptured)
+        const platform::Input& input, bool isCursorCaptured, const WeaponControl& weapon)
     {
+        const bool canRaise = weapon.zone != WeaponZone::Safe;
+        const bool wasLowered = weapon.isArmed && isWeaponLowered(controls.wantsLowered, weapon.zone);
+        bool isAiming = false;
+
         if (isCursorCaptured)
         {
             const math::Vec2 delta = input.mouseDelta();
@@ -48,9 +56,28 @@ namespace game
             controls.pitch = math::clamp(controls.pitch - delta.y * settings.mouseSensitivity, -settings.maxPitch,
                 settings.maxPitch);
 
+            if (weapon.isArmed && weapon.zone == WeaponZone::Open && input.wasKeyPressed(k_lowerWeaponKey))
+            {
+                controls.wantsLowered = !controls.wantsLowered;
+            }
+
             if (input.wasMouseButtonPressed(platform::MouseButton::Left))
             {
-                ++controls.shotCount;
+                if (wasLowered && !weapon.isHoldingToy)
+                {
+                    controls.wantsLowered = controls.wantsLowered && !canRaise;
+                }
+                else
+                {
+                    ++controls.shotCount;
+                }
+            }
+
+            isAiming = weapon.isArmed && canRaise && input.isMouseButtonDown(platform::MouseButton::Right);
+
+            if (isAiming)
+            {
+                controls.wantsLowered = false;
             }
 
             if (input.wasKeyPressed(platform::Key::E))
@@ -65,13 +92,19 @@ namespace game
             .pitch = controls.pitch,
             .shotCount = controls.shotCount,
             .bulletTime = input.isKeyDown(platform::Key::Space),
-            .interactCount = controls.interactCount};
+            .interactCount = controls.interactCount,
+            .sprint = input.isKeyDown(platform::Key::LeftShift) || input.isKeyDown(platform::Key::RightShift),
+            .aim = isAiming,
+            .lower = controls.wantsLowered,
+            .isWeaponUp = weapon.isArmed && !isWeaponLowered(controls.wantsLowered, weapon.zone)};
     }
 
     std::array<std::byte, k_playerCommandBytes> encodeCommand(const PlayerCommand& command)
     {
         std::array<std::byte, k_playerCommandBytes> bytes{};
-        bytes[k_flagsOffset] = command.bulletTime ? k_bulletTimeBit : std::byte{0};
+        bytes[k_flagsOffset] = (command.bulletTime ? k_bulletTimeBit : std::byte{0})
+            | (command.sprint ? k_sprintBit : std::byte{0}) | (command.aim ? k_aimBit : std::byte{0})
+            | (command.lower ? k_lowerBit : std::byte{0}) | (command.isWeaponUp ? k_weaponUpBit : std::byte{0});
         bytes[k_moveXOffset] = quantizeAxis(command.move.x);
         bytes[k_moveYOffset] = quantizeAxis(command.move.y);
         bytes[k_shotCountOffset] = static_cast<std::byte>(command.shotCount);
@@ -103,6 +136,10 @@ namespace game
             .pitch = pitch,
             .shotCount = static_cast<uint8_t>(bytes[k_shotCountOffset]),
             .bulletTime = (bytes[k_flagsOffset] & k_bulletTimeBit) != std::byte{0},
-            .interactCount = static_cast<uint8_t>(bytes[k_interactCountOffset])};
+            .interactCount = static_cast<uint8_t>(bytes[k_interactCountOffset]),
+            .sprint = (bytes[k_flagsOffset] & k_sprintBit) != std::byte{0},
+            .aim = (bytes[k_flagsOffset] & k_aimBit) != std::byte{0},
+            .lower = (bytes[k_flagsOffset] & k_lowerBit) != std::byte{0},
+            .isWeaponUp = (bytes[k_flagsOffset] & k_weaponUpBit) != std::byte{0}};
     }
 } //namespace game

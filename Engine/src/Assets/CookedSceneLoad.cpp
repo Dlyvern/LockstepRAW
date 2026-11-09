@@ -144,31 +144,41 @@ namespace lockstep::assets
             return index < textures.size() ? textures[index] : render::TextureHandle{};
         }
 
+        render::PbrMaterialDescription describe(const CookedMaterial& material,
+            const std::vector<render::TextureHandle>& textures)
+        {
+            render::PbrMaterialDescription description = material.factors;
+            description.baseColor = textureAt(textures, material.baseColor);
+            description.normal = textureAt(textures, material.normal);
+            description.metallicRoughness = textureAt(textures, material.metallicRoughness);
+            description.occlusion = textureAt(textures, material.occlusion);
+            description.emissive = textureAt(textures, material.emissive);
+
+            return description;
+        }
+
         Result<std::vector<render::MaterialHandle>> createMaterials(LoadContext& context, const CookedLevel& level,
             const std::vector<render::TextureHandle>& textures)
         {
-            std::vector<render::MaterialHandle> materials;
-            materials.reserve(level.materials.size());
+            std::vector<render::MaterialHandle> materials(level.materials.size());
 
-            for (const CookedMaterial& material : level.materials)
+            for (const CookedMesh& mesh : level.meshes)
             {
-                render::PbrMaterialDescription description = material.factors;
-                description.baseColor = textureAt(textures, material.baseColor);
-                description.normal = textureAt(textures, material.normal);
-                description.metallicRoughness = textureAt(textures, material.metallicRoughness);
-                description.occlusion = textureAt(textures, material.occlusion);
-                description.emissive = textureAt(textures, material.emissive);
-                auto created = context.renderer.createMaterial(description);
+                if (materials[mesh.material].isValid())
+                {
+                    continue;
+                }
+
+                auto created = context.renderer.createMaterial(describe(level.materials[mesh.material], textures));
 
                 if (!created)
                 {
                     return created.error();
                 }
 
-                materials.push_back(created.value());
+                materials[mesh.material] = created.value();
+                ++context.scene.stats.materialCount;
             }
-
-            context.scene.stats.materialCount = static_cast<uint32_t>(materials.size());
 
             return materials;
         }
@@ -237,6 +247,119 @@ namespace lockstep::assets
             return loadAll<std::vector<std::byte>>(context, level.collisionShapes, parse, use);
         }
 
+        Result<render::MaterialHandle> skinnedMaterial(LoadContext& context, const CookedLevel& level,
+            const std::vector<render::TextureHandle>& textures, std::vector<render::MaterialHandle>& created,
+            uint32_t index)
+        {
+            if (created[index].isValid())
+            {
+                return render::MaterialHandle{created[index]};
+            }
+
+            auto material = context.renderer.createMaterial(describe(level.materials[index], textures),
+                render::MeshKind::Skinned);
+
+            if (!material)
+            {
+                return material.error();
+            }
+
+            created[index] = material.value();
+            ++context.scene.stats.materialCount;
+
+            return render::MaterialHandle{created[index]};
+        }
+
+        Result<anim::SkinnedModel> loadSkinnedModel(LoadContext& context, const CookedLevel& level,
+            const std::vector<render::TextureHandle>& textures, std::vector<render::MaterialHandle>& materials,
+            const std::string& path)
+        {
+            auto bytes = context.files.read(path);
+
+            if (!bytes)
+            {
+                return bytes.error();
+            }
+
+            context.scene.stats.contentBytes += bytes.value().size();
+            auto cooked = readCookedModel(bytes.value(), path);
+
+            if (!cooked)
+            {
+                return cooked.error();
+            }
+
+            CookedModel& source = cooked.value();
+            anim::SkinnedModel model{.name = std::move(source.name), .skeleton = std::move(source.skeleton), .parts = {},
+                .clips = std::move(source.clips), .jointRadii = std::move(source.jointRadii),
+                .bindBounds = source.bindBounds};
+
+            for (const CookedSkinnedPart& part : source.parts)
+            {
+                if (part.material >= level.materials.size())
+                {
+                    return Error{ErrorCode::AssetLoadFailed, "model '" + path + "': a material index is out of range"};
+                }
+
+                auto meshBytes = context.files.read(part.path);
+
+                if (!meshBytes)
+                {
+                    return meshBytes.error();
+                }
+
+                context.scene.stats.contentBytes += meshBytes.value().size();
+                auto data = readCookedSkinnedMesh(meshBytes.value(), part.path);
+
+                if (!data)
+                {
+                    return data.error();
+                }
+
+                auto material = skinnedMaterial(context, level, textures, materials, part.material);
+
+                if (!material)
+                {
+                    return material.error();
+                }
+
+                auto mesh = context.renderer.createMesh(std::span<const render::SkinnedPbrVertex>(data.value().vertices),
+                    std::span<const uint32_t>(data.value().indices));
+
+                if (!mesh)
+                {
+                    return mesh.error();
+                }
+
+                model.parts.push_back(anim::SkinnedModelPart{.mesh = mesh.value(), .material = material.value()});
+                context.scene.stats.triangleCount += data.value().indices.size() / 3;
+            }
+
+            return model;
+        }
+
+        Status loadSkinnedModels(LoadContext& context, const CookedLevel& level,
+            const std::vector<render::TextureHandle>& textures)
+        {
+            std::vector<render::MaterialHandle> materials(level.materials.size());
+
+            for (const std::string& path : level.models)
+            {
+                auto model = loadSkinnedModel(context, level, textures, materials, path);
+
+                if (!model)
+                {
+                    return model.error();
+                }
+
+                context.scene.skinnedModels.push_back(std::move(model).value());
+            }
+
+            context.scene.skinnedInstances = level.skinnedInstances;
+
+            return {};
+        }
+
         void placeInstances(Scene& scene, CookedLevel& level)
         {
             scene.instances = std::move(level.instances);
@@ -296,6 +419,11 @@ namespace lockstep::assets
         }
 
         if (auto loaded = loadCollisionShapes(context, level.value()); !loaded)
+        {
+            return loaded.error();
+        }
+
+        if (auto loaded = loadSkinnedModels(context, level.value(), textures.value()); !loaded)
         {
             return loaded.error();
         }

@@ -12,28 +12,38 @@
 
 namespace game
 {
-    // Sets up the apartment room if the loaded level has usable nodes, and reads the Echo flags
-    // (`--echo-file`, `--echo-play`). Host and client.
+    // Sets up the apartment room if the loaded level has usable nodes (the host also spawns the
+    // toys), and reads the Echo flags (`--echo-file`, `--echo-play`). Host and client.
     // state:  the game state; gets `room` and maybe `echo`.
     // engine: Engine services.
     // spawns: the level's spawn points.
-    // Returns: success, or an error for a bad Echo flag or an unreadable `--echo-play` file.
+    // Returns: success, or an error for a bad Echo flag, an unreadable `--echo-play` file or a toy
+    //          that could not be spawned.
     [[nodiscard]] lockstep::Status startRoom(lockstep::app::GameState& state, lockstep::app::EngineContext& engine,
         const LevelSpawns& spawns);
 
     // Host: handles the E presses in a pawn's newest command (called after the command moved it).
+    // Taking the gear from the locker arms the pawn.
     // state:     the game state.
     // engine:    Engine services.
     // pawnIndex: whose command.
     void interactWithRoom(lockstep::app::GameState& state, lockstep::app::EngineContext& engine, std::size_t pawnIndex);
 
-    // Host, end of a tick: room timers and animations, the Echo recording, sending the room state
-    // to the client, applying it to the level and the local prompt.
+    // Host: a pawn's shot while it carries a toy throws the toy instead.
+    // state:     the game state.
+    // engine:    Engine services.
+    // pawnIndex: who shot.
+    // Returns:   true if a toy was thrown (the shot is used up), false to fire normally.
+    bool throwHeldToy(lockstep::app::GameState& state, lockstep::app::EngineContext& engine, std::size_t pawnIndex);
+
+    // Host, end of a tick: room timers and animations, toys, the morning's phase, the Echo
+    // recording, sending the room state to the client, applying it to the level and the HUD.
     // state:  the game state.
     // engine: Engine services.
     void runRoomHostTick(lockstep::app::GameState& state, lockstep::app::EngineContext& engine);
 
-    // Client, end of a tick: applies the newest room state to the level and updates the prompt.
+    // Client, end of a tick: finds the mirrored toys, applies the newest room state to the level
+    // and updates the HUD.
     // state:  the game state.
     // engine: Engine services.
     void runRoomClientTick(lockstep::app::GameState& state, lockstep::app::EngineContext& engine);

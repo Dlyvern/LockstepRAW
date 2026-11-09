@@ -106,6 +106,58 @@ namespace lockstep::cooker
 
             return levels;
         }
+
+        double alphaCoverage(std::span<const uint8_t> level, float threshold)
+        {
+            const std::size_t texels = level.size() / k_channels;
+            std::size_t passing = 0;
+
+            for (std::size_t texel = 0; texel < texels; ++texel)
+            {
+                if (static_cast<float>(level[texel * k_channels + 3]) >= threshold)
+                {
+                    ++passing;
+                }
+            }
+
+            return texels > 0 ? static_cast<double>(passing) / static_cast<double>(texels) : 0.0;
+        }
+
+        void preserveAlphaCoverage(std::vector<std::vector<uint8_t>>& levels, float alphaCutoff)
+        {
+            constexpr int k_searchSteps{16};
+            const float cutoff = std::clamp(alphaCutoff, 1.0f / 255.0f, 1.0f) * 255.0f;
+            const double target = alphaCoverage(levels.front(), cutoff);
+
+            for (std::size_t level = 1; level < levels.size(); ++level)
+            {
+                std::vector<uint8_t>& texels = levels[level];
+                float low = 1.0f;
+                float high = 255.0f;
+
+                for (int step = 0; step < k_searchSteps; ++step)
+                {
+                    const float middle = 0.5f * (low + high);
+
+                    if (alphaCoverage(texels, middle) < target)
+                    {
+                        high = middle;
+                    }
+                    else
+                    {
+                        low = middle;
+                    }
+                }
+
+                const float scale = cutoff / std::max(low, 1.0f);
+
+                for (std::size_t texel = 0; texel < texels.size() / k_channels; ++texel)
+                {
+                    uint8_t& alpha = texels[texel * k_channels + 3];
+                    alpha = static_cast<uint8_t>(std::clamp(static_cast<float>(alpha) * scale + 0.5f, 0.0f, 255.0f));
+                }
+            }
+        }
     } //namespace
 
     render::TextureFormat cookedFormat(TextureUsage usage) noexcept
@@ -132,7 +184,7 @@ namespace lockstep::cooker
     }
 
     Result<CookedTexture> cookTexture(std::span<const std::byte> encoded, TextureUsage usage, uint32_t maxSize,
-        assets::TranscoderGate& gate)
+        float alphaCutoff, assets::TranscoderGate& gate)
     {
         const assets::DecodeTargets rgba8Only{.blockCompression = false, .compress = false};
         auto decoded = assets::decodeImage(encoded, usage == TextureUsage::Colour, rgba8Only, gate);
@@ -145,7 +197,12 @@ namespace lockstep::cooker
         const assets::DecodedTexture& source = decoded.value();
         const std::size_t baseBytes = static_cast<std::size_t>(source.width) * source.height * k_channels;
         const std::span<const uint8_t> base(reinterpret_cast<const uint8_t*>(source.bytes.data()), baseBytes);
-        const std::vector<std::vector<uint8_t>> levels = mipChain(base, source.width, source.height, usage);
+        std::vector<std::vector<uint8_t>> levels = mipChain(base, source.width, source.height, usage);
+
+        if (usage == TextureUsage::Colour && alphaCutoff > 0.0f)
+        {
+            preserveAlphaCoverage(levels, alphaCutoff);
+        }
 
         CookedTexture cooked{};
         cooked.format = cookedFormat(usage);

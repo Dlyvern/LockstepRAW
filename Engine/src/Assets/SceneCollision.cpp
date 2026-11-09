@@ -88,7 +88,7 @@ namespace lockstep::assets
     Result<SceneCollision> createSceneCollision(physics::PhysicsWorld& physics, const Scene& scene,
         const SceneCollisionOptions& options)
     {
-        if (!hasCollisionGeometry(scene))
+        if (!scene.meshes.empty() && !hasCollisionGeometry(scene))
         {
             return Error{ErrorCode::InvalidArgument,
                 "createSceneCollision: the scene was imported without collision geometry"};

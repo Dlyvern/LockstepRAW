@@ -60,6 +60,7 @@ namespace lockstep::render
 
         struct OutputConstants
         {
+            float fade[4];
             float inverseSize[2];
             OutputFilter filter;
             float dither;
@@ -70,7 +71,7 @@ namespace lockstep::render
         static_assert(sizeof(ProjectionConstants) == 32);
         static_assert(sizeof(BloomConstants) == 16);
         static_assert(sizeof(TonemapConstants) == 16);
-        static_assert(sizeof(OutputConstants) == 24);
+        static_assert(sizeof(OutputConstants) == 40);
 
         vela::graphics::AttachmentSlot colorSlot(std::string_view name, vela::graphics::TextureFormat format,
             float scale, float clearValue)
@@ -260,7 +261,10 @@ namespace lockstep::render
                     const vela::graphics::Extent2D extent = recorder.extent();
                     const AntiAliasingSettings& antiAliasing = state.settings.antiAliasing;
 
+                    const math::Vec4& fade = state.screenFade;
+
                     recorder.setConstants(OutputConstants{
+                        .fade = {fade.x, fade.y, fade.z, fade.w},
                         .inverseSize = {1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height)},
                         .filter = outputFilter(antiAliasing.mode),
                         .dither = state.settings.tonemap.dither ? k_ditherAmplitude : 0.0f,

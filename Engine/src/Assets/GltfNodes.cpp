@@ -105,11 +105,6 @@ namespace lockstep::assets
             const math::Mat4 world = current.parentWorld * localMatrix(*node);
             uint32_t childParent = current.parentNode;
 
-            if (node->skin != nullptr)
-            {
-                warnings.add("skins are ignored; skinned meshes are drawn in bind pose");
-            }
-
             if (const std::optional<math::Transform> transform = toTransform(world))
             {
                 const uint32_t sceneNode = hasSceneNode(*node) ? sceneNodeCount++ : k_noNode;

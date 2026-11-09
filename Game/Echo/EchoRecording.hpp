@@ -17,9 +17,8 @@
 
 namespace game
 {
-    // Where the host saves the recording unless `--echo-file <path>` says otherwise, relative to
-    // the working directory.
-    inline constexpr const char* k_defaultEchoPath{"Saved/echo_recording.bin"};
+    // File name of the recording in the per-user data folder.
+    inline constexpr const char* k_echoFileName{"echo_recording.bin"};
 
     // One pawn on one tick of a recording.
     // isPresent: the pawn existed (the player had joined and was alive).
@@ -54,9 +53,10 @@ namespace game
     };
 
     // The "Echo" recording: both players' pawns and interactions at the fixed tick rate, from
-    // level start until the front door opens. The epilogue replays it as ghosts.
+    // level start until the morning is complete (both at the car). The epilogue replays it as
+    // ghosts.
     //
-    // File (little-endian): "LECH", uint32 version (1), uint32 tickRate, uint32 frameCount,
+    // File (little-endian): "LECH", uint32 version (3), uint32 tickRate, uint32 frameCount,
     // uint32 eventCount, then frameCount frames of k_playerCount samples (uint8 isPresent,
     // float footX, footY, footZ, yaw, pitch), then eventCount events (uint32 frame, uint8 player,
     // uint8 object, uint8 action).
@@ -106,13 +106,19 @@ namespace game
     [[nodiscard]] std::array<std::optional<math::Transform>, k_playerCount> echoGhostTransforms(
         const EchoPlayback& playback, float alpha);
 
+    // Where the host saves the recording without `--echo-file`: k_echoFileName in the per-user
+    // data folder, $XDG_DATA_HOME/LockstepRAW or ~/.local/share/LockstepRAW on Linux,
+    // %APPDATA%\LockstepRAW on Windows; the working directory's "Saved" folder if neither is set.
+    // Returns: the path.
+    [[nodiscard]] std::filesystem::path defaultEchoPath();
+
     // The Echo command-line flags.
-    // savePath: `--echo-file <path>`: where the host saves the recording (k_defaultEchoPath
+    // savePath: `--echo-file <path>`: where the host saves the recording (defaultEchoPath()
     //           without the flag).
     // playPath: `--echo-play <path>`: a recording to play back as ghosts from the start.
     struct EchoLaunch
     {
-        std::filesystem::path savePath{k_defaultEchoPath};
+        std::filesystem::path savePath;
         std::optional<std::filesystem::path> playPath;
     };
 

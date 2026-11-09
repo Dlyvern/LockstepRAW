@@ -20,6 +20,27 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
+# FMOD Core API for Engine/Audio. The SDK is proprietary and git-ignored (external/fmod/include,
+# external/fmod/lib); without it the option defaults to OFF and Engine/Audio builds a silent
+# backend, so the game still builds and runs.
+if(EXISTS "${CMAKE_SOURCE_DIR}/external/fmod/include/fmod.hpp"
+    AND (EXISTS "${CMAKE_SOURCE_DIR}/external/fmod/lib/linux/libfmod.so.14.8"
+        OR EXISTS "${CMAKE_SOURCE_DIR}/external/fmod/lib/windows/fmod.dll"))
+    set(LOCKSTEP_FMOD_SDK_FOUND ON)
+else()
+    set(LOCKSTEP_FMOD_SDK_FOUND OFF)
+endif()
+
+option(LOCKSTEP_WITH_FMOD "Build Engine/Audio on the FMOD Core API (OFF: silent audio backend)" ${LOCKSTEP_FMOD_SDK_FOUND})
+
+if(LOCKSTEP_WITH_FMOD AND NOT LOCKSTEP_FMOD_SDK_FOUND)
+    message(FATAL_ERROR "LOCKSTEP_WITH_FMOD is ON but the FMOD SDK is missing from external/fmod/include and external/fmod/lib")
+endif()
+
+if(NOT LOCKSTEP_WITH_FMOD)
+    message(STATUS "Lockstep: FMOD off, Engine/Audio uses the silent backend")
+endif()
+
 add_subdirectory(external)
 
 # Dependency rule: Game -> Engine -> external. Never the other way.

@@ -1,7 +1,7 @@
 #version 450
 
 // The output pass: FXAA 3.11 (quality preset 12) after T. Lottes on the tonemapped image, or
-// sharpening of the TAA result, or a plain copy; then output dithering.
+// sharpening of the TAA result, or a plain copy; then the screen fade and output dithering.
 
 const float k_edgeThreshold = 0.125;
 const float k_edgeThresholdMin = 0.0312;
@@ -14,6 +14,7 @@ const float k_stepSizes[k_searchSteps] = float[](1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4
 
 layout(push_constant) uniform OutputConstants
 {
+    vec4 fade;
     vec2 inverseSize;
     uint filterMode;
     float dither;
@@ -250,6 +251,8 @@ void main()
     {
         color = texelFetch(source, pixel, 0).rgb;
     }
+
+    color = mix(color, constants.fade.rgb, constants.fade.a);
 
     if (constants.dither > 0.0)
     {

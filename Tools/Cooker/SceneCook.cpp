@@ -116,6 +116,49 @@ namespace lockstep::cooker
             return firstError(errors);
         }
 
+        Status cookSkinnedModels(CookContext& context)
+        {
+            uint32_t meshIndex = 0;
+
+            for (std::size_t index = 0; index < context.scene.skinnedModels.size(); ++index)
+            {
+                const SourceSkinnedModel& source = context.scene.skinnedModels[index];
+                const assets::GltfSkinnedModel& model = source.model;
+                assets::CookedModel cooked{.name = model.name, .skeleton = model.skeleton, .clips = model.clips,
+                    .jointRadii = model.jointRadii, .bindBounds = model.bindBounds, .parts = {}};
+
+                for (std::size_t part = 0; part < model.parts.size(); ++part)
+                {
+                    const assets::SkinnedGeometry& geometry = model.parts[part].geometry;
+                    const std::string path = filePath(context, "skinned", meshIndex++, ".mesh");
+
+                    if (auto written = writeFile(context, path, assets::writeCookedSkinnedMesh(geometry.vertices,
+                            geometry.indices, geometry.bounds)); !written)
+                    {
+                        return written;
+                    }
+
+                    cooked.parts.push_back(assets::CookedSkinnedPart{.path = path, .material = source.materials[part]});
+                }
+
+                const std::string path = filePath(context, "models", index, ".model");
+
+                if (auto written = writeFile(context, path, assets::writeCookedModel(cooked)); !written)
+                {
+                    return written;
+                }
+
+                context.level.skinnedInstances.push_back(assets::SceneSkinnedInstance{
+                    .model = static_cast<uint32_t>(context.level.models.size()), .transform = model.transform,
+                    .node = model.node});
+                context.level.models.push_back(path);
+                std::cout << "  skinned model '" << model.name << "': " << model.skeleton.joints.size() << " joints, "
+                    << model.parts.size() << " parts, " << model.clips.size() << " clips\n";
+            }
+
+            return {};
+        }
+
         CollisionGeometry collisionGeometry(const assets::PrimitiveGeometry& geometry)
         {
             CollisionGeometry collision{};
@@ -298,7 +341,8 @@ namespace lockstep::cooker
             {
                 auto bytes = assets::readImageBytes(*textures[index].image, context.sourceFiles,
                     context.scene.directory);
-                auto cooked = bytes ? cookTexture(bytes.value(), textures[index].usage, caps[index], gate)
+                auto cooked = bytes ? cookTexture(bytes.value(), textures[index].usage, caps[index],
+                    textures[index].alphaCutoff, gate)
                     : Result<CookedTexture>(bytes.error());
 
                 if (!cooked)
@@ -407,6 +451,11 @@ namespace lockstep::cooker
         context.level.bounds = scene.value().bounds;
 
         if (auto cooked = cookMeshes(context); !cooked)
+        {
+            return cooked;
+        }
+
+        if (auto cooked = cookSkinnedModels(context); !cooked)
         {
             return cooked;
         }

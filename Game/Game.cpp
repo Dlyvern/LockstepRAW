@@ -2,11 +2,14 @@
 
 #include "DevPanel.hpp"
 #include "GameState.hpp"
+#include "Player/LocalPlayer.hpp"
+#include "Presentation/Frame.hpp"
 #include "Simulation/HostSimulation.hpp"
 #include "Simulation/RoomSimulation.hpp"
-#include "Presentation/Mirrors.hpp"
 
+#include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Assets/Scene.hpp>
+#include <Lockstep/Audio/AudioSystem.hpp>
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
 #include <Lockstep/Physics/PhysicsWorld.hpp>
@@ -16,10 +19,13 @@
 #include <Lockstep/World/Entities.hpp>
 #include <Lockstep/World/TimeDomains.hpp>
 
-#include <cmath>
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace game
@@ -31,23 +37,24 @@ namespace game
         namespace world = lockstep::world;
 
         using lockstep::app::EngineContext;
-        using lockstep::app::FrameInfo;
         using lockstep::app::GameState;
         using lockstep::app::TickInfo;
 
-        constexpr math::Vec3 k_lobbyEye{0.0f, 6.0f, 18.0f};
-        constexpr math::Vec3 k_lobbyLook{0.0f, -0.3f, -1.0f};
-        constexpr math::Vec3 k_levelLobbyOffset{0.0f, 3.0f, 4.0f};
-
-        struct View
-        {
-            math::Vec3 eye{0.0f, 0.0f, 0.0f};
-            math::Vec3 direction{0.0f, 0.0f, -1.0f};
-        };
+        constexpr std::string_view k_armedFlag{"--armed"};
+        constexpr std::string_view k_ambienceFolder{"audio/"};
+        constexpr std::string_view k_ambienceName{"ambience_morning."};
 
         void logError(const char* what, const lockstep::Error& error)
         {
             std::clog << "Game: " << what << ": " << error.message << '\n';
+        }
+
+        bool hasArgument(std::span<const char* const> arguments, std::string_view flag)
+        {
+            return std::any_of(arguments.begin(), arguments.end(), [flag](const char* argument)
+            {
+                return argument != nullptr && std::string_view(argument) == flag;
+            });
         }
 
         lockstep::Status loadLevel(GameState& state, EngineContext& engine, const std::optional<SceneLaunch>& launch)
@@ -66,11 +73,44 @@ namespace game
             }
 
             state.level = std::move(level).value();
+            state.weaponZones = findWeaponZones(state.level->scene);
+            state.characters = createSceneCharacters(state.level->scene, engine.arguments);
             const LevelSpawns spawns = findLevelSpawns(*state.level, engine.physics);
             state.settings.spawnPoints = spawns.pawns;
             state.settings.enemy.spawnPoint = spawns.enemy;
 
             return startRoom(state, engine, spawns);
+        }
+
+        void startAmbience(EngineContext& engine)
+        {
+            for (const std::string& path : engine.files.list(""))
+            {
+                const std::string_view name = std::string_view(path).substr(path.rfind('/') + 1);
+
+                if (!name.starts_with(k_ambienceName) || path.find(k_ambienceFolder) == std::string::npos)
+                {
+                    continue;
+                }
+
+                auto sound = engine.audio.loadSound(engine.files, path,
+                    lockstep::audio::SoundDescription{.is3d = false, .isLooping = true, .isStreamed = true});
+
+                if (!sound)
+                {
+                    logError("loading ambience", sound.error());
+                    return;
+                }
+
+                if (auto voice = engine.audio.play(sound.value(), {.bus = lockstep::audio::Bus::Ambience}); !voice)
+                {
+                    logError("playing ambience", voice.error());
+                    return;
+                }
+
+                std::clog << "Game: playing ambience '" << path << "'\n";
+                return;
+            }
         }
 
         lockstep::Result<GameState*> init(EngineContext& engine)
@@ -91,12 +131,16 @@ namespace game
 
             auto state = std::make_unique<GameState>();
             state->visuals = visuals.value();
+            state->settings.startArmed = hasArgument(engine.arguments, k_armedFlag) || !launch.value();
+            state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
             applyArenaLook(engine.renderer);
 
             if (auto loaded = loadLevel(*state, engine, launch.value()); !loaded)
             {
                 return loaded.error();
             }
+
+            startAmbience(engine);
 
             if (engine.session.role() == net::Role::Client)
             {
@@ -174,8 +218,12 @@ namespace game
             stepEcho(state);
             const platform::Input idle{};
             const bool isFlying = state.flyCamera.isActive;
+            state.local.weaponZone = localWeaponZone(state, engine);
             state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls,
-                isFlying ? idle : tick.input, !isFlying && engine.window.isCursorCaptured());
+                isFlying ? idle : tick.input, !isFlying && engine.window.isCursorCaptured(),
+                WeaponControl{.isArmed = state.local.statuses[localPawnIndex(engine)].isArmed,
+                    .zone = state.local.weaponZone,
+                    .isHoldingToy = isHoldingToy(state, engine)});
 
             if (engine.session.role() == net::Role::Client)
             {
@@ -196,178 +244,6 @@ namespace game
             runHostTick(state, engine);
         }
 
-        void updateCursorCapture(platform::Window& window, const platform::Input& input)
-        {
-            if (input.wasKeyPressed(platform::Key::Escape))
-            {
-                if (window.isCursorCaptured())
-                {
-                    window.setCursorCaptured(false);
-                }
-                else
-                {
-                    window.close();
-                }
-            }
-            else if (input.wasMouseButtonPressed(platform::MouseButton::Left))
-            {
-                window.setCursorCaptured(true);
-            }
-        }
-
-        void presentHost(GameState& state, EngineContext& engine, float alpha, std::optional<math::Transform>& localPawn)
-        {
-            const world::EntityId localEntity = state.simulation.pawns[k_hostPawn].entity;
-
-            for (const Pawn& pawn : state.simulation.pawns)
-            {
-                const world::Entity* entity = engine.entities.find(pawn.entity);
-
-                if (entity == nullptr)
-                {
-                    continue;
-                }
-
-                const math::Transform transform = entity->interpolatedTransform(alpha);
-
-                if (pawn.entity == localEntity)
-                {
-                    localPawn = transform;
-                    continue;
-                }
-
-                drawEntity(engine.renderer, state.visuals, Archetype::Pawn, entity->owner(), transform);
-            }
-
-            if (const world::Entity* enemy = engine.entities.find(state.simulation.enemy.entity))
-            {
-                drawEntity(engine.renderer, state.visuals, Archetype::Enemy, enemy->owner(),
-                    enemy->interpolatedTransform(alpha));
-            }
-        }
-
-        void presentClient(GameState& state, EngineContext& engine, float alpha, std::optional<math::Transform>& localPawn)
-        {
-            localPawn = predictedTransform(state.local.prediction, engine.entities, alpha);
-
-            for (const net::MirroredEntity& mirrored : engine.replication.mirrored())
-            {
-                const world::Entity* entity = engine.entities.find(mirrored.entity);
-
-                if (entity == nullptr)
-                {
-                    continue;
-                }
-
-                const auto archetype = static_cast<Archetype>(mirrored.archetype);
-                const math::Transform transform = entity->interpolatedTransform(alpha);
-
-                if (archetype == Archetype::Pawn && entity->owner() == world::EntityOwner::Player2)
-                {
-                    continue;
-                }
-
-                drawEntity(engine.renderer, state.visuals, archetype, entity->owner(), transform);
-            }
-        }
-
-        View lobbyView(const GameState& state)
-        {
-            if (!state.level)
-            {
-                return View{.eye = k_lobbyEye, .direction = math::normalize(k_lobbyLook)};
-            }
-
-            return View{.eye = state.settings.spawnPoints[k_hostPawn] + k_levelLobbyOffset,
-                .direction = math::normalize(k_lobbyLook)};
-        }
-
-        bool presentFlyCamera(GameState& state, EngineContext& engine, const FrameInfo& frameInfo, const View& view)
-        {
-            const float yaw = std::atan2(-view.direction.x, -view.direction.z);
-            const float pitch = std::asin(math::clamp(view.direction.y, -1.0f, 1.0f));
-            toggleFlyCamera(state.flyCamera, frameInfo.input, view.eye, yaw, pitch);
-
-            if (!state.flyCamera.isActive)
-            {
-                return false;
-            }
-
-            updateFlyCamera(state.flyCamera, frameInfo.input, state.settings.controls, engine.window.isCursorCaptured(),
-                frameInfo.frameSeconds);
-            engine.renderer.setCamera(flyCameraView(state.flyCamera));
-
-            return true;
-        }
-
-        void frame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
-        {
-            updateCursorCapture(engine.window, frameInfo.input);
-            drawArena(engine.renderer, state.visuals, state.arena);
-
-            if (state.level)
-            {
-                lockstep::assets::submitScene(engine.renderer, state.level->scene);
-            }
-
-            if (state.echo)
-            {
-                for (const std::optional<math::Transform>& ghost : echoGhostTransforms(*state.echo, frameInfo.alpha))
-                {
-                    if (ghost)
-                    {
-                        engine.renderer.submit(state.visuals.cube, state.visuals.ghost, *ghost);
-                    }
-                }
-            }
-
-            updateLighting(state.lighting, frameInfo.input, frameInfo.frameSeconds);
-            submitArenaLights(engine.renderer, state.lighting);
-
-            std::optional<math::Transform> localPawn;
-
-            if (engine.session.role() == net::Role::Client)
-            {
-                presentClient(state, engine, frameInfo.alpha, localPawn);
-            }
-            else
-            {
-                presentHost(state, engine, frameInfo.alpha, localPawn);
-            }
-
-            const bool isClient = engine.session.role() == net::Role::Client;
-            const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
-            presentMirrors(engine.renderer, state.level ? &state.level->scene : nullptr, state.visuals, localPawn,
-                isClient ? world::EntityOwner::Player2 : world::EntityOwner::Player1);
-            const View view = localPawn
-                ? View{.eye = eyePosition(*localPawn),
-                    .direction = lookDirection(state.local.command.yaw, state.local.command.pitch)}
-                : lobbyView(state);
-
-            if (presentFlyCamera(state, engine, frameInfo, view))
-            {
-                return;
-            }
-
-            engine.renderer.setCamera(firstPersonCamera(view.eye, view.direction));
-
-            if (localPawn)
-            {
-                drawCrosshair(engine.renderer, state.visuals, view.eye, view.direction);
-
-                if (state.room && state.room->prompt[0] != '\0')
-                {
-                    drawInteractPrompt(engine.renderer, state.visuals, view.eye, view.direction);
-                }
-            }
-
-            if (status.isJoined)
-            {
-                drawHealth(engine.renderer, state.visuals, view.eye, view.direction, status,
-                    state.settings.pawns.maxHealth);
-            }
-        }
-
         void shutdown(GameState* state)
         {
             std::unique_ptr<GameState> owned(state);
@@ -379,7 +255,7 @@ namespace game
         lockstep::app::GameApi api{};
         api.init = &init;
         api.fixedTick = &fixedTick;
-        api.frame = &frame;
+        api.frame = &presentFrame;
         api.shutdown = &shutdown;
 
 #if LOCKSTEP_DEV_TOOLS

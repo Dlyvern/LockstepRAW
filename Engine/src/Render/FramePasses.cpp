@@ -98,6 +98,7 @@ namespace lockstep::render
         PbrDrawConstants constants{.model = item.model, .previousModel = item.previousModel,
             .factors = item.material->factors};
         constants.factors.flags[2] = static_cast<float>(view);
+        constants.factors.flags[3] = static_cast<float>(item.jointBase);
         recorder.draw(*item.mesh, item.material->material, constants);
     }
 
@@ -234,14 +235,22 @@ namespace lockstep::render
             {
                 const DrawItem& item = m_state->draws[index];
                 const math::Mat4 lightModel = tileViewProjection * item.model;
+                const float jointBase = static_cast<float>(item.jointBase);
 
                 if (item.material->maskedShadow)
                 {
                     const PbrFactors& factors = item.material->factors;
                     const MaskedShadowConstants constants{
                         .lightModel = lightModel,
-                        .mask = {factors.baseColorFactor[3], factors.surface[3], 0.0f, 0.0f}};
+                        .mask = {factors.baseColorFactor[3], factors.surface[3], jointBase, 0.0f}};
                     recorder.draw(*item.mesh, *item.material->maskedShadow, constants);
+                    continue;
+                }
+
+                if (item.material->kind == MeshKind::Skinned)
+                {
+                    const MaskedShadowConstants constants{.lightModel = lightModel, .mask = {0.0f, 0.0f, jointBase, 0.0f}};
+                    recorder.draw(*item.mesh, *m_state->skinnedShadowMaterial, constants);
                     continue;
                 }
 
@@ -325,6 +334,15 @@ namespace lockstep::render
             }
         };
 
+        auto viewModelList = [this, &recorder](const std::vector<uint32_t>& list)
+        {
+            for (const uint32_t index : list)
+            {
+                recordSceneDraw(recorder, m_state->draws[index], PbrView::ViewModel);
+            }
+        };
+
+        viewModelList(m_state->drawLists.viewModelOpaque);
         drawList(m_state->drawLists.opaque);
 
         if (m_state->prepared.lighting.skyGround[3] > 0.0f)
@@ -334,5 +352,6 @@ namespace lockstep::render
         }
 
         drawList(m_state->drawLists.blended);
+        viewModelList(m_state->drawLists.viewModelBlended);
     }
 } //namespace lockstep::render

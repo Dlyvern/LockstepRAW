@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_ASSETS_SCENE_HPP
 #define LOCKSTEP_ASSETS_SCENE_HPP
 
+#include "Lockstep/Anim/SkinnedModel.hpp"
 #include "Lockstep/Core/Bounds.hpp"
 #include "Lockstep/Core/Math.hpp"
 #include "Lockstep/Core/Result.hpp"
@@ -86,6 +87,19 @@ namespace lockstep::assets
         uint32_t parent{k_noNode};
     };
 
+    // One placed skinned model. Game animates it with an anim::SkinnedInstance and submits it
+    // with that instance's submit(); submitScene() does not draw it.
+    // model:     index into Scene::skinnedModels.
+    // transform: world placement of the model's space (the import scale for a glTF scene).
+    // node:      index into Scene::nodes of the first mesh node using the skin, or of its nearest
+    //            named ancestor; k_noNode if there is none.
+    struct SceneSkinnedInstance
+    {
+        uint32_t model{0};
+        math::Transform transform{};
+        uint32_t node{k_noNode};
+    };
+
     // Kind of a SceneLight (glTF KHR_lights_punctual).
     enum class SceneLightType : uint8_t
     {
@@ -148,6 +162,8 @@ namespace lockstep::assets
     // nodes:           every named node with its world transform (markers such as
     //                  "PlayerStart" or "Interact_Door" included).
     // lights:          lights authored in the source.
+    // skinnedModels:   skinned models (one per glTF skin) with their skeletons and clips.
+    // skinnedInstances: where the skinned models are placed.
     // collisionShapes: PhysX triangle meshes cooked by LockstepCooker, referenced by
     //                  SceneMesh::collisionShape; empty for an imported glTF.
     // bounds:          world bounds of all instances.
@@ -160,6 +176,8 @@ namespace lockstep::assets
         std::vector<SceneInstance> instances;
         std::vector<SceneNode> nodes;
         std::vector<SceneLight> lights;
+        std::vector<anim::SkinnedModel> skinnedModels;
+        std::vector<SceneSkinnedInstance> skinnedInstances;
         std::vector<std::vector<std::byte>> collisionShapes;
         math::Aabb bounds{};
         std::vector<std::string> warnings;
@@ -187,7 +205,9 @@ namespace lockstep::assets
 
     // Imports a glTF 2.0 file (.gltf with external or embedded buffers, or .glb) and uploads it.
     // Every triangle primitive of every mesh in the default scene's node tree becomes a SceneMesh
-    // with a PbrMaterialDescription material; missing normals become flat normals and missing
+    // with a PbrMaterialDescription material, except meshes of skinned nodes: each glTF skin
+    // becomes a SkinnedModel (skeleton, skinned meshes and materials, the animations of its
+    // joints) with a SceneSkinnedInstance; missing normals become flat normals and missing
     // tangents are generated. Textures (jpg, png, KTX2 including Basis Universal) are decoded on
     // worker threads, deduplicated per image and colour space, and get mips. Unsupported optional
     // features are skipped and listed in Scene::warnings.
@@ -197,7 +217,7 @@ namespace lockstep::assets
     // path:     virtual path of the .gltf or .glb file.
     // options:  scale, collision geometry and texture settings.
     // Returns:  the scene, or an error if the file can't be read or parsed, needs an unsupported
-    //           extension, has no triangles, or an upload failed.
+    //           extension, has no triangles (static or skinned), or an upload failed.
     [[nodiscard]] Result<Scene> importGltf(render::Renderer& renderer, const FileSystem& files, std::string_view path,
         const SceneImportOptions& options = {});
 
@@ -259,7 +279,8 @@ namespace lockstep::assets
     //          `root`, in order.
     [[nodiscard]] std::vector<uint32_t> subtreeInstances(const Scene& scene, uint32_t root);
 
-    // Submits every visible instance of the scene for the next render().
+    // Submits every visible static instance of the scene for the next render(). Skinned
+    // instances are drawn by Game through anim::SkinnedInstance.
     // renderer: the renderer the scene was imported with.
     // scene:    the scene.
     void submitScene(render::Renderer& renderer, const Scene& scene);

@@ -99,8 +99,10 @@ namespace game
     // Builds a first-person camera.
     // eye:       the camera position.
     // direction: unit look direction.
+    // zoom:      0 for the normal field of view, 1 for the aim-down-sights zoom (blends between).
     // Returns:   the camera.
-    [[nodiscard]] lockstep::render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction);
+    [[nodiscard]] lockstep::render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction,
+        float zoom);
 } //namespace game
 
 #endif //LOCKSTEP_GAME_PRESENTATION_VISUALS_HPP

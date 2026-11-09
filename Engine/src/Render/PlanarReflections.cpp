@@ -7,6 +7,7 @@
 #include "FrameCulling.hpp"
 #include "FramePasses.hpp"
 #include "RendererState.hpp"
+#include "ViewModel.hpp"
 
 #include <algorithm>
 #include <array>
@@ -235,6 +236,11 @@ namespace lockstep::render
             for (uint32_t index = 0; index < state.draws.size(); ++index)
             {
                 DrawItem& item = state.draws[index];
+
+                if (isViewModelDraw(item.layers))
+                {
+                    continue;
+                }
 
                 if (item.mesh == &chosen.mesh->mesh && item.model == chosen.model)
                 {

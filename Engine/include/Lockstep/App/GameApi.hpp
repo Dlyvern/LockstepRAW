@@ -33,6 +33,11 @@ namespace lockstep::assets
     class FileSystem;
 } //namespace lockstep::assets
 
+namespace lockstep::audio
+{
+    class AudioSystem;
+} //namespace lockstep::audio
+
 namespace lockstep::world
 {
     class Entities;
@@ -55,6 +60,9 @@ namespace lockstep::app
     //              with the World delta before each fixedTick.
     // files:       the virtual file system with RunDescription::content mounted; cooked levels
     //              load through it, and its pak content hashes identify the content.
+    // audio:       sounds, voices and buses. Presentation only, never replicated. Updated by the
+    //              run loop after GameApi::frame (listener on the camera, World bus following the
+    //              World time scale).
     // arguments:   the command-line options from RunDescription::arguments, for Game's own
     //              options (Engine's parsers ignore what they don't know).
     struct EngineContext
@@ -67,6 +75,7 @@ namespace lockstep::app
         net::Replication& replication;
         physics::PhysicsWorld& physics;
         assets::FileSystem& files;
+        audio::AudioSystem& audio;
         std::span<const char* const> arguments;
     };
 

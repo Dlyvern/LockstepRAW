@@ -3,6 +3,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -16,7 +17,8 @@ namespace game
     namespace
     {
         constexpr std::array<char, 4> k_magic{'L', 'E', 'C', 'H'};
-        constexpr uint32_t k_version{1};
+        constexpr uint32_t k_version{3};
+        constexpr const char* k_appFolder{"LockstepRAW"};
         constexpr std::size_t k_headerBytes{20};
         constexpr std::size_t k_sampleBytes{1 + 5 * sizeof(float)};
         constexpr std::size_t k_eventBytes{sizeof(uint32_t) + 3};
@@ -130,6 +132,60 @@ namespace game
             }
 
             return std::vector<char>(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+        }
+
+        std::optional<std::filesystem::path> environmentPath(const char* name)
+        {
+#ifdef _WIN32
+            char* value = nullptr;
+            std::size_t length = 0;
+
+            if (_dupenv_s(&value, &length, name) != 0 || value == nullptr)
+            {
+                return std::nullopt;
+            }
+
+            std::filesystem::path path(value);
+            std::free(value);
+#else
+            const char* value = std::getenv(name);
+
+            if (value == nullptr)
+            {
+                return std::nullopt;
+            }
+
+            std::filesystem::path path(value);
+#endif
+
+            if (path.empty() || !path.is_absolute())
+            {
+                return std::nullopt;
+            }
+
+            return path;
+        }
+
+        std::filesystem::path userDataFolder()
+        {
+#ifdef _WIN32
+            if (const std::optional<std::filesystem::path> appData = environmentPath("APPDATA"))
+            {
+                return *appData / k_appFolder;
+            }
+#else
+            if (const std::optional<std::filesystem::path> dataHome = environmentPath("XDG_DATA_HOME"))
+            {
+                return *dataHome / k_appFolder;
+            }
+
+            if (const std::optional<std::filesystem::path> home = environmentPath("HOME"))
+            {
+                return *home / ".local" / "share" / k_appFolder;
+            }
+#endif
+
+            return std::filesystem::path("Saved");
         }
 
         float lerpAngle(float from, float to, float t)
@@ -320,9 +376,15 @@ namespace game
         return ghosts;
     }
 
+    std::filesystem::path defaultEchoPath()
+    {
+        return userDataFolder() / k_echoFileName;
+    }
+
     lockstep::Result<EchoLaunch> parseEchoLaunch(std::span<const char* const> arguments)
     {
         EchoLaunch launch{};
+        launch.savePath = defaultEchoPath();
 
         for (std::size_t index = 0; index < arguments.size(); ++index)
         {

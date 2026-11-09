@@ -3,7 +3,7 @@
 
 #include "Lockstep/Physics/PhysicsTypes.hpp"
 
-#include "HandlePool.hpp"
+#include "Core/HandlePool.hpp"
 #include "PhysXErrorReporter.hpp"
 
 #include <PxPhysicsAPI.h>

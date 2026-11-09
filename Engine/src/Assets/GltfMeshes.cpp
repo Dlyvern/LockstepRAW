@@ -60,12 +60,6 @@ namespace lockstep::assets
 
                         break;
                     }
-                    case cgltf_attribute_type_joints:
-                    case cgltf_attribute_type_weights:
-                    {
-                        warnings.add("skinning is ignored; skinned meshes are drawn in bind pose");
-                        break;
-                    }
                     default:
                     {
                         break;
@@ -237,6 +231,7 @@ namespace lockstep::assets
 
         if (!hasNormals)
         {
+            geometry.sourceVertices = geometry.indices;
             generateFlatNormals(geometry.vertices, geometry.indices);
         }
 

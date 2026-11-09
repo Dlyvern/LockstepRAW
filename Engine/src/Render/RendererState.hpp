@@ -44,17 +44,25 @@ namespace lockstep::render
         std::vector<uint32_t> unlitFragment;
         std::vector<uint32_t> pbrVertex;
         std::vector<uint32_t> pbrFragment;
+        std::vector<uint32_t> pbrSkinnedVertex;
         std::vector<uint32_t> shadowVertex;
         std::vector<uint32_t> shadowFragment;
         std::vector<uint32_t> shadowMaskVertex;
         std::vector<uint32_t> shadowMaskFragment;
+        std::vector<uint32_t> shadowSkinnedVertex;
+        std::vector<uint32_t> shadowMaskSkinnedVertex;
     };
 
-    // A GPU mesh and its object-space bounds (for culling). Every mesh uses the PbrVertex layout.
+    // A GPU mesh and its object-space bounds (for culling).
+    // kind:       PbrVertex (static) or SkinnedPbrVertex (skinned) layout.
+    // jointCount: skinned only: highest joint index used plus one; palettes drawing it must hold
+    //             at least that many joints.
     struct MeshRecord
     {
         vela::graphics::Mesh mesh;
         math::Aabb bounds{};
+        MeshKind kind{MeshKind::Static};
+        uint32_t jointCount{0};
     };
 
     // Per-draw material constants pushed with each PBR draw (pbr.vert / pbr.frag DrawConstants
@@ -79,6 +87,7 @@ namespace lockstep::render
     // maskedShadowBaseColor: the texture maskedShadow masks by, for rebuilding it (null when
     //               there is no maskedShadow). Owned by the RendererState.
     // shading:      lit (PBR) or unlit.
+    // kind:         the mesh kind its pipelines read (skinned materials skin on the GPU).
     // alphaMode:    opaque, masked or blended; blended draws are sorted after opaque ones and
     //               cast no shadows.
     // factors:      the constants pushed with each draw (lit only).
@@ -88,6 +97,7 @@ namespace lockstep::render
         std::optional<vela::graphics::Material> maskedShadow;
         const vela::graphics::Texture* maskedShadowBaseColor{nullptr};
         Shading shading{Shading::Lit};
+        MeshKind kind{MeshKind::Static};
         AlphaMode alphaMode{AlphaMode::Opaque};
         PbrFactors factors{};
     };
@@ -99,6 +109,8 @@ namespace lockstep::render
     // cameraDistance: distance from the camera to the bounds' centre, for sorting.
     // layers:         the render layers it is on.
     // isReflector:    it is the surface of this frame's rendered planar reflection.
+    // jointBase:      skinned draws: index in RendererState::jointData of the palette's first
+    //                 matrix (current and previous matrices interleaved per joint).
     struct DrawItem
     {
         const vela::graphics::Mesh* mesh{nullptr};
@@ -109,16 +121,21 @@ namespace lockstep::render
         float cameraDistance{0.0f};
         RenderLayers layers{k_defaultRenderLayer};
         bool isReflector{false};
+        uint32_t jointBase{0};
     };
 
     // Indices into RendererState::draws chosen for one frame.
-    // opaque:        visible opaque, masked and unlit draws, front to back.
-    // blended:       visible alpha-blended draws, back to front.
-    // shadowCasters: per shadow atlas tile, the draws that cast into it.
+    // opaque:           visible opaque, masked and unlit world draws, front to back.
+    // blended:          visible alpha-blended world draws, back to front.
+    // viewModelOpaque:  visible opaque and masked viewmodel draws, front to back.
+    // viewModelBlended: visible alpha-blended viewmodel draws, back to front.
+    // shadowCasters:    per shadow atlas tile, the draws that cast into it.
     struct FrameDrawLists
     {
         std::vector<uint32_t> opaque;
         std::vector<uint32_t> blended;
+        std::vector<uint32_t> viewModelOpaque;
+        std::vector<uint32_t> viewModelBlended;
         std::array<std::vector<uint32_t>, k_maxShadowTiles> shadowCasters;
 
         // Forgets every list, keeping their storage.
@@ -146,6 +163,8 @@ namespace lockstep::render
         uint32_t shadowDraws{0};
     };
 
+    class TextPass;
+
     // An Engine pass added to the render graph, and the name its graph-owned adapter was added
     // under.
     struct RegisteredPass
@@ -170,9 +189,11 @@ namespace lockstep::render
         // context:         a context already attached to `window`.
         // shaders:         SPIR-V of the built-in material shaders.
         // lightBuffer:     the per-frame lighting storage buffer lit materials bind.
+        // jointBuffer:     the per-frame joint palette storage buffer skinned materials bind.
         // environment:     default material textures and the BRDF lookup table.
         RendererState(vela::core::Window& window, vela::core::Context&& context, MaterialShaders&& shaders,
-            vela::graphics::DynamicBuffer&& lightBuffer, EnvironmentResources&& environment);
+            vela::graphics::DynamicBuffer&& lightBuffer, vela::graphics::DynamicBuffer&& jointBuffer,
+            EnvironmentResources&& environment);
 
         ~RendererState();
 
@@ -208,16 +229,20 @@ namespace lockstep::render
         EnvironmentResources environment;
         ResourcePool<MeshHandle, MeshRecord> meshes;
         vela::graphics::DynamicBuffer lightBuffer;
+        vela::graphics::DynamicBuffer jointBuffer;
         ResourcePool<MaterialHandle, MaterialRecord> materials;
         std::optional<vela::graphics::Material> shadowMaterial;
+        std::optional<vela::graphics::Material> skinnedShadowMaterial;
         float shadowMaterialBias{0.0f};
         uint32_t sceneSamples{1};
         float reflectionScale{0.5f};
 
         std::vector<RegisteredPass> passes;
         uint32_t passNameCounter{0};
+        TextPass* textPass{nullptr};
 
         std::vector<DrawItem> draws;
+        std::vector<math::Mat4> jointData;
         FrameDrawLists drawLists;
         FrameLights lights;
         std::vector<PlanarReflector> reflectors;
@@ -225,6 +250,7 @@ namespace lockstep::render
         PreparedReflection reflection;
         TemporalState temporal;
         RenderSettings settings{};
+        math::Vec4 screenFade{0.0f, 0.0f, 0.0f, 0.0f};
         FrameStats lastFrame{};
         uint32_t frameIndex{0};
 

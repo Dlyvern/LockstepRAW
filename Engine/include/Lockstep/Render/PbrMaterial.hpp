@@ -27,6 +27,30 @@ namespace lockstep::render
         float tangent[4];
     };
 
+    // One vertex of a skinned PBR mesh: a PbrVertex plus up to four joint influences (glTF
+    // JOINTS_0 / WEIGHTS_0).
+    // position, normal, uv, tangent: as in PbrVertex, in bind pose.
+    // joints:  indices into the skeleton's joints, stored as floats (exact below 2^24).
+    // weights: influence of each joint; they sum to 1.
+    struct SkinnedPbrVertex
+    {
+        float position[3];
+        float normal[3];
+        float uv[2];
+        float tangent[4];
+        float joints[4];
+        float weights[4];
+    };
+
+    // Which vertex layout a mesh, and the materials drawing it, use.
+    // Static:  PbrVertex; drawn with Renderer::submit().
+    // Skinned: SkinnedPbrVertex; drawn with Renderer::submitSkinned() and a joint palette.
+    enum class MeshKind : uint8_t
+    {
+        Static = 0,
+        Skinned
+    };
+
     // How a material's alpha is used (glTF alphaMode).
     // Opaque: alpha is ignored.
     // Mask:   pixels with alpha below `alphaCutoff` are discarded; the rest are opaque (foliage).

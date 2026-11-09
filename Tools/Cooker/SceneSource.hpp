@@ -8,6 +8,7 @@
 #include "Assets/CookedFormat.hpp"
 #include "Assets/GltfDocument.hpp"
 #include "Assets/GltfMeshes.hpp"
+#include "Assets/GltfSkins.hpp"
 
 #include <cstdint>
 #include <string>
@@ -30,10 +31,13 @@ namespace lockstep::cooker
     };
 
     // One texture to cook: a glTF image read for one usage.
+    // alphaCutoff: cutoff of the alpha-masked material using it as base colour, or negative when no
+    //              masked material does (its mips then keep their alpha coverage, see cookTexture()).
     struct SourceTexture
     {
         const cgltf_image* image{nullptr};
         TextureUsage usage{TextureUsage::Colour};
+        float alphaCutoff{-1.0f};
     };
 
     // One mesh to cook: a glTF primitive's geometry and its material.
@@ -47,6 +51,15 @@ namespace lockstep::cooker
         render::AlphaMode alphaMode{render::AlphaMode::Opaque};
     };
 
+    // One skinned model to cook: a glTF skin with its primitives, and their materials.
+    // model:     skeleton, clips, bounds and skinned geometry.
+    // materials: per part, index into SourceScene::materials.
+    struct SourceSkinnedModel
+    {
+        assets::GltfSkinnedModel model;
+        std::vector<uint32_t> materials;
+    };
+
     // A glTF scene read into CPU memory, laid out like a cooked level: every mesh, material and
     // texture in first-use order, so the same file always gives the same order.
     // document:  the parsed glTF (its images are read later).
@@ -57,7 +70,9 @@ namespace lockstep::cooker
     // instances: placed meshes.
     // nodes:     named nodes (markers included).
     // lights:    KHR_lights_punctual lights.
-    // bounds:    world bounds of all instances.
+    // skinnedModels: skinned models, one per glTF skin; each is placed once (SceneSkinnedInstance
+    //            with the model's transform and node).
+    // bounds:    world bounds of all instances, skinned ones in bind pose included.
     // warnings:  what the import skipped or approximated.
     struct SourceScene
     {
@@ -69,6 +84,7 @@ namespace lockstep::cooker
         std::vector<assets::SceneInstance> instances;
         std::vector<assets::SceneNode> nodes;
         std::vector<assets::SceneLight> lights;
+        std::vector<SourceSkinnedModel> skinnedModels;
         math::Aabb bounds{};
         std::vector<std::string> warnings;
     };
@@ -77,7 +93,8 @@ namespace lockstep::cooker
     // files: the file system holding the source.
     // path:  virtual path of the .gltf or .glb file.
     // scale: uniform scale applied around the origin.
-    // Returns: the scene, or an error if the file can't be read or has no drawable triangles.
+    // Returns: the scene, or an error if the file can't be read or has no drawable triangles
+    //          (static or skinned).
     [[nodiscard]] Result<SourceScene> readSourceScene(const assets::FileSystem& files, std::string_view path, float scale);
 } //namespace lockstep::cooker
 

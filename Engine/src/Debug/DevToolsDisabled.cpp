@@ -36,6 +36,10 @@ namespace lockstep::debug
     {
     }
 
+    void DevTools::drawAudioPanel(audio::AudioSystem&)
+    {
+    }
+
     void DevTools::recordFrameTiming(const FrameTiming&)
     {
     }

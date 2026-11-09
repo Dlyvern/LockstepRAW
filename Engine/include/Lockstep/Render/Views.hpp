@@ -11,11 +11,23 @@ namespace lockstep::render
 {
     // Render layers: a draw carries a bit mask of layers, and each view (the camera, a planar
     // reflector) draws only what shares a bit with its own mask. Engine gives meaning only to the
-    // default layer; Game assigns the other 31 bits (for example "only seen in mirrors").
+    // default layer and the viewmodel layer; Game assigns the other 30 bits (for example "only seen
+    // in mirrors").
     using RenderLayers = uint32_t;
 
     // The layer every draw is on unless Game says otherwise, and the one every view sees by default.
     inline constexpr RenderLayers k_defaultRenderLayer{1u};
+
+    // The first-person viewmodel layer (the local player's arms and weapon), reserved by Engine. A
+    // draw with this bit is a viewmodel draw, whatever its other bits: it is drawn only in the
+    // camera view (even when Camera::layers lacks the bit), with its own projection
+    // (Camera::viewModelFov) and its depth squeezed in front of all world geometry, so it never
+    // clips into walls but still occludes itself. It is never drawn in planar reflections, casts
+    // no shadows (it receives them), and its ambient light is kept out of SSAO. It must use lit
+    // (PBR) materials; other viewmodel draws are dropped. Game places it relative to the camera
+    // every frame (camera transform times a hand offset), so when only the camera turns its motion
+    // vectors are zero and TAA does not smear it.
+    inline constexpr RenderLayers k_viewModelLayer{1u << 31};
 
     // Every layer.
     inline constexpr RenderLayers k_allRenderLayers{0xFFFFFFFFu};

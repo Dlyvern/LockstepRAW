@@ -12,6 +12,7 @@ namespace game
         namespace assets = lockstep::assets;
 
         constexpr std::array<std::string_view, 2> k_interactPrefixes{"Interact_", "Mug_"};
+        constexpr std::string_view k_carSpotNode{"CarSpot"};
         constexpr float k_lockerOpenAngle{1.745329f};
         constexpr float k_doorOpenAngle{1.658063f};
         constexpr float k_shakeAngle{0.06f};
@@ -33,7 +34,7 @@ namespace game
         SwingingPart lockerPart(const assets::Scene& scene, const Interactable& door, const math::Vec3& roomCentre)
         {
             SwingingPart part{.motion = captureNodeMotion(scene, door.instances),
-                .hinge = hingeFromBounds(scene, door.node, door.instances)};
+                .hinge = hingeFromBounds(scene, door.node, door.instances), .openAngle = k_lockerOpenAngle};
             orientHinge(part.hinge, scene, door.instances, parentPosition(scene, door.node, roomCentre));
 
             return part;
@@ -42,10 +43,16 @@ namespace game
         SwingingPart doorPart(const assets::Scene& scene, const Interactable& door, const math::Vec3& roomCentre)
         {
             SwingingPart part{.motion = captureNodeMotion(scene, door.instances),
-                .hinge = hingeAtNode(scene, door.node)};
+                .hinge = hingeAtNode(scene, door.node), .openAngle = k_doorOpenAngle};
             orientHinge(part.hinge, scene, door.instances, roomCentre);
 
             return part;
+        }
+
+        SwingingPart streetDoorPart(const assets::Scene& scene, const Interactable& door)
+        {
+            return SwingingPart{.motion = captureNodeMotion(scene, door.instances),
+                .hinge = hingeAtWestEdge(scene, door.node, door.instances), .closedAngle = -nodeYaw(scene, door.node)};
         }
 
         SwingingPart alarmPart(const assets::Scene& scene, const Interactable& alarm)
@@ -85,13 +92,24 @@ namespace game
                         break;
                     case RoomObject::FrontDoor:
                         room.frontDoor = doorPart(scene, interactable, roomCentre);
+                        room.frontDoorSpot = math::center(interactableBounds(scene, interactable));
                         logPart("FrontDoor", *room.frontDoor);
+                        break;
+                    case RoomObject::StreetDoor:
+                        room.streetDoor = streetDoorPart(scene, interactable);
+                        logPart("StreetDoor", *room.streetDoor);
                         break;
                     case RoomObject::MugA:
                         room.mugs[0] = interactable.instances;
                         break;
                     case RoomObject::MugB:
                         room.mugs[1] = interactable.instances;
+                        break;
+                    case RoomObject::Gear1:
+                        room.gear[0] = interactable.instances;
+                        break;
+                    case RoomObject::Gear2:
+                        room.gear[1] = interactable.instances;
                         break;
                     default:
                         break;
@@ -100,12 +118,35 @@ namespace game
         }
 
         void swing(std::optional<SwingingPart>& part, SceneLevel& level, lockstep::physics::PhysicsWorld& physics,
-            float open, float maxAngle)
+            float open)
         {
             if (part)
             {
-                rotateNodeMotion(part->motion, level, physics, part->hinge, smoothStep(open) * maxAngle);
+                const float angle = part->closedAngle + (part->openAngle - part->closedAngle) * smoothStep(open);
+                rotateNodeMotion(part->motion, level, physics, part->hinge, angle);
             }
+        }
+
+        bool isRecordingDone(const ApartmentRoom& room)
+        {
+            return room.carSpot ? room.state.phase == MorningPhase::MorningComplete : room.state.door == DoorPhase::Open;
+        }
+
+        std::string toyPrompt(const ApartmentRoom& room, std::size_t localPlayer)
+        {
+            const uint8_t held = room.state.heldToy[localPlayer];
+
+            if (held < room.toys.size())
+            {
+                return "LMB: Throw the " + room.toys[held].label + "    E: Drop it";
+            }
+
+            if (room.lookToy)
+            {
+                return "E: Pick up the " + room.toys[*room.lookToy].label;
+            }
+
+            return {};
         }
 
         void shakeAlarm(ApartmentRoom& room, SceneLevel& level, lockstep::physics::PhysicsWorld& physics,
@@ -153,6 +194,15 @@ namespace game
 
         const math::Vec3 roomCentre = (spawns.pawns[0] + spawns.pawns[1]) * 0.5f;
         findParts(room, scene, roomCentre);
+        room.toys = findToys(scene);
+
+        if (const std::optional<uint32_t> carSpot = assets::findNodeIndex(scene, k_carSpotNode))
+        {
+            room.carSpot = scene.nodes[*carSpot].transform.position;
+            std::clog << "Game: room: the car waits at (" << room.carSpot->x << ", " << room.carSpot->y << ", "
+                << room.carSpot->z << ")\n";
+        }
+
         std::clog << "Game: room: the alarm clock is ringing\n";
 
         return room;
@@ -167,7 +217,7 @@ namespace game
 
         room.recording.frames.push_back(frame);
 
-        if (room.state.door != DoorPhase::Open)
+        if (!isRecordingDone(room))
         {
             return;
         }
@@ -184,14 +234,12 @@ namespace game
             << " ticks, " << room.recording.events.size() << " interactions\n";
     }
 
-    void showRoomChanges(ApartmentRoom& room, std::size_t localPlayer)
+    std::vector<const char*> takeRoomChanges(ApartmentRoom& room, std::size_t localPlayer)
     {
-        for (const char* line : describeRoomChanges(room.shownState, room.state, localPlayer))
-        {
-            std::clog << "Game: [" << playerName(localPlayer) << "] " << line << '\n';
-        }
-
+        std::vector<const char*> lines = describeRoomChanges(room.shownState, room.state, localPlayer);
         room.shownState = room.state;
+
+        return lines;
     }
 
     void applyRoomState(ApartmentRoom& room, SceneLevel& level, lockstep::physics::PhysicsWorld& physics,
@@ -201,10 +249,11 @@ namespace game
 
         for (std::size_t player = 0; player < k_playerCount; ++player)
         {
-            swing(room.lockers[player], level, physics, room.state.lockerOpen[player], k_lockerOpenAngle);
+            swing(room.lockers[player], level, physics, room.state.lockerOpen[player]);
         }
 
-        swing(room.frontDoor, level, physics, room.state.doorOpen, k_doorOpenAngle);
+        swing(room.frontDoor, level, physics, room.state.doorOpen);
+        swing(room.streetDoor, level, physics, room.state.streetDoorOpen);
 
         for (std::size_t mug = 0; mug < room.mugs.size(); ++mug)
         {
@@ -214,21 +263,30 @@ namespace game
                 room.areMugsHidden[mug] = true;
             }
         }
+
+        for (std::size_t player = 0; player < k_playerCount; ++player)
+        {
+            if (!room.isGearHidden[player] && room.state.hasBadge[player])
+            {
+                setInstancesVisible(level, physics, room.gear[player], false);
+                room.isGearHidden[player] = true;
+            }
+        }
     }
 
     void updateLookPrompt(ApartmentRoom& room, const SceneLevel& level, const lockstep::physics::PhysicsWorld& physics,
-        const math::Vec3& eye, const math::Vec3& direction, lockstep::physics::ControllerId ignore,
-        std::size_t localPlayer)
+        const lockstep::world::Entities& entities, const math::Vec3& eye, const math::Vec3& direction,
+        lockstep::physics::ControllerId ignore, std::size_t localPlayer)
     {
-        room.lookTarget = traceInteractable(room.interactables, level, physics, eye, direction, k_interactReach, ignore);
-        const char* prompt = room.lookTarget
-            ? promptText(room.state, room.objects[room.lookTarget->interactable], localPlayer) : "";
+        room.lookToy = traceToy(room.toys, entities, physics, room.state.heldToy, eye, direction, k_interactReach,
+            ignore);
+        room.lookTarget = room.lookToy ? std::nullopt
+            : traceInteractable(room.interactables, level, physics, eye, direction, k_interactReach, ignore);
+        room.prompt = toyPrompt(room, localPlayer);
 
-        if (std::string_view(prompt) != std::string_view(room.prompt) && prompt[0] != '\0')
+        if (room.prompt.empty() && room.lookTarget)
         {
-            std::clog << "Game: [" << playerName(localPlayer) << "] prompt: " << prompt << '\n';
+            room.prompt = promptText(room.state, room.objects[room.lookTarget->interactable], localPlayer);
         }
-
-        room.prompt = prompt;
     }
 } //namespace game

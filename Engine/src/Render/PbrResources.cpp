@@ -2,6 +2,7 @@
 
 #include "RendererState.hpp"
 #include "ShadowMaterials.hpp"
+#include "Skinning.hpp"
 #include "VelaConversions.hpp"
 
 #include <Vela/Graphics/VertexLayout.hpp>
@@ -314,7 +315,7 @@ namespace lockstep::render
             .factors = {}});
     }
 
-    Result<MaterialHandle> Renderer::createMaterial(const PbrMaterialDescription& description)
+    Result<MaterialHandle> Renderer::createMaterial(const PbrMaterialDescription& description, MeshKind kind)
     {
         RendererState& state = *m_state;
         const EnvironmentResources& defaults = state.environment;
@@ -348,11 +349,12 @@ namespace lockstep::render
         renderState.depthWrite = !isBlended;
         renderState.blend = isBlended ? vela::graphics::BlendMode::Alpha : vela::graphics::BlendMode::Opaque;
 
+        const bool isSkinned = kind == MeshKind::Skinned;
         auto material = vela::graphics::Material::create(state.context,
         {
-            .vertexShader = state.shaders.pbrVertex,
+            .vertexShader = isSkinned ? state.shaders.pbrSkinnedVertex : state.shaders.pbrVertex,
             .fragmentShader = state.shaders.pbrFragment,
-            .vertexLayout = pbrVertexLayout(),
+            .vertexLayout = isSkinned ? skinnedPbrLayout() : pbrVertexLayout(),
             .renderState = renderState
         });
 
@@ -375,16 +377,25 @@ namespace lockstep::render
             return toError(bound.error());
         }
 
+        if (isSkinned)
+        {
+            if (auto bound = material.value().setStorageBuffer(k_jointPaletteBinding, state.jointBuffer); !bound)
+            {
+                return toError(bound.error());
+            }
+        }
+
         MaterialRecord record{
             .material = std::move(material).value(),
             .maskedShadow = std::nullopt,
             .shading = Shading::Lit,
+            .kind = kind,
             .alphaMode = description.alphaMode,
             .factors = toFactors(description)};
 
         if (description.alphaMode == AlphaMode::Mask)
         {
-            auto shadow = createMaskedShadowMaterial(state, *resolved[0]);
+            auto shadow = createMaskedShadowMaterial(state, *resolved[0], kind);
 
             if (!shadow)
             {

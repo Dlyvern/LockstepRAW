@@ -135,6 +135,13 @@ namespace lockstep::debug
             ImGui::SliderFloat("Slope depth bias", &shadows.depthBias, 0.0f, k_maxShadowBias, "%.2f");
             ImGui::SliderFloat("Normal bias (texels)", &shadows.normalBias, 0.0f, k_maxShadowBias, "%.2f");
             ImGui::Checkbox("Show cascades", &shadows.debugCascades);
+
+            int maskedCascades = static_cast<int>(shadows.maskedCasterCascades);
+
+            if (ImGui::SliderInt("Foliage cascades", &maskedCascades, 0, k_maxCascades))
+            {
+                shadows.maskedCasterCascades = static_cast<uint32_t>(maskedCascades);
+            }
         }
 
         void drawFog(render::FogSettings& fog)

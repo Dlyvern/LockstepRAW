@@ -1,13 +1,15 @@
 #include "Lockstep/Render/Renderer.hpp"
 
-#include "FrameAttachments.hpp"
 #include "FrameCulling.hpp"
-#include "FramePasses.hpp"
-#include "PostPasses.hpp"
+#include "FrameGraph.hpp"
+#include "PlanarReflections.hpp"
 #include "RendererState.hpp"
 #include "ShaderLoader.hpp"
 #include "ShadowMaterials.hpp"
+#include "Skinning.hpp"
+#include "TextPass.hpp"
 #include "VelaConversions.hpp"
+#include "ViewModel.hpp"
 
 #include "Platform/WindowState.hpp"
 
@@ -15,6 +17,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <memory>
 #include <span>
 #include <string>
@@ -34,12 +37,10 @@ namespace lockstep::render
         constexpr std::string_view k_shadowFragmentShader{"shadow.frag.spv"};
         constexpr std::string_view k_shadowMaskVertexShader{"shadow_mask.vert.spv"};
         constexpr std::string_view k_shadowMaskFragmentShader{"shadow_mask.frag.spv"};
-        constexpr std::string_view k_environmentPassName{"environment"};
-        constexpr std::string_view k_shadowPassName{"shadow"};
-        constexpr std::string_view k_scenePassName{"scene"};
-        constexpr std::string_view k_reflectionPassName{"reflection"};
-        constexpr float k_minReflectionScale{0.25f};
-        constexpr float k_maxReflectionScale{1.0f};
+        constexpr std::string_view k_pbrSkinnedVertexShader{"pbr_skinned.vert.spv"};
+        constexpr std::string_view k_shadowSkinnedVertexShader{"shadow_skinned.vert.spv"};
+        constexpr std::string_view k_shadowMaskSkinnedVertexShader{"shadow_mask_skinned.vert.spv"};
+        constexpr std::size_t k_initialJointBufferBytes{256 * sizeof(math::Mat4)};
         constexpr const char* k_engineName{"Lockstep"};
 
         Result<vela::core::Context> createPresentingContext(vela::core::Window& window,
@@ -69,87 +70,6 @@ namespace lockstep::render
             }
 
             return std::move(context).value();
-        }
-
-        uint32_t supportedSamples(const RendererState& state, uint32_t requested)
-        {
-            const uint32_t maximum = state.context.getDeviceInfo().maxMsaaSamples;
-            uint32_t samples = 1;
-
-            while (samples * 2 <= std::min(requested, maximum))
-            {
-                samples *= 2;
-            }
-
-            return samples;
-        }
-
-        uint32_t requestedSamples(AntiAliasingMode mode)
-        {
-            switch (mode)
-            {
-                case AntiAliasingMode::Msaa2x:
-                {
-                    return 2;
-                }
-                case AntiAliasingMode::Msaa4x:
-                {
-                    return 4;
-                }
-                case AntiAliasingMode::Off:
-                case AntiAliasingMode::Fxaa:
-                case AntiAliasingMode::Taa:
-                {
-                    return 1;
-                }
-            }
-
-            return 1;
-        }
-
-        Status updateSceneSamples(RendererState& state)
-        {
-            const uint32_t samples = supportedSamples(state, requestedSamples(state.settings.antiAliasing.mode));
-
-            if (samples == state.sceneSamples)
-            {
-                return {};
-            }
-
-            const uint32_t previous = state.sceneSamples;
-            state.sceneSamples = samples;
-
-            if (auto redescribed = state.graph->redescribePass(std::string(k_scenePassName)); !redescribed)
-            {
-                state.sceneSamples = previous;
-                state.settings.antiAliasing.mode = AntiAliasingMode::Off;
-                return toError(redescribed.error());
-            }
-
-            return {};
-        }
-
-        Status updateReflectionScale(RendererState& state)
-        {
-            float& requested = state.settings.reflections.resolutionScale;
-            requested = std::clamp(requested, k_minReflectionScale, k_maxReflectionScale);
-
-            if (requested == state.reflectionScale)
-            {
-                return {};
-            }
-
-            const float previous = state.reflectionScale;
-            state.reflectionScale = requested;
-
-            if (auto redescribed = state.graph->redescribePass(std::string(k_reflectionPassName)); !redescribed)
-            {
-                state.reflectionScale = previous;
-                requested = previous;
-                return toError(redescribed.error());
-            }
-
-            return {};
         }
 
         vela::graphics::Extent2D updateAspectRatio(RendererState& state)
@@ -185,7 +105,10 @@ namespace lockstep::render
                 {k_shadowVertexShader, &shaders.shadowVertex},
                 {k_shadowFragmentShader, &shaders.shadowFragment},
                 {k_shadowMaskVertexShader, &shaders.shadowMaskVertex},
-                {k_shadowMaskFragmentShader, &shaders.shadowMaskFragment}};
+                {k_shadowMaskFragmentShader, &shaders.shadowMaskFragment},
+                {k_pbrSkinnedVertexShader, &shaders.pbrSkinnedVertex},
+                {k_shadowSkinnedVertexShader, &shaders.shadowSkinnedVertex},
+                {k_shadowMaskSkinnedVertexShader, &shaders.shadowMaskSkinnedVertex}};
 
             for (const auto& [fileName, target] : files)
             {
@@ -202,86 +125,6 @@ namespace lockstep::render
             return shaders;
         }
 
-        Status addFramePass(vela::graphics::RenderGraph& graph, std::string_view name,
-            std::unique_ptr<vela::graphics::Pass> pass)
-        {
-            if (auto added = graph.addPass(std::string(name), std::move(pass)); !added)
-            {
-                return toError(added.error());
-            }
-
-            return {};
-        }
-
-        Status buildFrameGraph(RendererState& state)
-        {
-            auto graph = vela::graphics::RenderGraph::create(state.context);
-
-            if (!graph)
-            {
-                return toError(graph.error());
-            }
-
-            auto environmentPass = EnvironmentPass::create(state);
-
-            if (!environmentPass)
-            {
-                return environmentPass.error();
-            }
-
-            auto shadowPass = ShadowPass::create(state);
-
-            if (!shadowPass)
-            {
-                return shadowPass.error();
-            }
-
-            auto reflectionPass = ReflectionPass::create(state);
-
-            if (!reflectionPass)
-            {
-                return reflectionPass.error();
-            }
-
-            auto scenePass = LitScenePass::create(state);
-
-            if (!scenePass)
-            {
-                return scenePass.error();
-            }
-
-            if (auto added = addFramePass(graph.value(), k_environmentPassName, std::move(environmentPass).value());
-                !added)
-            {
-                return added;
-            }
-
-            if (auto added = addFramePass(graph.value(), k_shadowPassName, std::move(shadowPass).value()); !added)
-            {
-                return added;
-            }
-
-            if (auto added = addFramePass(graph.value(), k_reflectionPassName, std::move(reflectionPass).value());
-                !added)
-            {
-                return added;
-            }
-
-            if (auto added = addFramePass(graph.value(), k_scenePassName, std::move(scenePass).value()); !added)
-            {
-                return added;
-            }
-
-            if (auto added = addPostPasses(graph.value(), state); !added)
-            {
-                return added;
-            }
-
-            graph.value().setPresentSource(std::string(k_displayAttachment));
-            state.graph.emplace(std::move(graph).value());
-
-            return {};
-        }
     } //namespace
 
     RendererState& rendererState(Renderer& renderer)
@@ -320,6 +163,14 @@ namespace lockstep::render
             return toError(lightBuffer.error());
         }
 
+        auto jointBuffer = vela::graphics::DynamicBuffer::create(context.value(),
+            vela::graphics::DynamicBuffer::Usage::Storage, k_initialJointBufferBytes);
+
+        if (!jointBuffer)
+        {
+            return toError(jointBuffer.error());
+        }
+
         auto environment = EnvironmentResources::create(context.value());
 
         if (!environment)
@@ -328,7 +179,8 @@ namespace lockstep::render
         }
 
         auto state = std::make_unique<RendererState>(velaWindow, std::move(context).value(),
-            std::move(shaders).value(), std::move(lightBuffer).value(), std::move(environment).value());
+            std::move(shaders).value(), std::move(lightBuffer).value(), std::move(jointBuffer).value(),
+            std::move(environment).value());
 
         state->presentMode = description.presentMode;
 
@@ -340,6 +192,11 @@ namespace lockstep::render
         if (auto built = buildFrameGraph(*state); !built)
         {
             return built.error();
+        }
+
+        if (auto text = addTextPass(*state); !text)
+        {
+            return text.error();
         }
 
         static_cast<void>(updateAspectRatio(*state));
@@ -363,6 +220,12 @@ namespace lockstep::render
         m_state->camera = camera;
     }
 
+    void Renderer::setScreenFade(float amount, const math::Vec3& colour)
+    {
+        const float clamped = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f;
+        m_state->screenFade = math::Vec4{colour.x, colour.y, colour.z, clamped};
+    }
+
     void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform)
     {
         submit(mesh, material, transform, k_defaultRenderLayer);
@@ -376,8 +239,13 @@ namespace lockstep::render
 
         assert(record != nullptr && "submit: invalid mesh handle");
         assert(materialRecord != nullptr && "submit: invalid material handle");
+        assert((record == nullptr || record->kind == MeshKind::Static) && "submit: skinned mesh needs submitSkinned");
+        assert((materialRecord == nullptr || !isViewModelDraw(layers) || materialRecord->shading == Shading::Lit)
+            && "submit: viewmodel draws need lit materials");
 
-        if (record == nullptr || materialRecord == nullptr)
+        if (record == nullptr || materialRecord == nullptr || record->kind != MeshKind::Static
+            || materialRecord->kind != MeshKind::Static
+            || (isViewModelDraw(layers) && materialRecord->shading != Shading::Lit))
         {
             return;
         }
@@ -429,6 +297,11 @@ namespace lockstep::render
         m_state->lights.spots.push_back(light);
     }
 
+    void Renderer::submitText(std::string_view utf8, math::Vec2 position, const TextStyle& style)
+    {
+        m_state->textPass->submit(utf8, position, style);
+    }
+
     Status Renderer::setPresentMode(PresentMode mode)
     {
         return m_state->setPresentMode(mode);
@@ -465,12 +338,18 @@ namespace lockstep::render
         state.projection = beginTemporalFrame(state, extent.width, extent.height);
         state.prepared = prepareLighting(state.lights, state.settings, state.camera, state.aspectRatio);
         writeCameraMotion(state);
+        prepareViewModel(state);
         assignPreviousModels(state);
-        buildDrawLists(state, state.temporal.viewProjection);
+        buildDrawLists(state, state.temporal.viewProjection, state.temporal.viewModelViewProjection);
         prepareReflection(state);
         state.graph->setView(state.view, state.projection);
 
         Status frame = updateShadowMaterials(state);
+
+        if (frame)
+        {
+            frame = uploadJointPalettes(state);
+        }
 
         if (frame)
         {
@@ -504,10 +383,12 @@ namespace lockstep::render
             .spotShadow = state.prepared.spotTile.has_value(),
             .cascades = state.prepared.cascadeCount,
             .submitted = static_cast<uint32_t>(state.draws.size()),
-            .visible = static_cast<uint32_t>(state.drawLists.opaque.size() + state.drawLists.blended.size()),
+            .visible = static_cast<uint32_t>(state.drawLists.opaque.size() + state.drawLists.blended.size()
+                + state.drawLists.viewModelOpaque.size() + state.drawLists.viewModelBlended.size()),
             .shadowDraws = shadowDraws};
         endTemporalFrame(state);
         state.draws.clear();
+        state.jointData.clear();
         state.drawLists.clear();
         state.lights.clear();
         state.reflectors.clear();

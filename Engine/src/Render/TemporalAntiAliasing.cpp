@@ -123,6 +123,7 @@ namespace lockstep::render
         TemporalState& temporal = state.temporal;
         std::swap(temporal.previousModels, temporal.currentModels);
         temporal.previousViewProjection = temporal.viewProjection;
+        temporal.previousViewModelViewProjection = temporal.viewModelViewProjection;
         temporal.hasPrevious = true;
     }
 

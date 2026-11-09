@@ -1,6 +1,7 @@
 #include "Lockstep/App/Run.hpp"
 
 #include "Lockstep/Assets/FileSystem.hpp"
+#include "Lockstep/Audio/AudioSystem.hpp"
 #include "Lockstep/Core/Log.hpp"
 #include "Lockstep/Core/FixedTimestep.hpp"
 #include "Lockstep/Debug/DevTools.hpp"
@@ -13,6 +14,7 @@
 
 #include "Core/VelaLog.hpp"
 #include "Platform/InputAccess.hpp"
+#include "Render/RendererState.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -112,6 +114,19 @@ namespace lockstep::app
             return {};
         }
 
+        audio::ListenerPose cameraListener(render::Renderer& renderer)
+        {
+            const render::Camera& camera = render::rendererState(renderer).camera;
+
+            return audio::ListenerPose{.position = camera.position, .forward = camera.target - camera.position, .up = camera.up};
+        }
+
+        void updateAudio(EngineContext& engine, float frameSeconds)
+        {
+            engine.audio.setBusTimeScale(audio::Bus::World, engine.timeDomains.scale(world::TimeDomain::World));
+            engine.audio.update(frameSeconds, cameraListener(engine.renderer));
+        }
+
         struct Loop
         {
             const GameApi& game;
@@ -165,6 +180,7 @@ namespace lockstep::app
                 runTicks(loop, loop.timestep.advance(frameSeconds));
                 loop.devTools.drawNetPanel(loop.network, loop.session, loop.replication);
                 loop.devTools.drawPhysicsSection(loop.engine.physics);
+                loop.devTools.drawAudioPanel(loop.engine.audio);
 
                 if (loop.devTools.isVisible() && loop.game.devToolsPanels != nullptr)
                 {
@@ -176,6 +192,7 @@ namespace lockstep::app
                     .alpha = loop.timestep.alpha(),
                     .frameSeconds = static_cast<float>(frameSeconds),
                     .input = frameInput});
+                updateAudio(loop.engine, static_cast<float>(frameSeconds));
 
                 const Clock::time_point renderStart = Clock::now();
 
@@ -251,6 +268,13 @@ namespace lockstep::app
             return files.error();
         }
 
+        auto audioSystem = audio::AudioSystem::create();
+
+        if (!audioSystem)
+        {
+            return audioSystem.error();
+        }
+
         world::TimeDomains timeDomains;
         world::Entities entities;
         net::Replication replication(session, entities, timeDomains);
@@ -263,6 +287,7 @@ namespace lockstep::app
             .replication = replication,
             .physics = physics.value(),
             .files = files.value(),
+            .audio = audioSystem.value(),
             .arguments = description.arguments};
 
         auto state = game.init(engine);

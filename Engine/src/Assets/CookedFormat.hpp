@@ -1,6 +1,8 @@
 #ifndef LOCKSTEP_ASSETS_COOKED_FORMAT_HPP
 #define LOCKSTEP_ASSETS_COOKED_FORMAT_HPP
 
+#include "Lockstep/Anim/AnimationClip.hpp"
+#include "Lockstep/Anim/Skeleton.hpp"
 #include "Lockstep/Assets/Scene.hpp"
 #include "Lockstep/Core/Bounds.hpp"
 #include "Lockstep/Core/Result.hpp"
@@ -20,6 +22,9 @@
 // versions, so a format change means bumping the version and re-cooking. Little-endian.
 //
 //   mesh (.mesh):      CookedMeshHeader, PbrVertex[vertexCount], uint32 index[indexCount]
+//   skinned mesh:      the same with k_skinnedMeshMagic and SkinnedPbrVertex vertices
+//   model (.model):    written by writeCookedModel(): a skinned model's skeleton, clips, bounds
+//                      and parts (skinned mesh paths and level material indices)
 //   texture (.tex):    CookedTextureHeader, every mip level largest first, tightly packed in
 //                      the final GPU format (render::TextureDescription layout)
 //   collision (.col):  CookedCollisionHeader, then PhysX's serialized triangle mesh
@@ -32,18 +37,22 @@ namespace lockstep::assets
 
     // Version of level files, separate from k_cookedVersion so mesh, texture and collision files
     // stay valid when only the level layout changes. Version 2 added SceneNode::parent and
-    // SceneInstance::node; version 1 levels still load, without that hierarchy.
-    inline constexpr uint32_t k_levelVersion{2};
+    // SceneInstance::node; version 3 added skinned models and their instances. Older levels
+    // still load, without what came later.
+    inline constexpr uint32_t k_levelVersion{3};
+    inline constexpr uint32_t k_levelVersionWithoutSkins{2};
     inline constexpr uint32_t k_levelVersionWithoutHierarchy{1};
     inline constexpr std::array<char, 4> k_meshMagic{'L', 'M', 'S', 'H'};
     inline constexpr std::array<char, 4> k_textureMagic{'L', 'T', 'E', 'X'};
     inline constexpr std::array<char, 4> k_collisionMagic{'L', 'C', 'O', 'L'};
     inline constexpr std::array<char, 4> k_levelMagic{'L', 'L', 'V', 'L'};
+    inline constexpr std::array<char, 4> k_skinnedMeshMagic{'L', 'S', 'K', 'M'};
+    inline constexpr std::array<char, 4> k_modelMagic{'L', 'M', 'D', 'L'};
 
     // CookedMaterial texture slot without a texture.
     inline constexpr uint32_t k_noTexture{0xFFFFFFFFu};
 
-    // Header of a .mesh file.
+    // Header of a .mesh file (static or skinned, told apart by the magic).
     // bounds: bounds of the vertex positions, as min xyz then max xyz.
     struct CookedMeshHeader
     {
@@ -110,6 +119,26 @@ namespace lockstep::assets
         uint32_t collisionShape{k_noCollisionShape};
     };
 
+    // One part of a cooked skinned model.
+    // path:     virtual path of its skinned .mesh file.
+    // material: index into CookedLevel::materials (created as a skinned material).
+    struct CookedSkinnedPart
+    {
+        std::string path;
+        uint32_t material{0};
+    };
+
+    // The contents of a .model file: an anim::SkinnedModel without GPU handles.
+    struct CookedModel
+    {
+        std::string name;
+        anim::Skeleton skeleton;
+        std::vector<anim::AnimationClip> clips;
+        std::vector<float> jointRadii;
+        math::Aabb bindBounds{};
+        std::vector<CookedSkinnedPart> parts;
+    };
+
     // The contents of a level file.
     // textures:        virtual paths of the .tex files.
     // materials:       materials.
@@ -119,6 +148,8 @@ namespace lockstep::assets
     // nodes:           named nodes, markers included.
     // lights:          authored lights.
     // bounds:          world bounds of all instances.
+    // models:          virtual paths of the skinned models' .model files.
+    // skinnedInstances: placed skinned models (SceneSkinnedInstance::model indexes `models`).
     struct CookedLevel
     {
         std::vector<std::string> textures;
@@ -128,6 +159,16 @@ namespace lockstep::assets
         std::vector<SceneInstance> instances;
         std::vector<SceneNode> nodes;
         std::vector<SceneLight> lights;
+        math::Aabb bounds{};
+        std::vector<std::string> models;
+        std::vector<SceneSkinnedInstance> skinnedInstances;
+    };
+
+    // A skinned .mesh file's contents.
+    struct CookedSkinnedMeshData
+    {
+        std::vector<render::SkinnedPbrVertex> vertices;
+        std::vector<uint32_t> indices;
         math::Aabb bounds{};
     };
 
@@ -173,6 +214,33 @@ namespace lockstep::assets
     // Returns: the mesh, or AssetLoadFailed for another format or version, a wrong size or an
     //          index out of range.
     [[nodiscard]] Result<CookedMeshData> readCookedMesh(std::span<const std::byte> bytes, std::string_view path);
+
+    // vertices: skinned mesh vertices.
+    // indices:  triangle list.
+    // bounds:   bounds of the bind-pose positions.
+    // Returns:  the skinned .mesh file contents.
+    [[nodiscard]] std::vector<std::byte> writeCookedSkinnedMesh(std::span<const render::SkinnedPbrVertex> vertices,
+        std::span<const uint32_t> indices, const math::Aabb& bounds);
+
+    // Parses a skinned .mesh file.
+    // bytes:   the file contents.
+    // path:    the file's virtual path, for messages.
+    // Returns: the mesh, or AssetLoadFailed for another format or version, a wrong size, an index
+    //          out of range or a joint index of k_maxJoints or more.
+    [[nodiscard]] Result<CookedSkinnedMeshData> readCookedSkinnedMesh(std::span<const std::byte> bytes,
+        std::string_view path);
+
+    // Serializes a skinned model field by field (equal models give equal bytes).
+    // model:   the model.
+    // Returns: the .model file contents.
+    [[nodiscard]] std::vector<std::byte> writeCookedModel(const CookedModel& model);
+
+    // Parses a .model file.
+    // bytes:   the file contents.
+    // path:    the file's virtual path, for messages.
+    // Returns: the model, or AssetLoadFailed for another format or version or damaged data (a
+    //          joint parent not before its child, a channel out of range or with mismatched keys).
+    [[nodiscard]] Result<CookedModel> readCookedModel(std::span<const std::byte> bytes, std::string_view path);
 
     // header:  format, size and level count (magic and version are set here).
     // pixels:  every level, tightly packed.

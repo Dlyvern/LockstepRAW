@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_GAME_STATE_HPP
 #define LOCKSTEP_GAME_GAME_STATE_HPP
 
+#include "Characters/PawnCharacters.hpp"
 #include "Echo/EchoRecording.hpp"
 #include "Enemies/Enemy.hpp"
 #include "Level/ApartmentRoom.hpp"
@@ -11,14 +12,18 @@
 #include "Player/PlayerStatus.hpp"
 #include "Player/Prediction.hpp"
 #include "Presentation/FlyCamera.hpp"
+#include "Presentation/Hud.hpp"
 #include "Presentation/Lighting.hpp"
+#include "Presentation/SceneCharacters.hpp"
 #include "Presentation/Visuals.hpp"
 #include "Weapons/Hitscan.hpp"
 #include "Weapons/LagCompensation.hpp"
+#include "Weapons/WeaponStance.hpp"
 
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace lockstep::app
 {
@@ -30,12 +35,15 @@ namespace lockstep::app
         // bulletTimeScale: World time scale while either player holds bullet-time.
         // spawnPoints:     foot positions where Player1's and Player2's pawns (re)spawn.
         // hasEnemy:        the host spawns the enemy (off in the apartment room).
+        // startArmed:      players join carrying the weapon (--armed, or the arena without a level);
+        //                  otherwise they are armed later by the story (or the dev panel).
         struct Settings
         {
             float worldScale{1.0f};
             float bulletTimeScale{0.2f};
             std::array<math::Vec3, game::k_playerCount> spawnPoints{{{-2.0f, 0.0f, 8.0f}, {2.0f, 0.0f, 8.0f}}};
             bool hasEnemy{true};
+            bool startArmed{false};
             game::ControlSettings controls{};
             game::PawnSettings pawns{};
             game::EnemySettings enemy{};
@@ -43,15 +51,17 @@ namespace lockstep::app
         };
 
         // This machine's player.
-        // controls:   accumulated look and shot counter.
+        // controls:   accumulated look, shot counter and lower toggle.
         // command:    the command built from local input on the last tick.
         // statuses:   both players' health as this machine knows it (the client's comes from the
         //             host's status messages).
         // prediction: the client's predicted pawn. Unused on the host.
+        // weaponZone: the weapon zone the local pawn stood in on the last tick.
         struct Local
         {
             game::LocalControls controls{};
             game::PlayerCommand command{};
+            game::WeaponZone weaponZone{game::WeaponZone::Open};
             game::PlayerStatuses statuses{};
             game::Prediction prediction{};
         };
@@ -76,9 +86,13 @@ namespace lockstep::app
         };
 
         game::Visuals visuals{};
+        game::Hud hud{};
         game::LightingState lighting{};
         game::Arena arena{};
         std::optional<game::SceneLevel> level{};
+        std::vector<game::WeaponZoneBox> weaponZones{};
+        game::SceneCharacters characters{};
+        std::optional<game::PawnCharacters> pawnCharacters{};
         std::optional<game::ApartmentRoom> room{};
         std::optional<game::EchoPlayback> echo{};
         game::FlyCamera flyCamera{};

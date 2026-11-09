@@ -23,6 +23,7 @@ namespace game
         using Colour = std::array<uint8_t, 3>;
 
         constexpr uint32_t k_checkerSize{256};
+        constexpr float k_aimFovDegrees{52.0f};
         constexpr uint32_t k_checkerCellSize{16};
         constexpr uint32_t k_solidSize{4};
         constexpr float k_crosshairDistance{0.5f};
@@ -172,6 +173,7 @@ namespace game
             case Archetype::Enemy:
                 renderer.submit(visuals.cube, visuals.enemy, transform);
                 break;
+            case Archetype::Toy:
             case Archetype::None:
                 break;
         }
@@ -222,8 +224,11 @@ namespace game
         }
     }
 
-    render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction)
+    render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction, float zoom)
     {
-        return render::Camera{.position = eye, .target = eye + direction};
+        render::Camera camera{.position = eye, .target = eye + direction};
+        camera.verticalFov += (math::radians(k_aimFovDegrees) - camera.verticalFov) * math::clamp(zoom, 0.0f, 1.0f);
+
+        return camera;
     }
 } //namespace game

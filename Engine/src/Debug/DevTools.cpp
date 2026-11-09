@@ -2,6 +2,7 @@
 
 #include "Lockstep/Core/Log.hpp"
 
+#include "AudioPanel.hpp"
 #include "EnginePanel.hpp"
 #include "FrameTimeHistory.hpp"
 #include "GraphicsPanel.hpp"
@@ -125,6 +126,7 @@ namespace lockstep::debug
         bool isVisibleRequested{k_visibleByDefault};
         bool isShown{false};
         NetPanelState netPanel;
+        AudioPanelState audioPanel;
         GraphicsPanelState graphicsPanel;
         FrameTimeHistories frameTimes;
     };
@@ -232,6 +234,17 @@ namespace lockstep::debug
 
         ImGui::SetCurrentContext(m_state->imguiContext);
         debug::drawPhysicsSection(physics);
+    }
+
+    void DevTools::drawAudioPanel(audio::AudioSystem& audio)
+    {
+        if (!isVisible())
+        {
+            return;
+        }
+
+        ImGui::SetCurrentContext(m_state->imguiContext);
+        debug::drawAudioPanel(m_state->audioPanel, audio);
     }
 
     void DevTools::recordFrameTiming(const FrameTiming& timing)

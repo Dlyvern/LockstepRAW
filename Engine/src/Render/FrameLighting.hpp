@@ -35,6 +35,10 @@ namespace lockstep::render
     // previousViewProjection: last frame's viewProjection (equal to it on the first frame).
     // reflectionViewProjection: world to clip of the planar reflection view (mirrored camera,
     //                    oblique near plane on the mirror, horizontally flipped).
+    // viewModelViewProjection: world to clip of viewmodel draws as rasterized (viewmodel
+    //                    projection with TAA jitter, depth squeezed to the near end).
+    // viewModelMotionViewProjection: the same without jitter (motion vectors).
+    // previousViewModelMotionViewProjection: last frame's viewModelMotionViewProjection.
     // reflectionCamera:  xyz the mirrored camera position, w 1 if a reflection is rendered.
     // reflectionPlane:   xyz the mirror's world normal (towards the camera), w minus its offset
     //                    (dot(xyz, p) + w is the signed distance of p).
@@ -54,6 +58,8 @@ namespace lockstep::render
     // skyA..skyE, skyZenith, skyGround: SkyCoefficients (zenith w is the radiance scale, ground w
     //                    is 1 if the sky is on).
     // sunDisk:           rgb radiance of the sun's disk, w cosine of its angular radius (0 hides it).
+    // sceneDepthParams:  x, y the camera projection's [2][2] and [3][2] (view depth of a depth
+    //                    value, as TAA computes it), for viewmodel motion vectors.
     // counts:            x local lights, y 1 if specular is on.
     struct GpuFrameLighting
     {
@@ -61,6 +67,9 @@ namespace lockstep::render
         math::Mat4 viewProjection{1.0f};
         math::Mat4 previousViewProjection{1.0f};
         math::Mat4 reflectionViewProjection{1.0f};
+        math::Mat4 viewModelViewProjection{1.0f};
+        math::Mat4 viewModelMotionViewProjection{1.0f};
+        math::Mat4 previousViewModelMotionViewProjection{1.0f};
         float reflectionCamera[4];
         float reflectionPlane[4];
         float reflectionTint[4];
@@ -81,12 +90,13 @@ namespace lockstep::render
         float skyZenith[4];
         float skyGround[4];
         float sunDisk[4];
+        float sceneDepthParams[4];
         uint32_t counts[4];
         GpuLocalLight lights[k_maxLocalLights];
     };
 
     static_assert(sizeof(GpuLocalLight) == 64);
-    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 64 + 3 * 64 + 21 * 16 + k_maxLocalLights * 64);
+    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 64 + 6 * 64 + 22 * 16 + k_maxLocalLights * 64);
 
     // The lights submitted for one frame.
     // directional: the directional light, if one was submitted.

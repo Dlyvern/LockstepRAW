@@ -44,6 +44,63 @@ namespace lockstep::assets
             return header;
         }
 
+        template<typename Vertex>
+        std::vector<std::byte> writeMesh(const std::array<char, 4>& magic, std::span<const Vertex> vertices,
+            std::span<const uint32_t> indices, const math::Aabb& bounds)
+        {
+            CookedMeshHeader header{};
+            header.magic = magic;
+            header.vertexCount = static_cast<uint32_t>(vertices.size());
+            header.indexCount = static_cast<uint32_t>(indices.size());
+            header.bounds = {bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z};
+
+            BinaryWriter writer;
+            writer.write(header);
+            writer.writeBytes(std::as_bytes(vertices));
+            writer.writeBytes(std::as_bytes(indices));
+
+            return writer.take();
+        }
+
+        template<typename MeshData>
+        Result<MeshData> readMesh(std::span<const std::byte> bytes, const std::array<char, 4>& magic,
+            std::string_view kind, std::string_view path)
+        {
+            using Vertex = typename decltype(MeshData::vertices)::value_type;
+            auto header = readHeader<CookedMeshHeader>(bytes, magic, kind, path);
+
+            if (!header)
+            {
+                return header.error();
+            }
+
+            const CookedMeshHeader& fields = header.value();
+            const uint64_t vertexBytes = static_cast<uint64_t>(fields.vertexCount) * sizeof(Vertex);
+            const uint64_t indexBytes = static_cast<uint64_t>(fields.indexCount) * sizeof(uint32_t);
+
+            if (sizeof(CookedMeshHeader) + vertexBytes + indexBytes != bytes.size() || fields.indexCount % 3 != 0)
+            {
+                return fileError(kind, path, "size does not match its header");
+            }
+
+            MeshData mesh{};
+            mesh.vertices.resize(fields.vertexCount);
+            mesh.indices.resize(fields.indexCount);
+            std::memcpy(mesh.vertices.data(), bytes.data() + sizeof(CookedMeshHeader), static_cast<std::size_t>(vertexBytes));
+            std::memcpy(mesh.indices.data(), bytes.data() + sizeof(CookedMeshHeader) + vertexBytes,
+                static_cast<std::size_t>(indexBytes));
+            mesh.bounds.min = math::Vec3{fields.bounds[0], fields.bounds[1], fields.bounds[2]};
+            mesh.bounds.max = math::Vec3{fields.bounds[3], fields.bounds[4], fields.bounds[5]};
+
+            if (std::any_of(mesh.indices.begin(), mesh.indices.end(),
+                    [&fields](uint32_t index) { return index >= fields.vertexCount; }))
+            {
+                return fileError(kind, path, "an index is out of range");
+            }
+
+            return mesh;
+        }
+
         uint64_t textureBytes(const CookedTextureHeader& header)
         {
             const auto format = static_cast<render::TextureFormat>(header.format);
@@ -62,50 +119,38 @@ namespace lockstep::assets
     std::vector<std::byte> writeCookedMesh(std::span<const render::PbrVertex> vertices,
         std::span<const uint32_t> indices, const math::Aabb& bounds)
     {
-        CookedMeshHeader header{};
-        header.vertexCount = static_cast<uint32_t>(vertices.size());
-        header.indexCount = static_cast<uint32_t>(indices.size());
-        header.bounds = {bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z};
-
-        BinaryWriter writer;
-        writer.write(header);
-        writer.writeBytes(std::as_bytes(vertices));
-        writer.writeBytes(std::as_bytes(indices));
-
-        return writer.take();
+        return writeMesh(k_meshMagic, vertices, indices, bounds);
     }
 
     Result<CookedMeshData> readCookedMesh(std::span<const std::byte> bytes, std::string_view path)
     {
-        auto header = readHeader<CookedMeshHeader>(bytes, k_meshMagic, "mesh", path);
+        return readMesh<CookedMeshData>(bytes, k_meshMagic, "mesh", path);
+    }
 
-        if (!header)
+    std::vector<std::byte> writeCookedSkinnedMesh(std::span<const render::SkinnedPbrVertex> vertices,
+        std::span<const uint32_t> indices, const math::Aabb& bounds)
+    {
+        return writeMesh(k_skinnedMeshMagic, vertices, indices, bounds);
+    }
+
+    Result<CookedSkinnedMeshData> readCookedSkinnedMesh(std::span<const std::byte> bytes, std::string_view path)
+    {
+        auto mesh = readMesh<CookedSkinnedMeshData>(bytes, k_skinnedMeshMagic, "skinned mesh", path);
+
+        if (!mesh)
         {
-            return header.error();
+            return mesh.error();
         }
 
-        const CookedMeshHeader& fields = header.value();
-        const uint64_t vertexBytes = static_cast<uint64_t>(fields.vertexCount) * sizeof(render::PbrVertex);
-        const uint64_t indexBytes = static_cast<uint64_t>(fields.indexCount) * sizeof(uint32_t);
-
-        if (sizeof(CookedMeshHeader) + vertexBytes + indexBytes != bytes.size() || fields.indexCount % 3 != 0)
+        for (const render::SkinnedPbrVertex& vertex : mesh.value().vertices)
         {
-            return fileError("mesh", path, "size does not match its header");
-        }
-
-        CookedMeshData mesh{};
-        mesh.vertices.resize(fields.vertexCount);
-        mesh.indices.resize(fields.indexCount);
-        std::memcpy(mesh.vertices.data(), bytes.data() + sizeof(CookedMeshHeader), static_cast<std::size_t>(vertexBytes));
-        std::memcpy(mesh.indices.data(), bytes.data() + sizeof(CookedMeshHeader) + vertexBytes,
-            static_cast<std::size_t>(indexBytes));
-        mesh.bounds.min = math::Vec3{fields.bounds[0], fields.bounds[1], fields.bounds[2]};
-        mesh.bounds.max = math::Vec3{fields.bounds[3], fields.bounds[4], fields.bounds[5]};
-
-        if (std::any_of(mesh.indices.begin(), mesh.indices.end(),
-                [&fields](uint32_t index) { return index >= fields.vertexCount; }))
-        {
-            return fileError("mesh", path, "an index is out of range");
+            for (const float joint : vertex.joints)
+            {
+                if (!(joint >= 0.0f && joint < static_cast<float>(anim::k_maxJoints)))
+                {
+                    return fileError("skinned mesh", path, "a joint index is out of range");
+                }
+            }
         }
 
         return mesh;

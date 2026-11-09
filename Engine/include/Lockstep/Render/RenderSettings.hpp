@@ -78,6 +78,9 @@ namespace lockstep::render
     // normalBias:    offset of the shadow lookup along the surface normal against acne, in shadow
     //                texels.
     // debugCascades: tint the scene by the cascade each pixel reads.
+    // maskedCasterCascades: how many of the nearest cascades alpha-masked casters (foliage) render
+    //                into; farther cascades skip them, as their alpha-tested shadow draws are the
+    //                most expensive part of the shadow pass on foliage-heavy levels.
     struct ShadowSettings
     {
         bool enabled{true};
@@ -87,6 +90,7 @@ namespace lockstep::render
         float depthBias{1.0f};
         float normalBias{1.5f};
         bool debugCascades{false};
+        uint32_t maskedCasterCascades{2};
     };
 
     // Exponential-squared distance fog, applied to lit materials.

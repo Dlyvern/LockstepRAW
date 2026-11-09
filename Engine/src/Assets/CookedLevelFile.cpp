@@ -1,6 +1,7 @@
 #include "CookedFormat.hpp"
 
 #include "BinaryStream.hpp"
+#include "CookedFields.hpp"
 
 namespace lockstep::assets
 {
@@ -13,56 +14,11 @@ namespace lockstep::assets
         constexpr std::size_t k_minimumNodeBytes{44};
         constexpr std::size_t k_hierarchyIndexBytes{sizeof(uint32_t)};
         constexpr std::size_t k_minimumLightBytes{73};
+        constexpr std::size_t k_skinnedInstanceBytes{48};
 
         Error levelError(std::string_view path, std::string_view what)
         {
             return Error{ErrorCode::AssetLoadFailed, "level '" + std::string(path) + "': " + std::string(what)};
-        }
-
-        void writeVec3(BinaryWriter& writer, const math::Vec3& vector)
-        {
-            writer.write(vector.x);
-            writer.write(vector.y);
-            writer.write(vector.z);
-        }
-
-        void readVec3(BinaryReader& reader, math::Vec3& vector)
-        {
-            reader.read(vector.x);
-            reader.read(vector.y);
-            reader.read(vector.z);
-        }
-
-        void writeBounds(BinaryWriter& writer, const math::Aabb& bounds)
-        {
-            writeVec3(writer, bounds.min);
-            writeVec3(writer, bounds.max);
-        }
-
-        void readBounds(BinaryReader& reader, math::Aabb& bounds)
-        {
-            readVec3(reader, bounds.min);
-            readVec3(reader, bounds.max);
-        }
-
-        void writeTransform(BinaryWriter& writer, const math::Transform& transform)
-        {
-            writeVec3(writer, transform.position);
-            writer.write(transform.rotation.x);
-            writer.write(transform.rotation.y);
-            writer.write(transform.rotation.z);
-            writer.write(transform.rotation.w);
-            writeVec3(writer, transform.scale);
-        }
-
-        void readTransform(BinaryReader& reader, math::Transform& transform)
-        {
-            readVec3(reader, transform.position);
-            reader.read(transform.rotation.x);
-            reader.read(transform.rotation.y);
-            reader.read(transform.rotation.z);
-            reader.read(transform.rotation.w);
-            readVec3(reader, transform.scale);
         }
 
         void writeMaterial(BinaryWriter& writer, const CookedMaterial& material)
@@ -236,6 +192,15 @@ namespace lockstep::assets
                 }
             }
 
+            for (const SceneSkinnedInstance& instance : level.skinnedInstances)
+            {
+                if (instance.model >= level.models.size()
+                    || (instance.node != k_noNode && instance.node >= level.nodes.size()))
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
     } //namespace
@@ -301,6 +266,21 @@ namespace lockstep::assets
         }
 
         writeBounds(writer, level.bounds);
+        writer.write(static_cast<uint32_t>(level.models.size()));
+
+        for (const std::string& model : level.models)
+        {
+            writer.writeString(model);
+        }
+
+        writer.write(static_cast<uint32_t>(level.skinnedInstances.size()));
+
+        for (const SceneSkinnedInstance& instance : level.skinnedInstances)
+        {
+            writer.write(instance.model);
+            writeTransform(writer, instance.transform);
+            writer.write(instance.node);
+        }
 
         return writer.take();
     }
@@ -316,13 +296,14 @@ namespace lockstep::assets
             return levelError(path, "not a cooked level");
         }
 
-        if (version != k_levelVersion && version != k_levelVersionWithoutHierarchy)
+        if (version < k_levelVersionWithoutHierarchy || version > k_levelVersion)
         {
             return levelError(path, "format version " + std::to_string(version) + " is not supported (expected "
-                + std::to_string(k_levelVersion) + "); re-cook it");
+                + std::to_string(k_levelVersionWithoutHierarchy) + " to " + std::to_string(k_levelVersion)
+                + "); re-cook it");
         }
 
-        const bool hasHierarchy = version == k_levelVersion;
+        const bool hasHierarchy = version >= k_levelVersionWithoutSkins;
         const std::size_t hierarchyBytes = hasHierarchy ? k_hierarchyIndexBytes : 0;
         CookedLevel level{};
         const auto readString = [](BinaryReader& source, std::string& text) { source.readString(text); };
@@ -355,6 +336,18 @@ namespace lockstep::assets
         });
         readArray(reader, level.lights, k_minimumLightBytes, readLight);
         readBounds(reader, level.bounds);
+
+        if (version >= k_levelVersion)
+        {
+            readArray(reader, level.models, k_minimumStringBytes, readString);
+            readArray(reader, level.skinnedInstances, k_skinnedInstanceBytes,
+                [](BinaryReader& source, SceneSkinnedInstance& instance)
+            {
+                source.read(instance.model);
+                readTransform(source, instance.transform);
+                source.read(instance.node);
+            });
+        }
 
         if (!reader.ok() || !reader.atEnd())
         {

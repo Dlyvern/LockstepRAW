@@ -24,7 +24,7 @@ namespace lockstep::net
 namespace game
 {
     // Bytes an encoded OwnPawnState takes.
-    inline constexpr std::size_t k_ownPawnStateBytes{19};
+    inline constexpr std::size_t k_ownPawnStateBytes{27};
 
     // Smallest gap between the predicted and the host's foot position, in metres, that counts as
     // a misprediction and makes the client rewind and replay.
@@ -35,7 +35,7 @@ namespace game
     // isAlive: the pawn exists; the other fields are meaningless otherwise.
     // life:    the pawn's spawn counter (Pawn::life).
     // foot:    its controller's foot position.
-    // motion:  its vertical speed and grounding.
+    // motion:  its velocity and grounding.
     struct OwnPawnState
     {
         bool isAlive{false};
@@ -64,7 +64,7 @@ namespace game
     // entity:       the client-only pawn entity; null while the pawn is dead or not spawned.
     // controller:   its controller; null with the entity.
     // life:         the host pawn life it was created for.
-    // motion:       vertical speed and grounding after the newest move.
+    // motion:       velocity and grounding after the newest move.
     // history:      unacknowledged moves, oldest first.
     // ackedTick:    the newest input tick the host acknowledged.
     // visualOffset: what is still shown of the last corrections, added to the drawn position

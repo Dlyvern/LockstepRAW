@@ -25,6 +25,17 @@ namespace game
             return phase == DoorPhase::Closed ? "closed" : phase == DoorPhase::Opening ? "opening" : "open";
         }
 
+        const char* toString(MorningPhase phase)
+        {
+            return phase == MorningPhase::Apartment ? "apartment"
+                : phase == MorningPhase::GoToCar ? "go to the car" : "complete";
+        }
+
+        const char* heldBy(const ApartmentRoom& room, uint8_t toy)
+        {
+            return toy < room.toys.size() ? room.toys[toy].label.c_str() : "-";
+        }
+
         const char* takenBy(uint8_t player)
         {
             return player == k_nobody ? "on the counter" : playerName(player);
@@ -40,18 +51,19 @@ namespace game
 
             for (std::size_t player = 0; player < k_playerCount; ++player)
             {
-                ImGui::Text("%s     locker %3.0f%%  badge %s  sidearm %s  mirror %s  at door %s", playerName(player),
+                ImGui::Text("%s     locker %3.0f%%  badge %s  sidearm %s  mirror %s", playerName(player),
                     room.lockerOpen[player] * 100.0f, room.hasBadge[player] ? "y" : "n",
-                    room.hasSidearm[player] ? "y" : "n", room.hasUsedMirror[player] ? "y" : "n",
-                    room.isWaitingAtDoor[player] ? "y" : "n");
+                    room.hasSidearm[player] ? "y" : "n", room.hasUsedMirror[player] ? "y" : "n");
             }
 
             ImGui::Text("Front door  %s %3.0f%%", toString(room.door), room.doorOpen * 100.0f);
+            ImGui::Text("Street door %s %3.0f%%", room.isStreetDoorOpen ? "open" : "closed", room.streetDoorOpen * 100.0f);
+            ImGui::Text("Morning     %s", toString(room.phase));
         }
 
         void echoControls(GameState& state)
         {
-            const std::filesystem::path path = state.room ? state.room->echoPath : std::filesystem::path(k_defaultEchoPath);
+            const std::filesystem::path path = state.room ? state.room->echoPath : defaultEchoPath();
 
             if (state.room)
             {
@@ -90,8 +102,11 @@ namespace game
 
         if (state.room)
         {
-            ImGui::Text("Look        %s", state.room->prompt[0] != '\0' ? state.room->prompt : "-");
-            stateTable(state.room->state);
+            const ApartmentRoom& room = *state.room;
+            ImGui::Text("Look        %s", room.prompt.empty() ? "-" : room.prompt.c_str());
+            stateTable(room.state);
+            ImGui::Text("Carrying    Player1 %s, Player2 %s", heldBy(room, room.state.heldToy[0]),
+                heldBy(room, room.state.heldToy[1]));
         }
 
         echoControls(state);

@@ -71,6 +71,23 @@ namespace game
     [[nodiscard]] Hinge hingeFromBounds(const lockstep::assets::Scene& scene, uint32_t node,
         std::span<const uint32_t> instances);
 
+    // A hinge on a door's local west edge: along the node's local up axis, through the vertical
+    // edge of its bounds on the node's local -X side, centred in the door's thickness (local Z).
+    // For a door authored standing open whose node sits at its centre.
+    // scene:     the level's scene.
+    // node:      index into Scene::nodes of the door.
+    // instances: the door's instances.
+    // Returns:   the hinge, axis along the node's local up.
+    [[nodiscard]] Hinge hingeAtWestEdge(const lockstep::assets::Scene& scene, uint32_t node,
+        std::span<const uint32_t> instances);
+
+    // How far a node is turned around the world up axis: the angle from world +X to its local +X
+    // seen from above, positive counter-clockwise (the angle angleAxis() turns by around +Y).
+    // scene:   the level's scene.
+    // node:    index into Scene::nodes.
+    // Returns: the angle in radians, in [-pi, pi].
+    [[nodiscard]] float nodeYaw(const lockstep::assets::Scene& scene, uint32_t node);
+
     // Flips a hinge's axis so that opening moves the part's centre away from a point (the body
     // of a locker, or the room a door leads out of).
     // hinge:     the hinge, updated.

@@ -161,8 +161,11 @@ namespace lockstep::physics
         [[nodiscard]] bool isAlive(ControllerId controller) const noexcept;
 
         // Moves a controller by sweeping its capsule: it slides along walls, walks up steps
-        // up to the step offset, is blocked by slopes over the slope limit and by static and
-        // dynamic bodies and other controllers. Independent of step(), so it can be replayed.
+        // up to the step offset, is blocked by slopes over the slope limit, static bodies and
+        // other controllers. Dynamic (simulated) bodies are ignored: they may exist on one
+        // machine only (host-side toys), and a pawn's move must give the same result on the
+        // host and on a predicting client. The capsule still pushes dynamic bodies away during
+        // step(). Independent of step(), so it can be replayed.
         // controller:   the controller.
         // displacement: desired movement this tick, gravity included (velocity * Player delta).
         // deltaSeconds: the Player domain's delta for this tick.

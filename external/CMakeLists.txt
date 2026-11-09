@@ -34,6 +34,12 @@ add_subdirectory(GameNetworkingSockets SYSTEM)
 # as Velix). Exposes the INTERFACE target `physx`; on Windows also PHYSX_RUNTIME_DLLS.
 add_subdirectory(physx)
 
+# FMOD Core API: audio, wrapped privately by Engine/src/Audio. Proprietary SDK copied in by hand
+# (git-ignored); defines the imported SHARED target `fmod` and FMOD_RUNTIME_LIBRARY.
+if(LOCKSTEP_WITH_FMOD)
+    add_subdirectory(fmod)
+endif()
+
 # cgltf: glTF 2.0 parser (header-only), used privately by Engine/src/Assets.
 add_library(cgltf INTERFACE)
 target_include_directories(cgltf SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/cgltf)

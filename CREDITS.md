@@ -21,6 +21,8 @@ Every new asset gets a line here when it's added.
 | Shower Cabin | Heliona | https://sketchfab.com/models/e2c6a8dd490e4e4398378e1f6c9121a8 | Apartment: bathroom shower |
 | Old coat rack | Ehnri | https://sketchfab.com/models/f7125e65dd004381aa3e9882ef74e963 | Apartment: coat rack by the front door |
 | Straw Rug (petate) | ocelotlmx | https://sketchfab.com/models/1a5021f8623c4ddeb5eabf7eccb77bc2 | Apartment: rug between the beds |
+| [FREE] Ford Crown Victoria 2005 | Velrifea | https://sketchfab.com/models/91b2d4d7fe5b4197928c2f0315e24a67 | District: the players' car at CarSpot (repainted faded maroon) |
+| S.W.A.T. Operator - 4k Followers Special Remaster | SpatialNeglect | Fab (fab.com, CC BY 4.0) | Player character placeholder (both players), incl. KRISS Vector |
 | POLICE CAP 2 | alexhanks1 | https://sketchfab.com/models/f6eaa9818b5c4b97a1ebb24c30926ae7 | Apartment: police caps on the coat rack (decimated to ~6%) |
 
 ## CC0 (Poly Haven, no attribution required)
@@ -42,6 +44,24 @@ Every new asset gets a line here when it's added.
 | Laminate Floor 03 (texture) | Charlotte Baglioni, Dario Barresi | https://polyhaven.com/a/laminate_floor_03 |
 | Plastered Wall 04 (texture) | Rob Tuytel | https://polyhaven.com/a/plastered_wall_04 |
 | Interior Tiles (texture) | Charlotte Baglioni | https://polyhaven.com/a/interior_tiles |
+| Tree Small 02 | Rico Cilliers | https://polyhaven.com/a/tree_small_02 |
+| Rock Moss Set 01 | Kless Gyzen | https://polyhaven.com/a/rock_moss_set_01 |
+| Boulder 01 | Rico Cilliers | https://polyhaven.com/a/boulder_01 |
+| Grass Bermuda 01 | Rico Cilliers | https://polyhaven.com/a/grass_bermuda_01 |
+| Dandelion 01 | Rico Cilliers, Rob Tuytel | https://polyhaven.com/a/dandelion_01 |
+| Weed Plant 02 | Rico Cilliers, Rob Tuytel | https://polyhaven.com/a/weed_plant_02 |
+| Leafy Grass (texture) | Charlotte Baglioni | https://polyhaven.com/a/leafy_grass |
+| Modular Street Seating | Stuart Attenborrow | https://polyhaven.com/a/modular_street_seating |
+| Covered Car | MP | https://polyhaven.com/a/covered_car |
+| Brick Wall 02 (texture) | Dimitrios Savva | https://polyhaven.com/a/brick_wall_02 |
+| Brick Wall 006 (texture) | Jan Burghardt | https://polyhaven.com/a/brick_wall_006 |
+| Brick Wall 09 (texture) | Matterfield, Rob Tuytel | https://polyhaven.com/a/brick_wall_09 |
+| Brick Wall 07 (texture) | Dimitrios Savva | https://polyhaven.com/a/brick_wall_07 |
+| Asphalt 02 (texture) | Rob Tuytel | https://polyhaven.com/a/asphalt_02 |
+| Asphalt 04 (texture) | Jenelle van Heerden, Sergej Majboroda | https://polyhaven.com/a/asphalt_04 |
+| Concrete Pavement 02 (texture) | Charlotte Baglioni | https://polyhaven.com/a/concrete_pavement_02 |
+| Concrete Pavement (texture) | Charlotte Baglioni | https://polyhaven.com/a/concrete_pavement |
+| Rusty Metal Shutter (texture) | Charlotte Baglioni | https://polyhaven.com/a/rusty_metal_shutter |
 
 ## User-provided packs (licence to confirm before shipping)
 
@@ -49,3 +69,10 @@ Every new asset gets a line here when it's added.
 |---|---|---|
 | Locker Equipment | `locker-equipment.zip` (downloaded by the developer) | Apartment: gear lockers |
 | Small TV stand | `small-tv-stand.zip` (downloaded by the developer) | Apartment: TV stand |
+
+## Fonts and middleware
+
+| Item | Author / owner | Licence | Notes |
+|---|---|---|---|
+| Noto Sans | Google / The Noto Project Authors | SIL Open Font License 1.1 (`Engine/fonts/OFL.txt`) | On-screen text |
+| FMOD Engine 2.03 | Firelight Technologies Pty Ltd | FMOD licence (free indie tier; register the project before release) | Audio. The shipped game must show "Made with FMOD Studio by Firelight Technologies Pty Ltd." and the FMOD logo in its credits. |

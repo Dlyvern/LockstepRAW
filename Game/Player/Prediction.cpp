@@ -21,9 +21,11 @@ namespace game
         constexpr std::size_t k_lifeOffset{1};
         constexpr std::size_t k_footOffset{2};
         constexpr std::size_t k_verticalSpeedOffset{14};
+        constexpr std::size_t k_planarVelocityOffset{18};
         constexpr std::size_t k_floatBytes{4};
         constexpr std::size_t k_maxHistory{240};
         constexpr float k_verticalSpeedTolerance{0.05f};
+        constexpr float k_planarVelocityTolerance{0.05f};
         constexpr float k_offsetFadePerTick{0.85f};
         constexpr float k_minVisibleOffset{0.001f};
         constexpr float k_maxSmoothedOffset{1.5f};
@@ -123,7 +125,8 @@ namespace game
 
             error = math::length(*acked->foot - state.foot);
             const bool isSpeedOff = std::abs(acked->motion.verticalSpeed - state.motion.verticalSpeed)
-                > k_verticalSpeedTolerance;
+                    > k_verticalSpeedTolerance
+                || math::length(acked->motion.planarVelocity - state.motion.planarVelocity) > k_planarVelocityTolerance;
 
             return error > k_correctionThreshold || isSpeedOff || acked->motion.isGrounded != state.motion.isGrounded;
         }
@@ -154,6 +157,8 @@ namespace game
         writeFloat(bytes, k_footOffset + k_floatBytes, state.foot.y);
         writeFloat(bytes, k_footOffset + 2 * k_floatBytes, state.foot.z);
         writeFloat(bytes, k_verticalSpeedOffset, state.motion.verticalSpeed);
+        writeFloat(bytes, k_planarVelocityOffset, state.motion.planarVelocity.x);
+        writeFloat(bytes, k_planarVelocityOffset + k_floatBytes, state.motion.planarVelocity.z);
 
         return bytes;
     }
@@ -171,10 +176,13 @@ namespace game
             .foot = {readFloat(bytes, k_footOffset), readFloat(bytes, k_footOffset + k_floatBytes),
                 readFloat(bytes, k_footOffset + 2 * k_floatBytes)},
             .motion = {.verticalSpeed = readFloat(bytes, k_verticalSpeedOffset),
-                .isGrounded = (bytes[k_flagsOffset] & k_groundedBit) != std::byte{0}}};
+                .isGrounded = (bytes[k_flagsOffset] & k_groundedBit) != std::byte{0},
+                .planarVelocity = {readFloat(bytes, k_planarVelocityOffset), 0.0f,
+                    readFloat(bytes, k_planarVelocityOffset + k_floatBytes)}}};
 
         const bool isFinite = std::isfinite(state.foot.x) && std::isfinite(state.foot.y) && std::isfinite(state.foot.z)
-            && std::isfinite(state.motion.verticalSpeed);
+            && std::isfinite(state.motion.verticalSpeed) && std::isfinite(state.motion.planarVelocity.x)
+            && std::isfinite(state.motion.planarVelocity.z);
 
         if (!isFinite)
         {

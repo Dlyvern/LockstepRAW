@@ -73,6 +73,6 @@ namespace game
 
     lockstep::render::Camera flyCameraView(const FlyCamera& camera)
     {
-        return firstPersonCamera(camera.position, lookDirection(camera.yaw, camera.pitch));
+        return firstPersonCamera(camera.position, lookDirection(camera.yaw, camera.pitch), 0.0f);
     }
 } //namespace game

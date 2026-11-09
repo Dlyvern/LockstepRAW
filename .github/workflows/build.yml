@@ -12,7 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 # Release build with dev tools ON (F1 overlay, Net panel): these artifacts are playtest builds.
-# Each artifact is the bin folder: the executable plus its compiled shaders.
+# Each artifact is the bin folder: the executable plus its compiled shaders (and the FMOD runtime
+# library when the SDK is present).
 
 jobs:
   build-linux:
@@ -45,8 +46,20 @@ jobs:
           path: external/physx/lib/linux/checked
           key: physx-linux-checked-${{ steps.physx-rev.outputs.rev }}-${{ hashFiles('external/physx/scripts/build_physx_linux.sh') }}
 
+      # FMOD SDK (external/fmod/include + lib) is proprietary and only present in the private repo.
+      # With it, audio is built and libfmod is staged into bin/; without it, the silent backend.
+      - name: Detect FMOD SDK
+        id: fmod
+        shell: bash
+        run: |
+          if [ -f external/fmod/include/fmod.hpp ] && [ -f external/fmod/lib/linux/libfmod.so.14.8 ]; then
+            echo "flag=ON" >> "$GITHUB_OUTPUT"; echo "FMOD SDK found: audio ON"
+          else
+            echo "flag=OFF" >> "$GITHUB_OUTPUT"; echo "::warning::FMOD SDK missing: building with silent audio"
+          fi
+
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOCKSTEP_DEV_TOOLS=ON -DPHYSX_BUILD_TYPE=checked
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOCKSTEP_DEV_TOOLS=ON -DPHYSX_BUILD_TYPE=checked -DLOCKSTEP_WITH_FMOD=${{ steps.fmod.outputs.flag }}
 
       - name: Build
         run: cmake --build build --parallel
@@ -116,11 +129,22 @@ jobs:
         shell: cmd
         run: call external\physx\scripts\build_physx_windows.bat checked
 
+      - name: Detect FMOD SDK
+        id: fmod
+        shell: bash
+        run: |
+          if [ -f external/fmod/include/fmod.hpp ] && [ -f external/fmod/lib/windows/fmod.dll ] && [ -f external/fmod/lib/windows/fmod_vc.lib ]; then
+            echo "flag=ON" >> "$GITHUB_OUTPUT"; echo "FMOD SDK found: audio ON"
+          else
+            echo "flag=OFF" >> "$GITHUB_OUTPUT"; echo "::warning::FMOD SDK missing: building with silent audio"
+          fi
+
       - name: Configure
         shell: pwsh
         run: |
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
+            -DLOCKSTEP_WITH_FMOD=${{ steps.fmod.outputs.flag }} `
             -DLOCKSTEP_DEV_TOOLS=ON `
             -DPHYSX_BUILD_TYPE=checked `
             -DVulkan_ROOT="$env:VULKAN_SDK" `

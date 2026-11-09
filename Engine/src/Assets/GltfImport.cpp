@@ -6,6 +6,7 @@
 #include "GltfMaterials.hpp"
 #include "GltfMeshes.hpp"
 #include "GltfNodes.hpp"
+#include "GltfSkins.hpp"
 #include "ImportWarnings.hpp"
 #include "MeshProcessing.hpp"
 #include "TextureImport.hpp"
@@ -32,18 +33,24 @@ namespace lockstep::assets
             Scene& scene;
             std::vector<std::optional<render::MaterialHandle>> materials;
             std::optional<render::MaterialHandle> defaultMaterial;
+            std::vector<std::optional<render::MaterialHandle>> skinnedMaterials;
+            std::optional<render::MaterialHandle> defaultSkinnedMaterial;
             std::unordered_map<const cgltf_mesh*, std::vector<uint32_t>> meshParts;
         };
 
-        Result<render::MaterialHandle> materialFor(ImportContext& context, const cgltf_material* material)
+        Result<render::MaterialHandle> materialFor(ImportContext& context, const cgltf_material* material,
+            render::MeshKind kind = render::MeshKind::Static)
         {
+            const bool isSkinned = kind == render::MeshKind::Skinned;
+            std::vector<std::optional<render::MaterialHandle>>& table = isSkinned ? context.skinnedMaterials
+                : context.materials;
             std::optional<render::MaterialHandle>& slot = material != nullptr
-                ? context.materials[static_cast<std::size_t>(material - context.document.materials)]
-                : context.defaultMaterial;
+                ? table[static_cast<std::size_t>(material - context.document.materials)]
+                : (isSkinned ? context.defaultSkinnedMaterial : context.defaultMaterial);
 
             if (!slot)
             {
-                auto created = context.renderer.createMaterial(toPbrDescription(material, context.textures));
+                auto created = context.renderer.createMaterial(toPbrDescription(material, context.textures), kind);
 
                 if (!created)
                 {
@@ -142,7 +149,7 @@ namespace lockstep::assets
                     .parent = placed.parentNode});
             }
 
-            if (node.mesh == nullptr)
+            if (node.mesh == nullptr || node.skin != nullptr)
             {
                 return {};
             }
@@ -167,9 +174,51 @@ namespace lockstep::assets
             return {};
         }
 
+        Status addSkinnedModel(ImportContext& context, const GltfSkinnedModel& source)
+        {
+            anim::SkinnedModel model{};
+            model.name = source.name;
+            model.skeleton = source.skeleton;
+            model.clips = source.clips;
+            model.jointRadii = source.jointRadii;
+            model.bindBounds = source.bindBounds;
+
+            for (const SkinnedPart& part : source.parts)
+            {
+                auto material = materialFor(context, part.material, render::MeshKind::Skinned);
+
+                if (!material)
+                {
+                    return material.error();
+                }
+
+                auto mesh = context.renderer.createMesh(std::span<const render::SkinnedPbrVertex>(part.geometry.vertices),
+                    std::span<const uint32_t>(part.geometry.indices));
+
+                if (!mesh)
+                {
+                    return mesh.error();
+                }
+
+                model.parts.push_back(anim::SkinnedModelPart{.mesh = mesh.value(), .material = material.value()});
+                context.scene.stats.triangleCount += part.geometry.indices.size() / 3;
+            }
+
+            context.scene.skinnedInstances.push_back(SceneSkinnedInstance{
+                .model = static_cast<uint32_t>(context.scene.skinnedModels.size()), .transform = source.transform,
+                .node = source.node});
+            math::expand(context.scene.bounds, math::transformBounds(model.bindBounds, source.transform));
+            context.scene.skinnedModels.push_back(std::move(model));
+
+            return {};
+        }
+
         Status addNodeTree(ImportContext& context)
         {
-            for (const PlacedNode& placed : placeNodes(context.document, context.options.scale, context.warnings))
+            const std::vector<PlacedNode> placedNodes = placeNodes(context.document, context.options.scale,
+                context.warnings);
+
+            for (const PlacedNode& placed : placedNodes)
             {
                 if (placed.node->light != nullptr)
                 {
@@ -177,6 +226,15 @@ namespace lockstep::assets
                 }
 
                 if (auto added = addNode(context, placed); !added)
+                {
+                    return added;
+                }
+            }
+
+            for (const GltfSkinnedModel& model : readSkinnedModels(context.document, placedNodes,
+                     context.options.scale, context.warnings))
+            {
+                if (auto added = addSkinnedModel(context, model); !added)
                 {
                     return added;
                 }
@@ -226,6 +284,8 @@ namespace lockstep::assets
             .scene = scene,
             .materials = std::vector<std::optional<render::MaterialHandle>>(data.materials_count),
             .defaultMaterial = std::nullopt,
+            .skinnedMaterials = std::vector<std::optional<render::MaterialHandle>>(data.materials_count),
+            .defaultSkinnedMaterial = std::nullopt,
             .meshParts = {}};
 
         if (auto added = addNodeTree(context); !added)
@@ -233,7 +293,7 @@ namespace lockstep::assets
             return added.error();
         }
 
-        if (scene.instances.empty())
+        if (scene.instances.empty() && scene.skinnedInstances.empty())
         {
             return Error{ErrorCode::AssetLoadFailed, "importGltf: '" + std::string(path) + "' has no drawable triangles"};
         }

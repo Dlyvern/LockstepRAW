@@ -4,3 +4,7 @@ compile_commands.json
 *.blend1
 external/physx/lib/
 Content/
+
+# FMOD SDK (proprietary, not redistributable): only our CMakeLists.txt is tracked.
+external/fmod/include/
+external/fmod/lib/

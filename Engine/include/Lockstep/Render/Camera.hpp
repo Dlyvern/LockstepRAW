@@ -8,8 +8,10 @@ namespace lockstep::render
 {
     // The point of view a frame is rendered from. The Renderer derives the view and projection
     // matrices from it, using the current window aspect ratio.
-    // layers: the render layers this view draws (see RenderLayers); also the draws that cast
-    //         shadows.
+    // layers:       the render layers this view draws (see RenderLayers); also the draws that cast
+    //               shadows.
+    // viewModelFov: vertical field of view, in radians, of draws on k_viewModelLayer. Independent
+    //               of verticalFov, so zooming the world does not stretch the arms and weapon.
     struct Camera
     {
         math::Vec3 position{0.0f, 0.0f, 3.0f};
@@ -19,6 +21,7 @@ namespace lockstep::render
         float nearPlane{0.1f};
         float farPlane{1000.0f};
         RenderLayers layers{k_defaultRenderLayer};
+        float viewModelFov{math::radians(55.0f)};
     };
 } //namespace lockstep::render
 

@@ -1,6 +1,9 @@
 #include "Presentation/Mirrors.hpp"
 
 #include <Lockstep/Assets/Scene.hpp>
+#include <Lockstep/Core/Bounds.hpp>
+#include <Lockstep/Core/Math.hpp>
+#include <Lockstep/Core/Transform.hpp>
 #include <Lockstep/Render/Renderer.hpp>
 
 #include <algorithm>
@@ -15,6 +18,7 @@ namespace game
     {
         namespace render = lockstep::render;
         namespace assets = lockstep::assets;
+        namespace math = lockstep::math;
 
         constexpr std::string_view k_mirrorNode{"Interact_Mirror"};
         constexpr float k_sameTransformTolerance{1e-4f};
@@ -64,8 +68,7 @@ namespace game
         }
     } //namespace
 
-    void presentMirrors(render::Renderer& renderer, const assets::Scene* scene, const Visuals& visuals,
-        const std::optional<math::Transform>& localPawn, lockstep::world::EntityOwner localOwner)
+    void presentMirrors(render::Renderer& renderer, const assets::Scene* scene)
     {
         if (scene == nullptr)
         {
@@ -88,13 +91,6 @@ namespace game
                 renderer.submitReflector({.mesh = scene->meshes[instance.mesh].mesh, .transform = instance.transform,
                     .layers = render::k_defaultRenderLayer | k_mirrorOnlyLayer});
             }
-        }
-
-        if (localPawn)
-        {
-            renderer.submit(visuals.cube,
-                localOwner == lockstep::world::EntityOwner::Player2 ? visuals.player2 : visuals.player1, *localPawn,
-                k_mirrorOnlyLayer);
         }
     }
 } //namespace game

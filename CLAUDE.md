@@ -26,8 +26,9 @@ Modules: `Core` (Result, math, Transform, FixedTimestep), `Platform` (window, ev
 `Render` (Vela wrapper), `World` (time domains, entities), `Net` (GameNetworkingSockets
 transport, session, host-authoritative snapshot replication), `Debug` (ImGui dev tools), `App`
 (run loop and the `GameApi` boundary), `Physics` (PhysX: `PhysicsWorld`, bodies, raycasts,
-character controllers). Later: `Audio`, `Anim`, `Assets`. Create a module folder only when there is code
-for it.
+character controllers), `Assets` (VFS, paks, glTF import, cooked formats), `Anim` (skeletons, clips,
+`Animator` blending, `SkinnedModel`/`SkinnedInstance`; GPU skinning in Render), `Audio` (FMOD Core:
+buses, 3D voices, listener). Create a module folder only when there is code for it.
 
 ## Architecture rules
 
@@ -72,8 +73,22 @@ for it.
   TAA; default TAA (jitter, per-pixel velocity, variance clipping, sharpening). Planar mirrors:
   Game registers reflector instances (`Renderer::submitReflector`); render layers
   (`Lockstep/Render/Views.hpp`) control what each view sees, e.g. the local pawn is drawn only in
-  mirrors (`k_mirrorOnlyLayer`). The Engine-internal `RenderPass` interface is
-  how Engine passes plug in; Game can't add passes yet.
+  mirrors (`k_mirrorOnlyLayer`). First-person arms/weapons use `k_viewModelLayer` (bit 31, Engine
+  reserved; Game layers are bits 1–30): camera view only, own FOV (`Camera::viewModelFov`), depth
+  squeezed so it never clips into walls, no shadow casting. The Engine-internal `RenderPass`
+  interface is how Engine passes plug in; Game can't add passes yet.
+- **Characters:** skinned glTF (Mixamo skeleton) cooked into `.model` + skinned `.mesh` (level
+  format v3). Animation is presentation-only, derived from replicated movement, never replicated.
+  Source in `Content/source/characters/<name>/` (Mixamo FBX clips retargeted in Blender onto the
+  model; arm offsets keep hands out of bulky gear). The current player model is a placeholder (SWAT
+  operator, `Game/Characters/PawnCharacters.hpp` names scenes and clips in one place). Run with
+  `--content Content/cooked/characters.pak`.
+- **Audio: FMOD Core 2.03.08** in `external/fmod` (as in Velix; SDK files git-ignored, only our
+  CMakeLists tracked; `LOCKSTEP_WITH_FMOD` defaults ON when the SDK exists, else a silent backend).
+  FMOD is private to `Engine/src/Audio`. The World bus follows the World time-domain scale (pitch +
+  low-pass in bullet-time); the Player bus stays at 1. Play sounds from `frame()` or confirmed
+  events, never from `fixedTick` (client re-simulation would replay them). Sounds load through
+  the VFS.
 - **Materials and assets:** art direction is realistic (Trepang2-like). The material model is
   glTF 2.0 metallic-roughness, defined in `Lockstep/Render/PbrMaterial.hpp` (`PbrVertex` with
   tangents, `PbrMaterialDescription`). That header is the contract: Engine/Assets (glTF import)
@@ -106,10 +121,15 @@ for it.
   `Content/source/props/`) and `Content/cooked/` (cooker output, paks).
 - **Interactions:** glTF node names drive gameplay: `Interact_*` nodes are usable (look within
   2 m + E, host-authoritative, state replicated), `PlayerStart_1/2` are spawns, `Toy_*` are
-  physics toys, `CarSpot` marks the car. Moving parts are child objects of an `Interact_*` empty
+  physics toys (names containing "ball" are throwable balls), `CarSpot` marks the car,
+  `Interact_Locker_1/2` are each player's locker door and `Interact_Gear_1/2` the gear inside
+  (top-level nodes, not under the door). Moving parts are child objects of an `Interact_*` empty
   placed on the hinge/pivot. In Blender, every object belongs to exactly one collection (the same
-  as its parent), or linked instancing duplicates it. Cooked levels are format version 2 (node
-  hierarchy); recook after cooker changes. The Echo recorder saves both players' movement and
+  as its parent), or linked instancing duplicates it. Foliage materials must export as glTF MASK
+  (Math "Round" node in front of Principled Alpha); the cooker then keeps alpha coverage in mips.
+  Shader-node tricks glTF can't express (vertex-colour mixes, non-identity Mapping nodes) must be
+  baked into UVs or split into materials. Cooked levels are format version 3 (v2 still loads);
+  recook after cooker changes. The Echo recorder saves both players' movement and
   interactions (`--echo-play <file>` replays it).
 - **Levels:** `Content/source/apartment/` (the flat) is linked into
   `Content/source/district/district.blend` (building, stairs, street, park, car) at second-floor
@@ -197,9 +217,8 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
   `external/Vela/Examples/LittleEngine` is the most complete usage example (glTF, lighting,
   shadows, ImGui).
 - Known Vela gaps, candidates for vela-maintainer:
-  1. `vela_compile_shaders` can't stage shaders of a static library for the executables
-     linking it (Engine works around it with `lockstep_stage_engine_shaders`).
-  2. `vela_compile_shaders` doesn't restage on shader-only edits and doesn't track `#include`.
+  1. (fixed in 6e13b93: `vela_stage_shaders(TARGET FROM)`, used by `lockstep_stage_engine_shaders`)
+  2. (fixed in 6e13b93: shader `#include` tracking and restaging on shader-only edits)
   3. A pass can't render into a persistent `Texture` (the sky IBL atlas is rebuilt every
      frame). Persistent attachments + `InputUsage::History` exist since a601b8d (used by TAA).
   4. No cubemap, array or per-mip attachments.

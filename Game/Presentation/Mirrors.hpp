@@ -1,13 +1,7 @@
 #ifndef LOCKSTEP_GAME_PRESENTATION_MIRRORS_HPP
 #define LOCKSTEP_GAME_PRESENTATION_MIRRORS_HPP
 
-#include "Presentation/Visuals.hpp"
-
-#include <Lockstep/Core/Transform.hpp>
 #include <Lockstep/Render/Views.hpp>
-#include <Lockstep/World/Entities.hpp>
-
-#include <optional>
 
 namespace lockstep::assets
 {
@@ -26,16 +20,11 @@ namespace game
     inline constexpr lockstep::render::RenderLayers k_mirrorOnlyLayer{1u << 1};
 
     // Registers the level's mirrors (the mesh instances under "Interact_Mirror" nodes) as planar
-    // reflectors for this frame, and draws the local pawn on k_mirrorOnlyLayer so the player sees
-    // themselves in them. Presentation only; never replicated.
-    // renderer:   the renderer.
-    // scene:      the loaded level, or null without one (then only the pawn is skipped too).
-    // visuals:    the game's meshes and materials.
-    // localPawn:  the local pawn's interpolated transform, if the player has one.
-    // localOwner: which player is local (picks the pawn colour).
-    void presentMirrors(lockstep::render::Renderer& renderer, const lockstep::assets::Scene* scene,
-        const Visuals& visuals, const std::optional<lockstep::math::Transform>& localPawn,
-        lockstep::world::EntityOwner localOwner);
+    // reflectors for this frame. The caller draws the local pawn on k_mirrorOnlyLayer so the
+    // player sees themselves in them. Presentation only; never replicated.
+    // renderer: the renderer.
+    // scene:    the loaded level, or null without one (then nothing is registered).
+    void presentMirrors(lockstep::render::Renderer& renderer, const lockstep::assets::Scene* scene);
 } //namespace game
 
 #endif //LOCKSTEP_GAME_PRESENTATION_MIRRORS_HPP

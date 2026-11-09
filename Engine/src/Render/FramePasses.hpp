@@ -24,11 +24,14 @@ namespace lockstep::render
     // Reflection:       the planar reflection view (mirrored camera; writes lit colour only).
     // ReflectorSurface: the camera view of the rendered planar reflector, which composites the
     //                   reflection texture.
+    // ViewModel:        the camera view of a viewmodel draw (viewmodel projection, squeezed depth,
+    //                   ambient light written to the colour target so SSAO leaves it alone).
     enum class PbrView : uint32_t
     {
         Camera = 0,
         Reflection,
-        ReflectorSurface
+        ReflectorSurface,
+        ViewModel
     };
 
     // Records one scene draw: unlit draws push their model matrix, lit draws the full PBR
@@ -107,8 +110,10 @@ namespace lockstep::render
         const RendererState* m_state{nullptr};
     };
 
-    // The forward scene pass: clears the HDR targets and depth, draws visible opaque draws front to
-    // back, the sky behind them, then alpha-blended draws back to front. Lit materials write direct
+    // The forward scene pass: clears the HDR targets and depth, draws visible opaque viewmodel draws
+    // (their depth is in front of every world surface, so drawing them first only saves shading),
+    // opaque world draws front to back, the sky behind them, alpha-blended world draws back to
+    // front, then alpha-blended viewmodel draws. Lit materials write direct
     // light to the colour target and environment light to the ambient target (so SSAO can darken
     // only the latter); unlit materials and the sky write colour only. Lit materials and the sky
     // also write motion vectors; the planar reflector's surface composites the reflection texture.

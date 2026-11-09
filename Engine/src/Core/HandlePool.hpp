@@ -1,5 +1,5 @@
-#ifndef LOCKSTEP_PHYSICS_HANDLE_POOL_HPP
-#define LOCKSTEP_PHYSICS_HANDLE_POOL_HPP
+#ifndef LOCKSTEP_CORE_HANDLE_POOL_HPP
+#define LOCKSTEP_CORE_HANDLE_POOL_HPP
 
 #include <cstdint>
 #include <limits>
@@ -7,9 +7,10 @@
 #include <utility>
 #include <vector>
 
-namespace lockstep::physics
+namespace lockstep
 {
-    // Slots with generation counters behind BodyId and ControllerId. A removed slot gets a new
+    // Slots with generation counters behind generation-checked handles (physics BodyId and
+    // ControllerId, audio SoundHandle and VoiceHandle). A removed slot gets a new
     // generation, so handles to what it held before are detected as stale.
     template<typename T>
     class HandlePool
@@ -133,6 +134,6 @@ namespace lockstep::physics
         std::vector<uint32_t> m_freeSlots;
         uint32_t m_count{0};
     };
-} //namespace lockstep::physics
+} //namespace lockstep
 
-#endif //LOCKSTEP_PHYSICS_HANDLE_POOL_HPP
+#endif //LOCKSTEP_CORE_HANDLE_POOL_HPP

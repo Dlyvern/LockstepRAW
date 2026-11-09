@@ -133,6 +133,25 @@ namespace game
         return Hinge{.pivot = math::transformPoint(toWorld, pivot), .axis = math::normalize(axes[vertical])};
     }
 
+    Hinge hingeAtWestEdge(const assets::Scene& scene, uint32_t node, std::span<const uint32_t> instances)
+    {
+        const math::Transform& nodeTransform = scene.nodes[node].transform;
+        const math::Transform frame{.position = nodeTransform.position, .rotation = nodeTransform.rotation};
+        const math::Mat4 toWorld = math::toMatrix(frame);
+        const math::Aabb local = boundsInFrame(scene, instances, math::inverse(toWorld));
+        const math::Vec3 edge{local.min.x, 0.5f * (local.min.y + local.max.y), 0.5f * (local.min.z + local.max.z)};
+
+        return Hinge{.pivot = math::transformPoint(toWorld, edge),
+            .axis = math::normalize(nodeTransform.rotation * k_worldUp)};
+    }
+
+    float nodeYaw(const assets::Scene& scene, uint32_t node)
+    {
+        const math::Vec3 localX = scene.nodes[node].transform.rotation * math::Vec3{1.0f, 0.0f, 0.0f};
+
+        return std::atan2(-localX.z, localX.x);
+    }
+
     void orientHinge(Hinge& hinge, const assets::Scene& scene, std::span<const uint32_t> instances,
         const math::Vec3& awayFrom)
     {

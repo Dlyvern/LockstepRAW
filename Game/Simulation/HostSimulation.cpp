@@ -39,6 +39,16 @@ namespace game
             std::clog << "Game: " << what << ": " << error.message << '\n';
         }
 
+        void applyWeaponStance(const GameState& state, const EngineContext& engine, Pawn& pawn)
+        {
+            const world::Entity* entity = engine.entities.find(pawn.entity);
+            const WeaponZone zone = entity != nullptr ? weaponZoneAt(state.weaponZones, entity->transform().position)
+                                                      : WeaponZone::Open;
+            pawn.isLowered = pawn.isArmed && isWeaponLowered(pawn.command.lower, zone);
+            pawn.command.aim = pawn.command.aim && pawn.isArmed && !pawn.isLowered;
+            pawn.command.isWeaponUp = pawn.isArmed && !pawn.isLowered;
+        }
+
         lockstep::Status spawnPlayer(GameState& state, EngineContext& engine, std::size_t pawnIndex)
         {
             return spawnPawn(state.simulation.pawns[pawnIndex], engine.entities, engine.replication, engine.physics,
@@ -53,6 +63,7 @@ namespace game
             if (isConnected && !pawn.isJoined)
             {
                 pawn = Pawn{};
+                pawn.isArmed = state.settings.startArmed;
 
                 if (auto spawned = spawnPlayer(state, engine, k_clientPawn); !spawned)
                 {
@@ -128,7 +139,11 @@ namespace game
             while (pawn.hasCommand && pawn.processedShots != pawn.command.shotCount)
             {
                 ++pawn.processedShots;
-                fireShot(state, engine, shooterIndex, viewTick);
+
+                if (!throwHeldToy(state, engine, shooterIndex) && pawn.isArmed && !pawn.isLowered)
+                {
+                    fireShot(state, engine, shooterIndex, viewTick);
+                }
             }
         }
 
@@ -156,6 +171,8 @@ namespace game
                         pawn.processedShots = command->shotCount;
                         pawn.processedInteracts = command->interactCount;
                     }
+
+                    applyWeaponStance(state, engine, pawn);
                 }
 
                 if (world::Entity* entity = engine.entities.find(pawn.entity); entity != nullptr && pawn.hasCommand)
@@ -337,6 +354,8 @@ namespace game
             return created.error();
         }
 
+        state.simulation.pawns[k_hostPawn].isArmed = state.settings.startArmed;
+
         if (auto spawned = spawnPlayer(state, engine, k_hostPawn); !spawned)
         {
             return spawned.error();
@@ -358,6 +377,7 @@ namespace game
         Pawn& hostPawn = state.simulation.pawns[k_hostPawn];
         hostPawn.command = state.local.command;
         hostPawn.hasCommand = true;
+        applyWeaponStance(state, engine, hostPawn);
 
         syncClientPawn(state, engine);
         applyClientInputs(state, engine);

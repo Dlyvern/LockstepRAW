@@ -48,7 +48,8 @@ namespace lockstep::assets
     // physics: the physics world.
     // scene:   a cooked scene, or one imported with SceneImportOptions::keepCollisionGeometry.
     // options: which instances to skip.
-    // Returns: the bodies, or InvalidArgument if the scene has no collision geometry.
+    // Returns: the bodies (none for a scene without static meshes), or InvalidArgument if its
+    //          static meshes have no collision geometry.
     [[nodiscard]] Result<SceneCollision> createSceneCollision(physics::PhysicsWorld& physics, const Scene& scene,
         const SceneCollisionOptions& options = {});
 

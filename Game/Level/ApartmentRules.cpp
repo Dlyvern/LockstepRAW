@@ -9,10 +9,11 @@ namespace game
     {
         constexpr float k_hostReachTolerance{0.3f};
         constexpr float k_brewSeconds{6.0f};
-        constexpr float k_doorWaitSeconds{4.0f};
         constexpr float k_lockerOpenSeconds{0.6f};
         constexpr float k_doorOpenSeconds{1.0f};
+        constexpr float k_streetDoorSeconds{1.2f};
         constexpr float k_animationStart{1.0f / 255.0f};
+        constexpr float k_partnerDoorReach{3.0f};
 
         std::size_t partnerOf(std::size_t player)
         {
@@ -89,23 +90,16 @@ namespace game
             return takeMug(room.state, player, std::nullopt);
         }
 
-        RoomAction useLocker(RoomState& state, std::size_t player, std::size_t owner)
+        RoomAction takeGear(RoomState& state, std::size_t player, std::size_t owner)
         {
             if (owner != player)
             {
                 return refuse(state, player, RoomNotice::NotYourLocker);
             }
 
-            if (state.lockerOpen[owner] == 0.0f)
-            {
-                state.lockerOpen[owner] = k_animationStart;
-
-                return RoomAction::OpenLocker;
-            }
-
             if (hasGear(state, owner))
             {
-                return refuse(state, player, RoomNotice::LockerEmpty);
+                return RoomAction::Inspect;
             }
 
             state.hasBadge[owner] = true;
@@ -114,7 +108,38 @@ namespace game
             return RoomAction::TakeGear;
         }
 
-        RoomAction useFrontDoor(ApartmentRoom& room, std::size_t player, bool isPartnerJoined)
+        RoomAction toggleLocker(ApartmentRoom& room, std::size_t player, std::size_t owner)
+        {
+            RoomState& state = room.state;
+            state.isLockerOpen[owner] = !state.isLockerOpen[owner];
+
+            if (!state.isLockerOpen[owner])
+            {
+                return RoomAction::CloseLocker;
+            }
+
+            if (room.gear[owner].empty() && owner == player && !hasGear(state, owner))
+            {
+                std::clog << "Game: room: no Interact_Gear_" << owner + 1 << " node; the gear is taken with the door\n";
+                return takeGear(state, player, owner);
+            }
+
+            return RoomAction::OpenLocker;
+        }
+
+        bool isNearFrontDoor(const ApartmentRoom& room, const std::optional<math::Vec3>& foot)
+        {
+            if (!foot || !room.frontDoorSpot)
+            {
+                return false;
+            }
+
+            const math::Vec3 offset = *foot - *room.frontDoorSpot;
+
+            return math::length(math::Vec3{offset.x, 0.0f, offset.z}) <= k_partnerDoorReach;
+        }
+
+        RoomAction useFrontDoor(ApartmentRoom& room, std::size_t player, const std::optional<math::Vec3>& partnerFoot)
         {
             RoomState& state = room.state;
             const std::size_t partner = partnerOf(player);
@@ -129,7 +154,7 @@ namespace game
                 return refuse(state, player, RoomNotice::NeedGear);
             }
 
-            if (!isPartnerJoined)
+            if (!partnerFoot)
             {
                 return refuse(state, player, RoomNotice::PartnerAbsent);
             }
@@ -139,24 +164,30 @@ namespace game
                 return refuse(state, player, RoomNotice::PartnerNeedsGear);
             }
 
-            state.isWaitingAtDoor[player] = true;
-            room.doorWaitSeconds[player] = k_doorWaitSeconds;
-
-            if (!state.isWaitingAtDoor[partner])
+            if (!isNearFrontDoor(room, partnerFoot))
             {
-                return tell(state, player, RoomNotice::WaitingForPartner, RoomAction::ReadyAtDoor);
+                return refuse(state, player, RoomNotice::PartnerAbsent);
             }
 
-            state.isWaitingAtDoor = {};
-            room.doorWaitSeconds = {};
             state.door = DoorPhase::Opening;
             state.doorOpen = k_animationStart;
-            std::clog << "Game: room: both players are at the front door, it opens\n";
+            state.phase = MorningPhase::GoToCar;
+            std::clog << "Game: room: " << playerName(player)
+                << " opens the front door with their flatmate close by; morning phase: go to the car\n";
 
-            return RoomAction::ReadyAtDoor;
+            return RoomAction::OpenFrontDoor;
         }
 
-        RoomAction applyRules(ApartmentRoom& room, RoomObject object, std::size_t player, bool isPartnerJoined)
+        RoomAction useStreetDoor(RoomState& state, std::size_t player)
+        {
+            state.isStreetDoorOpen = !state.isStreetDoorOpen;
+            state.streetDoorBy = static_cast<uint8_t>(player);
+
+            return state.isStreetDoorOpen ? RoomAction::OpenStreetDoor : RoomAction::CloseStreetDoor;
+        }
+
+        RoomAction applyRules(ApartmentRoom& room, RoomObject object, std::size_t player,
+            const std::optional<math::Vec3>& partnerFoot)
         {
             RoomState& state = room.state;
 
@@ -187,13 +218,20 @@ namespace game
 
                     return tell(state, player, RoomNotice::MirrorLook, RoomAction::UseMirror);
                 case RoomObject::Locker1:
-                    return useLocker(state, player, 0);
+                    return toggleLocker(room, player, 0);
                 case RoomObject::Locker2:
-                    return useLocker(state, player, 1);
+                    return toggleLocker(room, player, 1);
+                case RoomObject::Gear1:
+                    return takeGear(state, player, 0);
+                case RoomObject::Gear2:
+                    return takeGear(state, player, 1);
                 case RoomObject::FrontDoor:
-                    return useFrontDoor(room, player, isPartnerJoined);
+                    return useFrontDoor(room, player, partnerFoot);
                 case RoomObject::WallClock:
                     return tell(state, player, RoomNotice::WallClockTime, RoomAction::Inspect);
+                case RoomObject::StreetDoor:
+                    return useStreetDoor(state, player);
+                case RoomObject::Toy:
                 case RoomObject::Other:
                     break;
             }
@@ -205,11 +243,16 @@ namespace game
         {
             return value > 0.0f && value < 1.0f ? std::min(value + delta / seconds, 1.0f) : value;
         }
+
+        float moveTowards(float value, bool isOpen, float delta, float seconds)
+        {
+            return isOpen ? std::min(value + delta / seconds, 1.0f) : std::max(value - delta / seconds, 0.0f);
+        }
     } //namespace
 
-    void interactAsHost(ApartmentRoom& room, const SceneLevel& level, const lockstep::physics::PhysicsWorld& physics,
-        std::size_t player, const math::Vec3& eye, const math::Vec3& direction,
-        lockstep::physics::ControllerId ignore, bool isPartnerJoined)
+    std::optional<RoomAction> interactAsHost(ApartmentRoom& room, const SceneLevel& level,
+        const lockstep::physics::PhysicsWorld& physics, std::size_t player, const math::Vec3& eye,
+        const math::Vec3& direction, lockstep::physics::ControllerId ignore, const std::optional<math::Vec3>& partnerFoot)
     {
         const std::optional<LookTarget> target = traceInteractable(room.interactables, level, physics, eye, direction,
             k_interactReach + k_hostReachTolerance, ignore);
@@ -217,14 +260,21 @@ namespace game
         if (!target)
         {
             std::clog << "Game: room: " << playerName(player) << " pressed E at nothing\n";
-            return;
+            return std::nullopt;
         }
 
         const RoomObject object = room.objects[target->interactable];
-        const RoomAction action = applyRules(room, object, player, isPartnerJoined);
+        const RoomAction action = applyRules(room, object, player, partnerFoot);
         std::clog << "Game: room: " << playerName(player) << " used " << room.interactables[target->interactable].name
             << ": " << toString(action) << '\n';
 
+        recordEchoEvent(room, player, object, action);
+
+        return action;
+    }
+
+    void recordEchoEvent(ApartmentRoom& room, std::size_t player, RoomObject object, RoomAction action)
+    {
         if (room.isRecording)
         {
             room.recording.events.push_back(EchoEvent{.frame = static_cast<uint32_t>(room.recording.frames.size()),
@@ -232,7 +282,7 @@ namespace game
         }
     }
 
-    void updateRoomAsHost(ApartmentRoom& room, float worldDelta, float playerDelta)
+    void updateRoomAsHost(ApartmentRoom& room, float worldDelta)
     {
         RoomState& state = room.state;
 
@@ -248,13 +298,8 @@ namespace game
 
         for (std::size_t player = 0; player < k_playerCount; ++player)
         {
-            state.lockerOpen[player] = advance(state.lockerOpen[player], worldDelta, k_lockerOpenSeconds);
-
-            if (state.isWaitingAtDoor[player])
-            {
-                room.doorWaitSeconds[player] -= playerDelta;
-                state.isWaitingAtDoor[player] = room.doorWaitSeconds[player] > 0.0f;
-            }
+            state.lockerOpen[player] = moveTowards(state.lockerOpen[player], state.isLockerOpen[player], worldDelta,
+                k_lockerOpenSeconds);
         }
 
         if (state.door == DoorPhase::Opening)
@@ -264,8 +309,10 @@ namespace game
             if (state.doorOpen >= 1.0f)
             {
                 state.door = DoorPhase::Open;
-                std::clog << "Game: room complete\n";
             }
         }
+
+        state.streetDoorOpen = moveTowards(state.streetDoorOpen, state.isStreetDoorOpen, worldDelta,
+            k_streetDoorSeconds);
     }
 } //namespace game

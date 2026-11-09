@@ -22,6 +22,8 @@ namespace lockstep::render
     // occurrences:     scratch count of draws per mesh and material pair this frame.
     // viewProjection:  this frame's camera matrix without jitter.
     // previousViewProjection: last frame's viewProjection.
+    // viewModelViewProjection: this frame's viewmodel matrix without jitter (see ViewModel.hpp).
+    // previousViewModelViewProjection: last frame's viewModelViewProjection.
     // jitter:          this frame's projection offset in pixels, each axis in [-0.5, 0.5].
     // sampleIndex:     position in the jitter sequence.
     // hasPrevious:     a frame was rendered before this one (the previous matrices are real).
@@ -32,6 +34,8 @@ namespace lockstep::render
         std::unordered_map<uint64_t, uint32_t> occurrences;
         math::Mat4 viewProjection{1.0f};
         math::Mat4 previousViewProjection{1.0f};
+        math::Mat4 viewModelViewProjection{1.0f};
+        math::Mat4 previousViewModelViewProjection{1.0f};
         math::Vec2 jitter{0.0f, 0.0f};
         uint32_t sampleIndex{0};
         bool hasPrevious{false};

@@ -14,16 +14,22 @@ namespace game
     // Bytes an encoded PlayerStatuses message takes.
     inline constexpr std::size_t k_playerStatusBytes{1 + 2 * k_playerCount};
 
-    // What a player sees of a pawn's health. The host sends both players' statuses to the client
-    // in a reliable Game message whenever one changes.
+    // What a player sees of a pawn's health and weapon. The host sends both players' statuses to
+    // the client in a reliable Game message whenever one changes.
     // health:   hit points left.
     // isJoined: the player is in the game.
     // isDead:   the pawn is dead and waits to respawn.
+    // isArmed:  the player carries the weapon.
+    // isAiming: the armed player aims down sights (drawn on the partner's machine).
+    // isLowered: the armed player's weapon is lowered.
     struct PlayerStatus
     {
         int32_t health{0};
         bool isJoined{false};
         bool isDead{false};
+        bool isArmed{false};
+        bool isAiming{false};
+        bool isLowered{false};
 
         friend bool operator==(const PlayerStatus&, const PlayerStatus&) = default;
     };

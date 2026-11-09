@@ -40,7 +40,8 @@ namespace lockstep::assets
 
     // Walks the default scene's node tree depth-first, children in order, and places every node.
     // Nodes whose world matrix has a zero scale are left out (with a warning if they hold a
-    // mesh); skinned nodes are kept in bind pose with a warning.
+    // mesh). Skinned mesh nodes are placed like any other; importers draw them through
+    // readSkinnedModels() (GltfSkins.hpp) instead of as static instances.
     // document: the glTF document.
     // scale:    uniform scale applied around the origin.
     // warnings: receives what was skipped or approximated.

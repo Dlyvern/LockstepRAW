@@ -12,6 +12,7 @@ const vec3 k_cascadeTints[4] = vec3[](vec3(1.0, 0.3, 0.3), vec3(0.3, 1.0, 0.3), 
 
 const float k_reflectionView = 1.0;
 const float k_reflectorSurface = 2.0;
+const float k_viewModelView = 3.0;
 const float k_reflectorAlignment = 0.995;
 
 layout(push_constant) uniform DrawConstants
@@ -265,12 +266,21 @@ vec4 planarReflectionAt(vec3 position, vec3 normal)
     return vec4(radiance, weight);
 }
 
-vec4 motionVector()
+// Screen-space motion (xy) and last frame's view depth (z) as TAA reads it back from the depth
+// buffer. Viewmodel depth is squeezed, so its z is the camera depth its squeezed depth decodes to.
+vec4 motionVector(bool isViewModel)
 {
     vec2 current = inCurrentClip.xy / inCurrentClip.w;
     vec2 previous = inPreviousClip.xy / inPreviousClip.w;
+    float previousDepth = max(inPreviousClip.w, 0.0);
 
-    return vec4((current - previous) * 0.5, max(inPreviousClip.w, 0.0), 0.0);
+    if (isViewModel && inPreviousClip.w > 0.0)
+    {
+        float squeezedDepth = inPreviousClip.z / inPreviousClip.w;
+        previousDepth = abs(frame.sceneDepthParams.y / (squeezedDepth + frame.sceneDepthParams.x));
+    }
+
+    return vec4((current - previous) * 0.5, previousDepth, 0.0);
 }
 
 void main()
@@ -400,9 +410,10 @@ void main()
         ambient *= 1.0 - fog;
     }
 
-    outVelocity = motionVector();
+    bool isViewModel = draw.flags.z == k_viewModelView;
+    outVelocity = motionVector(isViewModel);
 
-    if (isBlended || isReflectionView)
+    if (isBlended || isReflectionView || isViewModel)
     {
         outColor = vec4(color + ambient, isBlended ? baseColor.a : 1.0);
         outAmbient = vec4(0.0, 0.0, 0.0, isBlended ? baseColor.a : 1.0);

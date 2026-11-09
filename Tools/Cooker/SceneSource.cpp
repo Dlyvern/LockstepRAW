@@ -4,6 +4,7 @@
 #include "Assets/GltfNodes.hpp"
 #include "Assets/ImportWarnings.hpp"
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <unordered_map>
@@ -75,6 +76,12 @@ namespace lockstep::cooker
             {
                 cooked.baseColor = textureSlot(builder, sourceImage(pbr.base_color_texture), TextureUsage::Colour);
                 cooked.metallicRoughness = textureSlot(builder, metallicRoughness, TextureUsage::Data);
+
+                if (material->alpha_mode == cgltf_alpha_mode_mask && cooked.baseColor != assets::k_noTexture)
+                {
+                    float& cutoff = builder.scene.textures[cooked.baseColor].alphaCutoff;
+                    cutoff = cutoff < 0.0f ? material->alpha_cutoff : std::min(cutoff, material->alpha_cutoff);
+                }
             }
 
             cooked.normal = textureSlot(builder, sourceImage(material->normal_texture), TextureUsage::Normal);
@@ -146,7 +153,7 @@ namespace lockstep::cooker
                 builder.scene.lights.push_back(assets::toSceneLight(*node.light, placed));
             }
 
-            if (node.mesh == nullptr)
+            if (node.mesh == nullptr || node.skin != nullptr)
             {
                 return;
             }
@@ -181,12 +188,27 @@ namespace lockstep::cooker
         SourceBuilder builder{.scene = scene, .warnings = warnings, .textureSlots = {}, .materialSlots = {},
             .meshParts = {}};
 
-        for (const assets::PlacedNode& placed : assets::placeNodes(*scene.document, scale, warnings))
+        const std::vector<assets::PlacedNode> placedNodes = assets::placeNodes(*scene.document, scale, warnings);
+
+        for (const assets::PlacedNode& placed : placedNodes)
         {
             addNode(builder, placed);
         }
 
-        if (scene.instances.empty())
+        for (assets::GltfSkinnedModel& model : assets::readSkinnedModels(*scene.document, placedNodes, scale, warnings))
+        {
+            SourceSkinnedModel source{.model = std::move(model), .materials = {}};
+
+            for (const assets::SkinnedPart& part : source.model.parts)
+            {
+                source.materials.push_back(materialSlot(builder, part.material));
+            }
+
+            math::expand(scene.bounds, math::transformBounds(source.model.bindBounds, source.model.transform));
+            scene.skinnedModels.push_back(std::move(source));
+        }
+
+        if (scene.instances.empty() && scene.skinnedModels.empty())
         {
             return Error{ErrorCode::AssetLoadFailed, "cook: '" + std::string(path) + "' has no drawable triangles"};
         }
