@@ -28,7 +28,7 @@ namespace game
             return false;
         }
 
-        ammo.reloadSeconds = settings.reloadSeconds;
+        ammo.reloadSeconds = ammo.magazine <= 0 ? settings.emptyReloadSeconds : settings.reloadSeconds;
         return true;
     }
 

@@ -77,6 +77,30 @@ namespace game
     // name:    the spawn marker's node name.
     // Returns: the look.
     [[nodiscard]] GearLook mercGearLook(std::string_view name);
+
+    // Which character model a person is drawn with (all share the SWAT skeleton and clips).
+    // Presentation only; derived from the marker name like the GearLook, so both machines agree.
+    // Swat:     the SWAT operator (the players' model).
+    // Tactical: the tactical outfit, the other squad and police model.
+    // Robber:   the masked robber the mercs wear.
+    enum class NpcBody : uint8_t
+    {
+        Swat = 0,
+        Tactical,
+        Robber
+    };
+
+    inline constexpr std::size_t k_npcBodyCount{3};
+
+    // The body of a squad officer or police placeholder: a name part "_Swat" or "_Tactical" (any
+    // case), else the SWAT operator or the tactical outfit alternating by the marker's number (a
+    // hash of the name without one).
+    // name:    the marker's node name.
+    // Returns: the body.
+    [[nodiscard]] NpcBody squadBody(std::string_view name);
+
+    // Returns: the body every merc is drawn with (Robber).
+    [[nodiscard]] NpcBody mercBody();
 } //namespace game
 
 #endif //LOCKSTEP_GAME_CHARACTERS_GEAR_LOOKS_HPP

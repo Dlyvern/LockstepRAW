@@ -1,6 +1,9 @@
 #include "Player/PlayerStatus.hpp"
 
+#include "Player/PawnKick.hpp"
+
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 namespace game
@@ -17,13 +20,17 @@ namespace game
         constexpr std::byte k_slidingBit{0x40};
         constexpr std::byte k_downedBit{0x01};
         constexpr std::byte k_reloadingBit{0x02};
+        constexpr std::byte k_flashlightBit{0x04};
+        constexpr std::byte k_vaultingBit{0x08};
+        constexpr std::byte k_kickingBit{0x10};
+        constexpr float k_pitchStep{0.06f};
         constexpr std::byte k_combatBit{0x01};
         constexpr std::byte k_restartingBit{0x02};
         constexpr std::size_t k_gameFlagsOffset{k_playerStatusBytes - 1};
         constexpr int32_t k_maxEncodedValue{255};
         constexpr float k_reviveSteps{20.0f};
         constexpr std::size_t k_tagBytes{1};
-        constexpr std::size_t k_bytesPerPlayer{12};
+        constexpr std::size_t k_bytesPerPlayer{13};
 
         enum class Field : std::size_t
         {
@@ -38,7 +45,8 @@ namespace game
             DamageYaw,
             HitCount,
             KillCount,
-            ShotCount
+            ShotCount,
+            LookPitch
         };
 
         std::size_t at(std::size_t player, Field field)
@@ -60,6 +68,11 @@ namespace game
         {
             return (flags & flag) != std::byte{0};
         }
+
+        int8_t pitchSteps(float pitch)
+        {
+            return static_cast<int8_t>(std::clamp(std::lround(pitch / k_pitchStep), -127L, 127L));
+        }
     } //namespace
 
     PlayerStatus playerStatus(const Pawn& pawn, const DownedSettings& settings)
@@ -75,6 +88,8 @@ namespace game
             .isLowered = pawn.isArmed && pawn.isLowered,
             .isCrouched = isAlive && pawn.motion.stance != PawnStance::Stand,
             .isSliding = isAlive && isSliding(pawn.motion),
+            .isVaulting = isAlive && isVaulting(pawn.motion),
+            .isKicking = isAlive && isKicking(pawn.motion),
             .isDowned = isAlive && pawn.isDowned,
             .isReloading = isReloading(pawn.ammo),
             .bleedSeconds = static_cast<uint8_t>(std::clamp(static_cast<int32_t>(std::ceil(pawn.bleedSeconds)), 0,
@@ -86,7 +101,11 @@ namespace game
             .damageYaw = pawn.damageYaw,
             .hitCount = pawn.hitCount,
             .killCount = pawn.killCount,
-            .shotCount = static_cast<uint8_t>(pawn.shots)};
+            .shotCount = static_cast<uint8_t>(pawn.shots),
+            .isFlashlightOn = isAlive && pawn.isArmed && pawn.hasCommand && pawn.command.isFlashlightOn,
+            .lookPitch = isAlive && pawn.isArmed && pawn.hasCommand && pawn.command.isFlashlightOn
+                ? static_cast<float>(pitchSteps(pawn.command.pitch)) * k_pitchStep
+                : 0.0f};
     }
 
     std::array<std::byte, k_playerStatusBytes> encodeStatusMessage(const StatusMessage& message)
@@ -105,7 +124,9 @@ namespace game
                 | bit(status.isLowered, k_loweredBit) | bit(status.isCrouched, k_crouchedBit)
                 | bit(status.isSliding, k_slidingBit);
             bytes[at(index, Field::MoreFlags)] = bit(status.isDowned, k_downedBit)
-                | bit(status.isReloading, k_reloadingBit);
+                | bit(status.isReloading, k_reloadingBit) | bit(status.isFlashlightOn, k_flashlightBit)
+                | bit(status.isVaulting, k_vaultingBit) | bit(status.isKicking, k_kickingBit);
+            bytes[at(index, Field::LookPitch)] = std::bit_cast<std::byte>(pitchSteps(status.lookPitch));
             bytes[at(index, Field::Bleed)] = static_cast<std::byte>(status.bleedSeconds);
             bytes[at(index, Field::Revive)] = clampedByte(static_cast<int32_t>(std::lround(status.reviveProgress
                 * k_reviveSteps)));
@@ -147,6 +168,8 @@ namespace game
                 .isLowered = has(flags, k_loweredBit),
                 .isCrouched = has(flags, k_crouchedBit),
                 .isSliding = has(flags, k_slidingBit),
+                .isVaulting = has(moreFlags, k_vaultingBit),
+                .isKicking = has(moreFlags, k_kickingBit),
                 .isDowned = has(moreFlags, k_downedBit),
                 .isReloading = has(moreFlags, k_reloadingBit),
                 .bleedSeconds = valueAt(Field::Bleed),
@@ -157,7 +180,9 @@ namespace game
                 .damageYaw = valueAt(Field::DamageYaw),
                 .hitCount = valueAt(Field::HitCount),
                 .killCount = valueAt(Field::KillCount),
-                .shotCount = static_cast<uint8_t>(valueAt(Field::ShotCount))};
+                .shotCount = static_cast<uint8_t>(valueAt(Field::ShotCount)),
+                .isFlashlightOn = has(moreFlags, k_flashlightBit),
+                .lookPitch = static_cast<float>(std::bit_cast<int8_t>(byteAt(Field::LookPitch))) * k_pitchStep};
         }
 
         return message;

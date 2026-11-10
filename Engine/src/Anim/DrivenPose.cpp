@@ -25,7 +25,36 @@ namespace lockstep::anim
             return math::Vec3{math::length(matrix.getColumn(0).xyz()), math::length(matrix.getColumn(1).xyz()),
                 math::length(matrix.getColumn(2).xyz())};
         }
+        math::Mat4 turnedInPlace(const math::Mat4& matrix, const math::Quat& rotation)
+        {
+            math::Mat4 turned = math::toMatrix(math::Transform{.rotation = rotation}) * matrix;
+            turned.setColumn(3, matrix.getColumn(3));
+            return turned;
+        }
     } //namespace
+
+    void computeOffsetJointMatrices(const Skeleton& skeleton, const Pose& pose,
+        std::span<const JointRotationOffset> offsets, std::span<math::Mat4> model)
+    {
+        assert(pose.joints.size() == skeleton.joints.size() && model.size() == skeleton.joints.size());
+
+        const std::size_t count = std::min({skeleton.joints.size(), pose.joints.size(), model.size()});
+
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            const uint32_t parent = skeleton.joints[index].parent;
+            const math::Mat4& parentMatrix = parent < index ? model[parent] : skeleton.rootMatrix;
+            model[index] = parentMatrix * math::toMatrix(pose.joints[index]);
+
+            for (const JointRotationOffset& offset : offsets)
+            {
+                if (offset.joint == index)
+                {
+                    model[index] = turnedInPlace(model[index], offset.rotation);
+                }
+            }
+        }
+    }
 
     void computeDrivenJointMatrices(const Skeleton& skeleton, const Pose& pose, const math::Transform& placement,
         std::span<const DrivenJoint> driven, std::span<math::Mat4> model)

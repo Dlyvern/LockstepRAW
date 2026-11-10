@@ -293,6 +293,24 @@ namespace game
         return true;
     }
 
+    void flinchNpc(Npc& npc, lockstep::anim::Limb limb, int32_t damage, const NpcSettings& settings)
+    {
+        if (!isNpcAlive(npc))
+        {
+            return;
+        }
+
+        const bool isHead = limb == lockstep::anim::Limb::Head;
+        const bool isLeg = limb == lockstep::anim::Limb::ThighLeft || limb == lockstep::anim::Limb::ThighRight
+            || limb == lockstep::anim::Limb::ShinLeft || limb == lockstep::anim::Limb::ShinRight;
+        npc.flinchSeconds = std::max(npc.flinchSeconds, settings.flinchSeconds * (isHead ? 2.0f : 1.0f));
+
+        if (isLeg || damage >= settings.staggerDamage)
+        {
+            npc.staggerSeconds = std::max(npc.staggerSeconds, settings.staggerSeconds);
+        }
+    }
+
     bool damageNpc(NpcRoster& roster, std::size_t index, int32_t damage, const math::Vec3& source,
         const NpcTargetRef& attacker, world::Entities& entities, physics::PhysicsWorld& physics,
         const NpcSettings& settings)

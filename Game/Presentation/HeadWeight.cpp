@@ -67,6 +67,22 @@ namespace game
                 state.leanRate.x -= tuning.jumpPitch;
             }
 
+            if (input.isVaultStart)
+            {
+                state.leanRate.x -= tuning.vaultPitch;
+            }
+
+            if (input.isKickStart)
+            {
+                state.leanRate.x -= tuning.kickPitch;
+            }
+
+            if (input.isKickImpact)
+            {
+                state.leanRate.x += tuning.kickImpactPitch;
+                state.pushRate += tuning.kickPush;
+            }
+
             if (input.landSpeed >= tuning.landPitchMinSpeed)
             {
                 state.leanRate.x -= tuning.landPitch * input.landSpeed;
@@ -96,6 +112,7 @@ namespace game
         state.lean.x = math::clamp(state.lean.x, -tuning.leanLimit, tuning.leanLimit);
         state.lean.y = math::clamp(state.lean.y, -tuning.leanLimit, tuning.leanLimit);
         stepSpring(state.plant, state.plantRate, tuning.plantStiffness, tuning.plantDamping, seconds);
+        stepSpring(state.push, state.pushRate, tuning.pushStiffness, tuning.pushDamping, seconds);
 
         const float aimScale = input.isAiming ? tuning.aimLagScale : 1.0f;
         const float speed = input.isOnFeet ? math::length(input.planarVelocity) : 0.0f;
@@ -107,7 +124,8 @@ namespace game
         return HeadWeightPose{.pitch = state.lean.x + state.plant.y,
             .roll = state.lean.y + turnRoll * aimScale,
             .yawOffset = state.yawLag,
-            .drop = state.plant.x};
+            .drop = state.plant.x,
+            .forward = state.push};
     }
 
 #if LOCKSTEP_DEV_TOOLS
@@ -136,6 +154,12 @@ namespace game
         ImGui::SliderFloat("Footfall stiffness", &tuning.plantStiffness, 50.0f, 1000.0f);
         ImGui::SliderFloat("Footfall damping", &tuning.plantDamping, 1.0f, 80.0f);
         ImGui::SliderFloat("Jump take-off pitch (rad/s)", &tuning.jumpPitch, 0.0f, 1.0f);
+        ImGui::SliderFloat("Vault pitch (rad/s)", &tuning.vaultPitch, 0.0f, 1.5f);
+        ImGui::SliderFloat("Kick pitch (rad/s)", &tuning.kickPitch, 0.0f, 1.5f);
+        ImGui::SliderFloat("Kick strike pitch (rad/s)", &tuning.kickImpactPitch, -1.5f, 1.5f);
+        ImGui::SliderFloat("Kick push (m/s)", &tuning.kickPush, 0.0f, 3.0f);
+        ImGui::SliderFloat("Kick push stiffness", &tuning.pushStiffness, 10.0f, 600.0f);
+        ImGui::SliderFloat("Kick push damping", &tuning.pushDamping, 1.0f, 60.0f);
         ImGui::SliderFloat("Landing pitch (rad/s per m/s)", &tuning.landPitch, 0.0f, 0.3f);
         ImGui::SliderFloat("Landing pitch from (m/s)", &tuning.landPitchMinSpeed, 0.0f, 10.0f);
         ImGui::TreePop();

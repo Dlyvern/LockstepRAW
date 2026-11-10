@@ -184,7 +184,8 @@ namespace game
         float distance{0.0f};
     };
 
-    // Traces a ray against a ragdoll's capsules (frozen ones too) at their poses of this frame.
+    // Traces a ray against a ragdoll's capsules (frozen ones too) at their poses of this frame; bodies
+    // of severed limbs (attached, not drawn) are skipped.
     // ragdoll:     the ragdoll.
     // origin:      ray start.
     // direction:   unit ray direction.

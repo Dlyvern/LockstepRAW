@@ -30,6 +30,11 @@ namespace game
     // jumpPitch:     pitch rate (rad/s) the take-off of a jump adds (down).
     // landPitch:     pitch rate (rad/s) per m/s of fall speed a landing adds (down).
     // landPitchMinSpeed: falls slower than this (m/s) don't nod.
+    // vaultPitch:    pitch rate (rad/s) a vault adds as the hand plants (down).
+    // kickPitch:     pitch rate (rad/s) a kick adds as it starts (down, towards the leg).
+    // kickImpactPitch: pitch rate (rad/s) the kick's strike adds (up, the jolt back).
+    // kickPush:      forward eye speed (m/s) the strike adds (the body follows the leg).
+    // pushStiffness, pushDamping: the spring of that push.
     struct HeadWeightTuning
     {
         float accelPitch{0.06f};
@@ -50,11 +55,18 @@ namespace game
         float jumpPitch{0.25f};
         float landPitch{0.07f};
         float landPitchMinSpeed{2.5f};
+        float vaultPitch{0.45f};
+        float kickPitch{1.1f};
+        float kickImpactPitch{0.45f};
+        float kickPush{0.9f};
+        float pushStiffness{160.0f};
+        float pushDamping{16.0f};
     };
 
     // State of the weight reactions. Presentation only.
     // lean, leanRate:   (pitch, roll) lean in radians and its rate.
     // plant, plantRate: (drop in metres, pitch in radians) of the footfall plant and its rate.
+    // push, pushRate:   forward eye offset of a kick, metres, and its rate.
     // turnRate:         smoothed look turn rate, rad/s (positive turns left).
     // yawLag:           how far the view trails the look, radians.
     // lastVelocity:     planar velocity of the previous frame, m/s.
@@ -66,6 +78,8 @@ namespace game
         math::Vec2 leanRate{0.0f, 0.0f};
         math::Vec2 plant{0.0f, 0.0f};
         math::Vec2 plantRate{0.0f, 0.0f};
+        float push{0.0f};
+        float pushRate{0.0f};
         float turnRate{0.0f};
         float yawLag{0.0f};
         math::Vec3 lastVelocity{0.0f, 0.0f, 0.0f};
@@ -81,6 +95,9 @@ namespace game
     // footfalls:      footfalls this frame (from the head bob, the same that play footstep sounds).
     // stepStrength:   bob size relative to walking (HeadPose::bobStrength).
     // isTakeoff:      a jump left the ground this frame.
+    // isVaultStart:   a vault started this frame.
+    // isKickStart:    a kick started this frame.
+    // isKickImpact:   the kick struck this frame.
     // landSpeed:      fall speed of a landing this frame, m/s; 0 without one.
     // seconds:        Player time since the previous frame.
     struct HeadWeightInput
@@ -92,6 +109,9 @@ namespace game
         uint32_t footfalls{0};
         float stepStrength{0.0f};
         bool isTakeoff{false};
+        bool isVaultStart{false};
+        bool isKickStart{false};
+        bool isKickImpact{false};
         float landSpeed{0.0f};
         float seconds{0.0f};
     };
@@ -101,12 +121,14 @@ namespace game
     // roll:      radians added to the camera roll (positive tilts the right ear down).
     // yawOffset: radians added to the view yaw (the head trailing a turn).
     // drop:      metres added to the eye height (negative is down).
+    // forward:   metres the eye moves along the look (a kick's push).
     struct HeadWeightPose
     {
         float pitch{0.0f};
         float roll{0.0f};
         float yawOffset{0.0f};
         float drop{0.0f};
+        float forward{0.0f};
     };
 
     // Advances the weight reactions by one frame: leans into speed and direction changes, rolls

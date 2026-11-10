@@ -62,6 +62,7 @@ add_library(LockstepEngine STATIC
     src/Platform/Window.cpp
     src/Render/EnvironmentResources.cpp
     src/Render/FontAtlas.cpp
+    src/Render/FrameCapture.cpp
     src/Render/ExposurePasses.cpp
     src/Render/FrameCulling.cpp
     src/Render/FrameLighting.cpp
@@ -73,6 +74,7 @@ add_library(LockstepEngine STATIC
     src/Render/ParticleSystem.cpp
     src/Render/PbrResources.cpp
     src/Render/PlanarReflections.cpp
+    src/Render/PngWriter.cpp
     src/Render/PostPasses.cpp
     src/Render/PresentMode.cpp
     src/Render/Renderer.cpp

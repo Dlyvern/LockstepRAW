@@ -87,6 +87,14 @@ namespace lockstep::anim
         // deltaSeconds: elapsed presentation time.
         void update(const SkinnedModel& model, float deltaSeconds);
 
+        // Like update(), with rotations added on top of the animated pose (see
+        // computeOffsetJointMatrices()), e.g. procedural hit reactions. pose() stays the animated
+        // pose; the joint and skinning matrices include the offsets.
+        // model:        the model this instance animates (always the same one).
+        // deltaSeconds: elapsed presentation time.
+        // offsets:      the added rotations; empty for none.
+        void update(const SkinnedModel& model, float deltaSeconds, std::span<const JointRotationOffset> offsets);
+
         // Starts driving the pose from outside (e.g. a ragdoll): later updateDriven() calls fade
         // from the current joint matrices into the driven pose. update() may be called again
         // afterwards to go back to the animator.

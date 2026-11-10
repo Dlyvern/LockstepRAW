@@ -5,7 +5,6 @@
 #include "Presentation/Visuals.hpp"
 
 #include <Lockstep/Physics/PhysicsWorld.hpp>
-#include <Lockstep/Render/Lighting.hpp>
 #include <Lockstep/Render/Renderer.hpp>
 
 #include <algorithm>
@@ -30,17 +29,27 @@ namespace game
         constexpr float k_lyingSeconds{100.0f};
         constexpr float k_crouchedHeight{1.5f};
         constexpr float k_crouchSquash{0.72f};
-        constexpr float k_flashSeconds{0.05f};
-        constexpr float k_flashIntensity{60.0f};
-        constexpr float k_flashRange{6.0f};
-        constexpr math::Vec3 k_flashColour{1.0f, 0.72f, 0.38f};
-        constexpr float k_muzzleReach{0.7f};
-        constexpr float k_muzzleDrop{0.15f};
 
         float yawOf(const math::Quat& rotation)
         {
             const math::Vec3 forward = rotation * k_forward;
             return std::atan2(-forward.x, -forward.z);
+        }
+
+        ReactionRig& reactionRigFor(NpcLooks& looks, const anim::SkinnedModel& model)
+        {
+            for (ReactionRig& rig : looks.reactionRigs)
+            {
+                if (rig.model == &model)
+                {
+                    return rig;
+                }
+            }
+
+            const auto unused = std::ranges::find(looks.reactionRigs, nullptr, &ReactionRig::model);
+            ReactionRig& rig = unused != looks.reactionRigs.end() ? *unused : looks.reactionRigs.front();
+            resolveReactionRig(rig, model);
+            return rig;
         }
 
         NpcLook& lookFor(NpcLooks& looks, lockstep::world::EntityId entity, const NpcView& view)
@@ -57,29 +66,6 @@ namespace game
                 .deathSeconds = view.isDead ? k_lyingSeconds : 0.0f,
                 .shotCount = view.shotCount});
             return looks.looks.back();
-        }
-
-        void flashMuzzle(render::Renderer& renderer, NpcLook& look, const math::Transform& transform,
-            const NpcView& view, float seconds)
-        {
-            if (view.shotCount != look.shotCount)
-            {
-                look.shotCount = view.shotCount;
-                look.flashSeconds = k_flashSeconds;
-            }
-
-            if (look.flashSeconds <= 0.0f)
-            {
-                return;
-            }
-
-            look.flashSeconds -= seconds;
-            const math::Vec3 forward = transform.rotation * k_forward;
-            const math::Vec3 eye = transform.position + k_upAxis * (0.5f * transform.scale.y - 0.2f);
-            renderer.submitLight(render::PointLight{.position = eye + forward * k_muzzleReach - k_upAxis * k_muzzleDrop,
-                .color = k_flashColour,
-                .intensity = k_flashIntensity,
-                .range = k_flashRange});
         }
 
         NpcRagdoll* freezeCandidate(NpcLooks& looks, const NpcRagdoll* keep, uint32_t& simulating)
@@ -201,25 +187,29 @@ namespace game
     {
         NpcLook& look = lookFor(looks, entity, view);
         look.isDrawn = true;
-        flashMuzzle(renderer, look, transform, view, seconds);
+        look.shotCount = view.shotCount;
         const bool isMerc = archetype == Archetype::Merc;
 
-        if (characters == nullptr || !characters->armed)
+        const std::optional<NpcArmedView> armed = characters != nullptr ? npcArmedModel(*characters, view.body)
+                                                                         : std::nullopt;
+
+        if (!armed)
         {
             renderer.submit(visuals.cube, isMerc ? visuals.enemy : visuals.player1, transform);
             return;
         }
 
-        const ArmedCharacter& armed = *characters->armed;
-        const anim::SkinnedModel* model = &armed.body.skinned();
+        const anim::SkinnedModel* model = &armed->body->skinned();
         look.model = model;
-        look.gearParts = gearMask(armed.body.gearMasks, view.gearLook);
+        look.gearParts = gearMask(armed->body->gearMasks, look.isHeadBurst ? GearLook::Balaclava : view.gearLook);
         const math::Vec3 foot = transform.position - k_upAxis * (0.5f * transform.scale.y);
         const float yaw = yawOf(transform.rotation);
         const math::Quat facing = math::angleAxis(yaw + math::k_pi, k_upAxis);
 
         if (view.isDead)
         {
+            resetHitReaction(look.reaction);
+
             if (look.instance.jointMatrices().size() != model->skeleton.joints.size())
             {
                 look.instance.update(*model, 0.0f);
@@ -260,9 +250,10 @@ namespace game
         look.deathSeconds = 0.0f;
         look.isWeaponDropped = false;
         const anim::PartMask parts = npcBodyParts(looks, look);
-        const LocomotionSet& set = view.isAlert ? armed.aiming : armed.rifle;
+        const LocomotionSet& set = view.isAlert ? *armed->aiming : *armed->rifle;
         updateLocomotion(look.locomotion, set, look.instance.animator(), foot, yaw, seconds);
-        look.instance.update(*model, seconds);
+        updateHitReaction(look.reaction, reactionRigFor(looks, *model), looks.reactionTuning, seconds);
+        look.instance.update(*model, seconds, look.reaction.offsets);
         const float squash = transform.scale.y < k_crouchedHeight ? k_crouchSquash : 1.0f;
         look.modelTransform = math::Transform{.position = foot,
             .rotation = facing,
@@ -287,15 +278,18 @@ namespace game
 
     const HeldWeapon* npcHeldWeapon(NpcLooks& looks, const anim::SkinnedModel& model)
     {
-        if (looks.weaponModel != &model)
+        auto entry = std::ranges::find(looks.heldWeapons, &model, &NpcModelWeapon::model);
+
+        if (entry == looks.heldWeapons.end())
         {
-            looks.weaponModel = &model;
-            looks.heldWeapon = findHeldWeapon(model);
-            std::clog << "Game: NPC weapon " << (looks.heldWeapon ? "found" : "not found (it stays in the hand)")
+            entry = std::ranges::find(looks.heldWeapons, nullptr, &NpcModelWeapon::model);
+            entry = entry != looks.heldWeapons.end() ? entry : looks.heldWeapons.begin();
+            *entry = NpcModelWeapon{.model = &model, .weapon = findHeldWeapon(model)};
+            std::clog << "Game: NPC weapon " << (entry->weapon ? "found" : "not found (it stays in the hand)")
                       << " on model '" << model.name << "'\n";
         }
 
-        return looks.heldWeapon ? &*looks.heldWeapon : nullptr;
+        return entry->weapon ? &*entry->weapon : nullptr;
     }
 
     void dropNpcWeapon(lockstep::physics::PhysicsWorld& physics, NpcLooks& looks, NpcLook& look,
@@ -333,6 +327,20 @@ namespace game
         }
 
         pushNpcRagdoll(physics, looks.ragdolls, *look.model, look.instance, *look.ragdoll, body, impulse, point);
+    }
+
+    void reactToNpcHit(NpcLooks& looks, NpcLook& look, const ReactionHit& hit)
+    {
+        const bool isPosed = look.model != nullptr && look.instance.jointMatrices().size() == look.model->skeleton.joints.size();
+
+        if (!isPosed || look.ragdoll || look.deathSeconds > 0.0f || !looks.reactionTuning.isEnabled)
+        {
+            return;
+        }
+
+        const ReactionRig& rig = reactionRigFor(looks, *look.model);
+        static_cast<void>(pushHitReaction(look.reaction, rig, look.instance.jointMatrices(), look.modelTransform, hit,
+            looks.reactionTuning));
     }
 
     anim::PartMask npcBodyParts(NpcLooks& looks, const NpcLook& look)

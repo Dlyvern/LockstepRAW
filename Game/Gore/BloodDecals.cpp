@@ -26,6 +26,11 @@ namespace game
         constexpr float k_probeDepth{0.025f};
         constexpr float k_minimumAlignment{0.85f};
         constexpr float k_shrink{0.6f};
+        constexpr float k_maxRunNormalY{0.6f};
+        constexpr float k_runWidth{0.25f};
+        constexpr float k_runAbove{0.08f};
+        constexpr float k_minRun{0.15f};
+        constexpr math::Vec3 k_runAxis{0.0f, 0.0f, 1.0f};
         constexpr std::array<std::array<float, 2>, 8> k_footprint{{{k_footprintEdge, 0.0f}, {-k_footprintEdge, 0.0f},
             {0.0f, k_footprintEdge}, {0.0f, -k_footprintEdge}, {k_footprintCorner, k_footprintCorner},
             {-k_footprintCorner, k_footprintCorner}, {k_footprintCorner, -k_footprintCorner},
@@ -72,6 +77,50 @@ namespace game
             .rotation = rotationBetween(k_up, normal) * math::angleAxis(spin, k_up)};
     }
 
+    bool isPaintable(const BloodDecals& decals, const lockstep::physics::RaycastHit& hit)
+    {
+        return !hit.body.isNull()
+            && std::find(decals.unpaintable.begin(), decals.unpaintable.end(), hit.body) == decals.unpaintable.end();
+    }
+
+    bool isRunningSurface(const math::Vec3& normal)
+    {
+        return std::abs(normal.y) < k_maxRunNormalY;
+    }
+
+    void addWallRun(BloodDecals& decals, const lockstep::physics::PhysicsWorld& physics,
+        lockstep::render::MaterialHandle material, const math::Vec3& point, const math::Vec3& normal, float length,
+        float seconds, uint32_t maxDecals)
+    {
+        const math::Vec3 downhill = -k_up + normal * math::dot(k_up, normal);
+
+        if (!isRunningSurface(normal) || math::lengthSquared(downhill) < 1.0e-6f)
+        {
+            return;
+        }
+
+        const math::Vec3 down = math::normalize(downhill);
+        const math::Quat lay = rotationBetween(k_up, normal);
+        const math::Vec3 laidAxis = lay * k_runAxis;
+        const float spin = std::atan2(math::dot(math::cross(laidAxis, down), normal), math::dot(laidAxis, down));
+        BloodDecal run{.material = material,
+            .position = point + normal * k_lift - down * (k_runAbove * length),
+            .rotation = math::angleAxis(spin, normal) * lay,
+            .size = length,
+            .stretch = k_runWidth,
+            .runSeconds = std::max(seconds, 0.01f)};
+        BloodDecal middle = run;
+        middle.position = run.position + down * (0.5f * length);
+
+        if (!fitDecal(physics, middle, k_minRun))
+        {
+            return;
+        }
+
+        run.size = middle.size;
+        addDecal(decals, run, maxDecals);
+    }
+
     bool fitDecal(const lockstep::physics::PhysicsWorld& physics, BloodDecal& decal, float minSize)
     {
         for (float size = decal.size; size >= minSize; size *= k_shrink)
@@ -111,10 +160,29 @@ namespace game
         }
     }
 
-    void drawDecals(lockstep::render::Renderer& renderer, const BloodDecals& decals, lockstep::render::MeshHandle quad)
+    void drawDecals(lockstep::render::Renderer& renderer, const BloodDecals& decals, lockstep::render::MeshHandle quad,
+        std::span<const lockstep::render::MeshHandle> runQuads)
     {
         for (const BloodDecal& decal : decals.decals)
         {
+            if (decal.runSeconds > 0.0f)
+            {
+                if (runQuads.empty())
+                {
+                    continue;
+                }
+
+                const float flow = std::min(decal.age / decal.runSeconds, 1.0f);
+                const float eased = 1.0f - (1.0f - flow) * (1.0f - flow);
+                const auto steps = static_cast<float>(runQuads.size());
+                const auto step = static_cast<std::size_t>(std::clamp(std::ceil(eased * steps), 1.0f, steps)) - 1;
+                renderer.submitDecal(runQuads[step], decal.material, math::Transform{
+                    .position = decal.position + decal.rotation * k_runAxis * (0.5f * decal.size),
+                    .rotation = decal.rotation,
+                    .scale = math::Vec3{decal.size * decal.stretch, 1.0f, decal.size}});
+                continue;
+            }
+
             float grow = 1.0f;
 
             if (decal.growSeconds > 0.0f)

@@ -2,9 +2,11 @@
 #define LOCKSTEP_GAME_GORE_BLOOD_DECALS_HPP
 
 #include <Lockstep/Core/Math.hpp>
+#include <Lockstep/Physics/PhysicsTypes.hpp>
 #include <Lockstep/Render/Resources.hpp>
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace lockstep::physics
@@ -29,6 +31,9 @@ namespace game
     // stretch:     length over width along the quad's x (1 round, more for smears).
     // growSeconds: World seconds it takes to reach full size (pools); 0 for at once.
     // age:         World seconds since it was laid.
+    // runSeconds:  for a run down a wall, World seconds it takes to flow its full length (its
+    //              position is then the top of the run and its quad +Z points down the wall);
+    //              0 for an ordinary decal.
     struct BloodDecal
     {
         lockstep::render::MaterialHandle material{};
@@ -38,13 +43,22 @@ namespace game
         float stretch{1.0f};
         float growSeconds{0.0f};
         float age{0.0f};
+        float runSeconds{0.0f};
     };
 
     // Every blood decal of the level, oldest first (later ones draw over earlier ones).
+    // decals:      the decals.
+    // unpaintable: bodies blood never lands on (the level's invisible blockers).
     struct BloodDecals
     {
         std::vector<BloodDecal> decals;
+        std::vector<lockstep::physics::BodyId> unpaintable;
     };
+
+    // decals:  the decals (their unpaintable bodies).
+    // hit:     a raycast hit.
+    // Returns: true if blood may land there: level geometry that is drawn.
+    [[nodiscard]] bool isPaintable(const BloodDecals& decals, const lockstep::physics::RaycastHit& hit);
 
     // Returns the rotation turning one unit direction onto another (the shortest arc).
     // from, to: unit directions.
@@ -58,6 +72,25 @@ namespace game
     // Returns: a decal at `point` lifted off the surface, with its rotation set (material and
     //          size still to fill in).
     [[nodiscard]] BloodDecal decalOnSurface(const math::Vec3& point, const math::Vec3& normal, float spin);
+
+    // normal:  a unit surface normal.
+    // Returns: true if blood runs down the surface (a wall or a steep slope).
+    [[nodiscard]] bool isRunningSurface(const math::Vec3& normal);
+
+    // Lays a run of blood flowing down a wall from an impact: it starts at `point` and is revealed
+    // downwards over `seconds` (World time, so bullet-time slows it), then stays. Skipped when the
+    // wall below is too small for it.
+    // decals:    the decals.
+    // physics:   the physics world, to fit it onto the wall.
+    // material:  a run material (impact at the texture's top, runs below).
+    // point:     the impact point on the wall.
+    // normal:    the wall's unit normal (isRunningSurface()).
+    // length:    full length of the run, metres (its width is a quarter of it).
+    // seconds:   World seconds it takes to flow.
+    // maxDecals: most decals kept.
+    void addWallRun(BloodDecals& decals, const lockstep::physics::PhysicsWorld& physics,
+        lockstep::render::MaterialHandle material, const math::Vec3& point, const math::Vec3& normal, float length,
+        float seconds, uint32_t maxDecals);
 
     // Fits a decal onto the surface it was placed on, so it never hangs off the edge of a small
     // object (a chair, a crate, a bed frame): rays around its footprint must all hit level
@@ -82,11 +115,14 @@ namespace game
     // seconds: World seconds since the last frame.
     void updateDecals(BloodDecals& decals, float seconds);
 
-    // Queues every decal for the next render() with Renderer::submitDecal().
+    // Queues every decal for the next render() with Renderer::submitDecal(); a run shows as much
+    // of itself as has flowed so far.
     // renderer: the renderer.
     // decals:   the decals.
     // quad:     a unit quad in the XZ plane facing +Y.
-    void drawDecals(lockstep::render::Renderer& renderer, const BloodDecals& decals, lockstep::render::MeshHandle quad);
+    // runQuads: the quad's top parts in growing steps (BloodAssets::runQuads); empty skips runs.
+    void drawDecals(lockstep::render::Renderer& renderer, const BloodDecals& decals, lockstep::render::MeshHandle quad,
+        std::span<const lockstep::render::MeshHandle> runQuads);
 } //namespace game
 
 #endif //LOCKSTEP_GAME_GORE_BLOOD_DECALS_HPP

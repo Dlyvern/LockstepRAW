@@ -2,11 +2,13 @@
 #define LOCKSTEP_GAME_GORE_GORE_HPP
 
 #include "Gore/BloodAssets.hpp"
+#include "Gore/BloodBursts.hpp"
 #include "Gore/BloodDecals.hpp"
 #include "Gore/BloodSpray.hpp"
 #include "Gore/CorpseHits.hpp"
 #include "Gore/GoreEvents.hpp"
 #include "Gore/GoreRandom.hpp"
+#include "Gore/HeadBursts.hpp"
 #include "Gore/SeveredLimbs.hpp"
 #include "Npcs/NpcPresentation.hpp"
 
@@ -33,6 +35,7 @@ namespace game
     // hitDroplets:    droplets a hit throws (a sever throws three times as many).
     // bleedSeconds:   World seconds a stump and a piece drip.
     // dripInterval:   World seconds between drips of one wound.
+    // runs:           blood running down walls under splatters.
     struct GoreTuning
     {
         uint32_t maxPieces{24};
@@ -41,12 +44,13 @@ namespace game
         uint32_t maxDecals{320};
         float splatterSize{1.0f};
         float splatterReach{3.0f};
-        float poolSize{1.8f};
+        float poolSize{1.2f};
         float poolSeconds{9.0f};
         uint32_t maxDroplets{400};
         uint32_t hitDroplets{18};
         float bleedSeconds{12.0f};
         float dripInterval{0.09f};
+        WallRunTuning runs{};
     };
 
     // A stump that still bleeds.
@@ -75,6 +79,9 @@ namespace game
     // random:      for drips and smears (event looks use their own seed).
     // eye:         where the camera was last frame (the dev panel's "nearest NPC").
     // corpseShots: the local player's shots already traced against dead bodies.
+    // bursts:      how the particle blood of a hit looks.
+    // burstEffects: the blood particle effects (in the game's particle system).
+    // headBursts:  gibs, spurting necks and the look of head bursts.
     struct GoreState
     {
         GoreTuning tuning{};
@@ -89,10 +96,14 @@ namespace game
         GoreRandom random{};
         math::Vec3 eye{0.0f, 0.0f, 0.0f};
         CorpseShots corpseShots{};
+        BloodBurstTuning bursts{};
+        BloodBurstEffects burstEffects{};
+        HeadBursts headBursts{};
     };
 
-    // Shows this frame's gore: applies pending events (bursts, splatters behind hits, severed
-    // limbs on the NPC hit; a hit on a dead body also pushes that body part of this machine's
+    // Shows this frame's gore: applies pending events (droplets and particle blood scaled by the
+    // hit's damage, bigger for head hits, splatters behind hits, a flinch of a living NPC, severed
+    // limbs on the NPC hit, head bursts; a hit on a dead body also pushes that body part of this machine's
     // ragdoll unless this machine fired it; a severed arm drops the weapon it held), lays pools under fresh bodies, lets stumps and pieces drip, moves
     // droplets and pieces, and queues everything for drawing; a ragdoll of a body missing limbs
     // loses the bodies of those limbs. Call after the NPCs are drawn.

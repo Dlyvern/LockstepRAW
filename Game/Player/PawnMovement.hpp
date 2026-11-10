@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_PLAYER_PAWN_MOVEMENT_HPP
 #define LOCKSTEP_GAME_PLAYER_PAWN_MOVEMENT_HPP
 
+#include "Player/KickSettings.hpp"
 #include "Player/PlayerCommand.hpp"
 
 #include <Lockstep/Core/Math.hpp>
@@ -61,6 +62,11 @@ namespace game
     // mantleTicks:    while mantling, the ticks of its forward part left (it first rises to
     //                 mantleHeight); 0 while not mantling.
     // mantleHeight:   the foot height a mantle rises to, metres (world y).
+    // isVaulting:     the mantle is a vault: it rises to mantleHeight (just above the obstacle),
+    //                 crosses it at planarVelocity for mantleTicks and then drops on the far side.
+    // isKickHeld:     the previous command held kick (a rising edge kicks).
+    // kickTicks:      ticks since the kick started, counting from 1; 0 while not kicking.
+    // kickCooldownTicks: ticks until the next kick may start.
     struct PawnMotion
     {
         float verticalSpeed{0.0f};
@@ -78,8 +84,50 @@ namespace game
         uint8_t sprintRecoverTicks{0};
         uint8_t mantleTicks{0};
         float mantleHeight{0.0f};
+        bool isVaulting{false};
+        bool isKickHeld{false};
+        uint8_t kickTicks{0};
+        uint8_t kickCooldownTicks{0};
 
         friend bool operator==(const PawnMotion&, const PawnMotion&) = default;
+    };
+
+    // How a pawn vaults over a thin waist-high obstacle (a road barrier, a railing, a low wall):
+    // a jump press while moving forward close to it goes over in one motion instead of jumping.
+    // minHeight, maxHeight: obstacle top heights above the feet that can be vaulted, metres.
+    // reach:        how far in front of the capsule the obstacle is found, metres, plus
+    //               reachPerSpeed for each m/s of planar speed.
+    // reachPerSpeed: see reach.
+    // maxThickness: thickest obstacle vaulted, metres; a thicker one is mantled onto instead.
+    // clearance:    how far the feet pass above the top, metres.
+    // landMargin:   room kept between the capsule and the far face when landing, metres.
+    // sprintDistance: extra landing distance per m/s of speed above walking, metres (a sprint
+    //               vault goes further).
+    // maxDrop:      deepest floor below the feet on the far side, metres.
+    // riseSpeed:    upward speed of the hop onto the top, m/s, plus riseSpeedPerSpeed for each
+    //               m/s of speed above walking. The pawn keeps moving forward while it rises
+    //               (up to the obstacle's face).
+    // riseSpeedPerSpeed: see riseSpeed.
+    // minSpeed, maxSpeed: the speed the obstacle is crossed at: the entry speed, clamped.
+    // exitScale:    planar speed kept when the pawn drops off the far side, as a fraction.
+    // exitDropSpeed: downward speed the drop starts with, m/s.
+    struct VaultSettings
+    {
+        float minHeight{0.45f};
+        float maxHeight{1.3f};
+        float reach{0.55f};
+        float reachPerSpeed{0.07f};
+        float maxThickness{0.9f};
+        float clearance{0.08f};
+        float landMargin{0.12f};
+        float sprintDistance{0.05f};
+        float maxDrop{1.5f};
+        float riseSpeed{6.5f};
+        float riseSpeedPerSpeed{0.6f};
+        float minSpeed{4.2f};
+        float maxSpeed{7.5f};
+        float exitScale{0.85f};
+        float exitDropSpeed{1.5f};
     };
 
     // Pawn movement and health settings, the simulation tunables of movement. Speeds are metres
@@ -130,6 +178,8 @@ namespace game
     // mantleRiseSpeed: upward speed while mantling, m/s.
     // mantleForwardDistance: how far the pawn moves onto the ledge after rising, metres.
     // mantleForwardSeconds: how long that takes.
+    // vault:        vaulting over thin obstacles (tried before a mantle).
+    // kick:         the front kick.
     // gravity:      downward acceleration while airborne, in m/s^2.
     // groundStick:  downward speed kept while grounded, so the pawn follows steps and ramps down.
     // maxHealth:    hit points after (re)spawning.
@@ -151,7 +201,7 @@ namespace game
         float slideSeconds{0.75f};
         float slideCooldown{0.6f};
         float slideMinSpeed{4.6f};
-        float slideSteerRate{1.5f};
+        float slideSteerRate{0.0f};
         float acceleration{40.0f};
         float runAcceleration{14.0f};
         float deceleration{26.0f};
@@ -171,11 +221,13 @@ namespace game
         float leanClearance{0.2f};
         float sprintRecoverSeconds{0.15f};
         float mantleMinHeight{0.4f};
-        float mantleMaxHeight{1.1f};
+        float mantleMaxHeight{1.3f};
         float mantleReach{0.6f};
         float mantleRiseSpeed{5.5f};
         float mantleForwardDistance{0.7f};
         float mantleForwardSeconds{0.12f};
+        VaultSettings vault{};
+        KickSettings kick{};
         float gravity{20.0f};
         float groundStick{4.5f};
         int32_t maxHealth{100};
@@ -187,7 +239,8 @@ namespace game
     // a speed burst that decays over PawnSettings::slideSeconds with limited steering, then
     // continues as a crouch), jumps (a buffered press, with coyote time; from a crouch or a slide
     // only where standing up fits; a slide keeps its speed into the jump), mantles or vaults
-    // instead when the press meets a ledge in front while moving forward (PawnMantle.hpp), falls (a hard landing
+    // instead when the press meets a thin obstacle (PawnVault.hpp) or a ledge (PawnMantle.hpp) in
+    // front while moving forward, falls (a hard landing
     // slows it for a moment), climbs steps and ramps, and leans (updateLean()). The one movement
     // rule, used by the host for every pawn and by the client to predict and replay its own.
     // motion:     the pawn's velocity, grounding, stance and slide timers, updated.
@@ -240,6 +293,10 @@ namespace game
     // motion:  a pawn's motion.
     // Returns: true while it mantles or vaults.
     [[nodiscard]] bool isMantling(const PawnMotion& motion);
+
+    // motion:  a pawn's motion.
+    // Returns: true while it vaults (a kind of mantle).
+    [[nodiscard]] bool isVaulting(const PawnMotion& motion);
 
     // motion:  a pawn's motion.
     // Returns: true while it slides.

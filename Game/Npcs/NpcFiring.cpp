@@ -1,5 +1,6 @@
 #include "Npcs/NpcFiring.hpp"
 
+#include "Breakables/BreakableGlass.hpp"
 #include "Npcs/NpcRoster.hpp"
 
 #include <Lockstep/Physics/PhysicsWorld.hpp>
@@ -53,7 +54,7 @@ namespace game
         const NpcSettings& settings = world.settings;
         npc.fireCooldown = std::max(npc.fireCooldown - world.delta, 0.0f);
 
-        if (npc.fireCooldown > 0.0f || npc.rounds <= 0 || world.delta <= 0.0f)
+        if (npc.fireCooldown > 0.0f || npc.flinchSeconds > 0.0f || npc.rounds <= 0 || world.delta <= 0.0f)
         {
             return false;
         }
@@ -74,8 +75,16 @@ namespace game
 
         const math::Vec3 direction = aimError(offset * (1.0f / distance), spreadFor(npc, target, settings),
             roster.random);
-        const std::optional<physics::RaycastHit> hit = world.physics.raycast(eye, direction, k_range,
+        std::optional<physics::RaycastHit> hit = world.physics.raycast(eye, direction, k_range,
             physics::RaycastIgnore{.controller = npc.controller});
+        std::size_t panes = 0;
+
+        while (hit && hit->controller.isNull() && world.shatter && panes < k_maxPanesPerShot
+            && world.shatter(hit->body, hit->point, direction))
+        {
+            ++panes;
+            hit = world.physics.raycast(eye, direction, k_range, physics::RaycastIgnore{.controller = npc.controller});
+        }
         const math::Vec3 end = hit ? hit->point : eye + direction * k_range;
 
         if (hit && !hit->controller.isNull())

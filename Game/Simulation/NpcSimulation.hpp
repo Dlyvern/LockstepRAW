@@ -28,17 +28,20 @@ namespace game
     void clearLevelNpcs(lockstep::app::GameState& state, lockstep::app::EngineContext& engine);
 
     // Host: what a player's shot did to the NPCs: the shot is heard and suppresses NPCs it passes;
-    // when it struck a merc's controller the merc takes NpcSettings::playerDamage (squad officers
-    // take no friendly fire) and the shooter's hit and kill counters count it.
-    // state:      the game state.
-    // engine:     Engine services.
-    // pawnIndex:  the shooter.
-    // origin:     the shooter's eyes.
-    // end:        where the shot stopped.
-    // controller: the controller it struck, if any.
-    // Returns:    true if it struck an NPC (merc or squad).
+    // when it struck a merc's controller the merc takes NpcSettings::playerDamage times
+    // `damageScale` (at least 1; squad officers take no friendly fire) and the shooter's hit and
+    // kill counters count it. A round that went through walls calls this once per path segment.
+    // state:       the game state.
+    // engine:      Engine services.
+    // pawnIndex:   the shooter.
+    // origin:      where this piece of the shot starts (the shooter's eyes, or a far face).
+    // end:         where it stopped.
+    // controller:  the controller it struck, if any.
+    // damageScale: damage left after penetrations (1 for an unbroken round).
+    // Returns:     true if it struck an NPC (merc or squad).
     bool shootNpcs(lockstep::app::GameState& state, lockstep::app::EngineContext& engine, std::size_t pawnIndex,
-        const math::Vec3& origin, const math::Vec3& end, lockstep::physics::ControllerId controller);
+        const math::Vec3& origin, const math::Vec3& end, lockstep::physics::ControllerId controller,
+        float damageScale = 1.0f);
 
     // Host: clears the shots heard last tick. Call at the start of the tick, before anyone fires.
     // state: the game state.

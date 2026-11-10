@@ -49,7 +49,8 @@ namespace game
         const math::Transform& localPawn, const FirstPersonLook& look, float playerSeconds);
 
     // Draws the first-person weapon of an armed local player, or hides it. While a reload runs
-    // the weapon dips into the lowered pose (a procedural stand-in for a reload clip).
+    // the viewmodel plays its reload clip (tactical or empty, stretched to the reload time), or
+    // dips into the lowered pose when the model has no reload clips.
     // state:         the game state.
     // engine:        Engine services.
     // eye:           the camera position, or nothing without a local pawn.

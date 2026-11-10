@@ -34,17 +34,42 @@ namespace game
         {
             const float slideTarget = look.isSliding ? 1.0f : 0.0f;
             pawn.slideBlend += (slideTarget - pawn.slideBlend) * (1.0f - std::exp(-tuning.slideBlendRate * deltaSeconds));
+            const float vaultTarget = look.isVaulting ? 1.0f : 0.0f;
+            pawn.vaultBlend += (vaultTarget - pawn.vaultBlend) * (1.0f - std::exp(-tuning.vaultBlendRate * deltaSeconds));
             const float crouch = hasCrouchClips ? 0.0f : math::clamp(look.crouch, 0.0f, 1.0f);
-            const float squash = std::max(1.0f - tuning.crouchSquash * crouch - tuning.slideSquash * pawn.slideBlend,
-                k_minSquash);
+            const float squash = std::max(1.0f - tuning.crouchSquash * crouch - tuning.slideSquash * pawn.slideBlend
+                    - tuning.vaultSquash * pawn.vaultBlend, k_minSquash);
 
             const math::Quat facing = math::angleAxis(yaw, k_upAxis);
+            const math::Quat vault = math::angleAxis(tuning.vaultRoll * pawn.vaultBlend, facing * k_pawnBack)
+                * math::angleAxis(-tuning.vaultLean * pawn.vaultBlend, facing * k_modelRight);
+            const math::Vec3 pivot = k_upAxis * (tuning.vaultPivot * squash);
 
-            return math::Transform{.position = foot,
-                .rotation = math::angleAxis(-leanRoll, facing * k_pawnBack)
+            return math::Transform{.position = foot + pivot - vault * pivot,
+                .rotation = vault * math::angleAxis(-leanRoll, facing * k_pawnBack)
                     * math::angleAxis(yaw + math::k_pi, k_upAxis)
                     * math::angleAxis(-tuning.slideLean * pawn.slideBlend, k_modelRight),
                 .scale = math::Vec3{1.0f, squash, 1.0f}};
+        }
+
+        void updateKickTimer(PawnCharacter& pawn, const KickPoseTuning& tuning, const PawnLook& look,
+            float deltaSeconds)
+        {
+            if (look.isKicking && !pawn.wasKicking)
+            {
+                pawn.kickSeconds = 0.0f;
+            }
+            else if (pawn.kickSeconds >= 0.0f)
+            {
+                pawn.kickSeconds += deltaSeconds;
+            }
+
+            if (pawn.kickSeconds > tuning.seconds)
+            {
+                pawn.kickSeconds = -1.0f;
+            }
+
+            pawn.wasKicking = look.isKicking;
         }
 
         void logStrides(std::string_view label, const anim::SkinnedModel& model, const LocomotionSet& set)
@@ -178,6 +203,7 @@ namespace game
 
         characters.armed = loadArmed(renderer, files);
         characters.firstPerson = loadFirstPerson(renderer, files);
+        characters.npcBodies = loadNpcBodies(renderer, files, k_pawnCharacter.rifle, k_pawnCharacter.aiming);
 
         return characters;
     }
@@ -234,9 +260,23 @@ namespace game
         pawn.isDrawn = true;
         pawn.isArmedModel = armed != nullptr;
         updateLocomotion(pawn.locomotion, set, pawn.instance.animator(), foot, yaw, deltaSeconds);
-        pawn.instance.update(model, deltaSeconds);
+        resolveReactionRig(pawn.reactionRig, model);
+        updateHitReaction(pawn.reaction, pawn.reactionRig, characters->reactionTuning, deltaSeconds);
+
+        if (firstPerson != nullptr)
+        {
+            resetHitReaction(pawn.reaction);
+        }
+
+        updateKickTimer(pawn, characters->kickPose, look, deltaSeconds);
+        const float kickExtension = appendKickOffsets(pawn.reaction.offsets, pawn.reactionRig, characters->kickPose,
+            pawn.kickSeconds);
+
+        pawn.instance.update(model, deltaSeconds, pawn.reaction.offsets);
         const math::Transform placement = posedTransform(pawn, characters->pose, foot, yaw, pawnLeanRoll(transform),
             look, armed == nullptr && characters->crouch.has_value(), deltaSeconds);
+        pawn.placement = placement;
+        pawn.yaw = yaw;
         pawn.instance.submit(renderer, model, placement, layers,
             gearMask(armed != nullptr ? armed->body.gearMasks : characters->unarmed.gearMasks, playerGearLook(owner)));
 
@@ -254,9 +294,24 @@ namespace game
         {
             const float crouch = look.isSliding ? 1.0f : look.crouch;
             pawn.instance.submit(renderer, model,
-                firstPersonBodyPlacement(placement, characters->firstPersonBody, *firstPerson, crouch),
+                firstPersonBodyPlacement(placement, characters->firstPersonBody, *firstPerson, crouch, kickExtension),
                 k_firstPersonBodyLayer, parts);
         }
+    }
+
+    void reactToPawnHit(PawnCharacters& characters, world::EntityOwner owner, const ReactionHit& hit)
+    {
+        PawnCharacter& pawn = characters.pawns[pawnIndex(owner)];
+        const bool isPosed = pawn.reactionRig.model != nullptr
+            && pawn.instance.jointMatrices().size() == pawn.reactionRig.model->skeleton.joints.size();
+
+        if (!pawn.isDrawn || !isPosed || !characters.reactionTuning.isEnabled)
+        {
+            return;
+        }
+
+        static_cast<void>(pushHitReaction(pawn.reaction, pawn.reactionRig, pawn.instance.jointMatrices(),
+            pawn.placement, hit, characters.reactionTuning));
     }
 
     float pawnCharacterSpeed(const PawnCharacters& characters, world::EntityOwner owner)
@@ -302,6 +357,10 @@ namespace game
                 pawn.instance.animator().phase());
         }
 
+        ImGui::PushID("pawnReactions");
+        hitReactionDevSection(characters->reactionTuning);
+        ImGui::PopID();
+
         if (ImGui::TreeNode("Crouch / slide stand-in pose"))
         {
             PawnPoseTuning& pose = characters->pose;
@@ -310,10 +369,16 @@ namespace game
             ImGui::SliderFloat("Slide squash", &pose.slideSquash, 0.0f, 0.6f);
             ImGui::SliderFloat("Slide lean (rad)", &pose.slideLean, -1.0f, 1.0f);
             ImGui::SliderFloat("Slide blend rate", &pose.slideBlendRate, 1.0f, 30.0f);
+            ImGui::SliderFloat("Vault roll (rad)", &pose.vaultRoll, -1.2f, 1.2f);
+            ImGui::SliderFloat("Vault lean (rad)", &pose.vaultLean, -1.0f, 1.0f);
+            ImGui::SliderFloat("Vault squash", &pose.vaultSquash, 0.0f, 0.6f);
+            ImGui::SliderFloat("Vault pivot (m)", &pose.vaultPivot, 0.0f, 1.6f);
+            ImGui::SliderFloat("Vault blend rate", &pose.vaultBlendRate, 1.0f, 40.0f);
             ImGui::TreePop();
         }
 
         firstPersonBodyDevSection(characters->firstPersonBody);
+        kickPoseDevSection(characters->kickPose);
 
         if (characters->firstPerson)
         {

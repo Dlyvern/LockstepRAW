@@ -1,6 +1,8 @@
 #ifndef LOCKSTEP_GAME_PLAYER_PLAYER_COMMAND_HPP
 #define LOCKSTEP_GAME_PLAYER_PLAYER_COMMAND_HPP
 
+#include "Weapons/FireModes.hpp"
+#include "Weapons/Recoil.hpp"
 #include "Weapons/WeaponStance.hpp"
 
 #include <Lockstep/Core/Math.hpp>
@@ -17,7 +19,7 @@ namespace game
     namespace math = lockstep::math;
 
     // Bytes an encoded PlayerCommand takes.
-    inline constexpr std::size_t k_playerCommandBytes{15};
+    inline constexpr std::size_t k_playerCommandBytes{19};
 
     // What one player wants to do this tick. The client sends it to the host every tick; the host
     // builds its own player's from local input. The host simulates both players from these.
@@ -41,6 +43,11 @@ namespace game
     // lean:       -1 while leaning left (Q), 1 right (E), 0 upright.
     // reloadCount: reload presses (R) so far, wrapping at 256; counted like `shotCount`.
     // isInteractHeld: the player holds interact (F), e.g. to revive a downed partner.
+    // aimOffset:  (yaw, pitch) radians from the look to where the shot goes: the sight line of the
+    //             drawn weapon (sway, weapon kick) and the camera's head motion, as the shooter
+    //             saw them. The host clamps it (SpreadSettings::maxAimOffset); see shotDirection().
+    // isFlashlightOn: the weapon flashlight is on (replicated to the partner via PlayerStatus).
+    // kick:       the player holds kick (V). A fresh press kicks (see PawnKick.hpp).
     struct PlayerCommand
     {
         math::Vec2 move{0.0f, 0.0f};
@@ -58,6 +65,9 @@ namespace game
         int8_t lean{0};
         uint8_t reloadCount{0};
         bool isInteractHeld{false};
+        math::Vec2 aimOffset{0.0f, 0.0f};
+        bool isFlashlightOn{false};
+        bool kick{false};
     };
 
     // The local player's look, shot and interact counters, kept between ticks to build
@@ -68,6 +78,9 @@ namespace game
     // wantsLowered:  the lower toggle; fire or aim clears it to raise the weapon.
     // isCrouchToggled: the crouch toggle (C); a fresh press of run (Shift) or jump (Space) clears it.
     // reloadCount:   reload presses so far, wrapping at 256.
+    // trigger:       fire mode, cadence and predicted rounds.
+    // recoil:        the camera recoil, added to the look in each command.
+    // isFlashlightOn: the flashlight toggle.
     struct LocalControls
     {
         float yaw{0.0f};
@@ -77,10 +90,24 @@ namespace game
         bool wantsLowered{false};
         bool isCrouchToggled{false};
         uint8_t reloadCount{0};
+        Trigger trigger{};
+        RecoilState recoil{};
+        bool isFlashlightOn{false};
     };
 
     // The key that lowers or raises the weapon.
     inline constexpr lockstep::platform::Key k_lowerWeaponKey{lockstep::platform::Key::X};
+
+    // The fire and aim buttons of one tick.
+    // isPressed: fire was pressed this tick.
+    // isHeld:    fire is held.
+    // isAiming:  aim is held.
+    struct FireButtons
+    {
+        bool isPressed{false};
+        bool isHeld{false};
+        bool isAiming{false};
+    };
 
     // What decides how fire, aim and the lower key act this tick, as the local machine predicts it.
     // isArmed:      the player carries a weapon (as last replicated).
@@ -90,16 +117,31 @@ namespace game
     // isReady:      the weapon may fire (not running or just stopped, isWeaponReady() of the
     //               local pawn as last simulated or predicted); a click while not ready is ignored,
     //               as the host would ignore the shot.
-    // hasRounds:    the magazine has rounds and no reload runs (as last replicated); a click on an
-    //               empty magazine asks for a reload instead of firing.
+    // magazine:     rounds in the magazine (as last replicated); the trigger predicts its own
+    //               shots on top, and a click on an empty magazine asks for a reload instead.
+    // isReloading:  a reload runs (as last replicated).
+    // fire:         the fire rate (host settings).
+    // recoil:       the camera recoil pattern.
+    // aimOffset:    the sight offset of the newest presented frame (see PlayerCommand::aimOffset).
+    // canToggleFlashlight: F toggles the flashlight this tick (nothing to interact with or revive).
+    // scriptedFire: dev drills only: replaces the fire and aim buttons (no captured cursor needed).
     struct WeaponControl
     {
         bool isArmed{false};
         WeaponZone zone{WeaponZone::Open};
         bool isHoldingToy{false};
         bool isReady{true};
-        bool hasRounds{true};
+        int32_t magazine{0};
+        bool isReloading{false};
+        FireModeSettings fire{};
+        RecoilSettings recoil{};
+        math::Vec2 aimOffset{0.0f, 0.0f};
+        bool canToggleFlashlight{false};
+        std::optional<FireButtons> scriptedFire{};
     };
+
+    // The key that cycles the fire mode.
+    inline constexpr lockstep::platform::Key k_fireModeKey{lockstep::platform::Key::B};
 
     // Settings for turning device input into commands. Mouse movement is the raw relative motion
     // (the window enables raw mouse motion while the cursor is captured), applied linearly: no
@@ -121,20 +163,22 @@ namespace game
 
     // Builds this tick's command from local input: WASD to move, Shift to run, hold Ctrl or toggle
     // C to crouch (Ctrl or C while running slides), Space to jump (a press also clears the crouch
-    // toggle), hold Q / E to lean, mouse to look, left mouse to fire, right mouse to aim down
-    // sights, R to reload, X (k_lowerWeaponKey) to lower or raise the weapon, F to interact (held
-    // too, for reviving), hold Left Alt or
-    // the middle mouse button for bullet-time. Look, fire, aim, lower and interact only count
-    // while the cursor is captured. With the weapon lowered, a click or aim raises it instead of
-    // firing (where raising is allowed; a click still throws a held toy).
+    // toggle), hold Q / E to lean, mouse to look, left mouse to fire (by the fire mode, B cycles
+    // it), right mouse to aim down sights, R to reload, V to kick, X (k_lowerWeaponKey) to lower
+    // or raise the weapon, F to interact (held too, for reviving) or, with nothing to interact with, to toggle
+    // the weapon flashlight, hold Left Alt or the middle mouse button for bullet-time. Look, fire,
+    // aim, lower and interact only count while the cursor is captured. With the weapon lowered, a
+    // click or aim raises it instead of firing (where raising is allowed; a click still throws a
+    // held toy). Each shot kicks the camera recoil, which the command's look includes.
     // controls:        the local look and shot counter, updated in place.
     // settings:        sensitivity and pitch limit.
     // input:           this tick's input.
     // isCursorCaptured: true while the window holds the mouse for mouse look.
-    // weapon:          armed state, zone and held toy.
+    // weapon:          armed state, zone, held toy, rounds, fire rate, recoil and sight offset.
+    // deltaSeconds:    the Player domain's delta of this tick.
     // Returns:         the command.
     [[nodiscard]] PlayerCommand sampleLocalCommand(LocalControls& controls, const ControlSettings& settings,
-        const lockstep::platform::Input& input, bool isCursorCaptured, const WeaponControl& weapon);
+        const lockstep::platform::Input& input, bool isCursorCaptured, const WeaponControl& weapon, float deltaSeconds);
 
     // Limits a downed player's command to a crawl: crouched, slower, no running, jumping, leaning,
     // aiming or bullet-time. Host and client apply it alike, so the client's prediction matches;

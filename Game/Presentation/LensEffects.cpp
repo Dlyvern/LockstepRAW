@@ -14,10 +14,11 @@ namespace game
         constexpr float k_focusOutRate{3.0f};
     } //namespace
 
-    void presentLensEffects(lockstep::render::RenderSettings& settings, float worldScale, float seconds)
+    void presentLensEffects(lockstep::render::RenderSettings& settings, float worldScale, float breathFocus,
+        float seconds)
     {
         float& strength = settings.depthOfField.strength;
-        const float target = worldScale < k_bulletTimeScale ? 1.0f : 0.0f;
+        const float target = std::max(worldScale < k_bulletTimeScale ? 1.0f : 0.0f, std::clamp(breathFocus, 0.0f, 1.0f));
         const float rate = target > strength ? k_focusInRate : k_focusOutRate;
         strength += (target - strength) * (1.0f - std::exp(-rate * std::max(seconds, 0.0f)));
         strength = std::clamp(strength, 0.0f, 1.0f);

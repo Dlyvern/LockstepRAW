@@ -1,7 +1,11 @@
 #include "Game.hpp"
 
+#include "Breakables/GlassDevTools.hpp"
+#include "Breakables/GlassReplication.hpp"
 #include "DevPanel.hpp"
 #include "GameState.hpp"
+#include "Npcs/NpcRoster.hpp"
+#include "Player/FireDrill.hpp"
 #include "Player/LocalPlayer.hpp"
 #include "Player/MoveDrill.hpp"
 #include "Presentation/Frame.hpp"
@@ -46,6 +50,7 @@ namespace game
         using lockstep::app::TickInfo;
 
         constexpr std::string_view k_armedFlag{"--armed"};
+        constexpr float k_drillTargetRange{6.0f};
         constexpr std::string_view k_ambienceFolder{"audio/"};
         constexpr std::string_view k_ambienceName{"ambience_morning."};
 
@@ -142,6 +147,9 @@ namespace game
             matchStridesToCharacters(*state);
             loadFootsteps(state->footsteps, engine.audio, engine.files);
             state->combatAudio.bank = loadCombatSounds(engine.audio, engine.files);
+            loadWeaponFx(state->weaponFx, engine);
+            state->devCapture = parseDevCapture(engine.arguments);
+            state->weaponFeedback.sounds = loadHandlingSounds(engine.audio, engine.files);
             applyArenaLook(engine.renderer);
 
             if (auto loaded = startLevel(*state, engine, launch.value()); !loaded)
@@ -175,7 +183,9 @@ namespace game
             {
                 if (receiveLevelMessage(state, engine, message) || receiveRoomMessage(state, message)
                     || receiveStationMessage(state, message) || receiveHospitalMessage(state, message)
-                    || receiveNpcMessage(state, engine, message) || receiveGoreMessage(state, message))
+                    || receiveNpcMessage(state, engine, message) || receiveGoreMessage(state, message)
+                    || receiveKickMessage(state.kicks, message)
+                    || receiveGlassMessage(state.glass, state.level ? &*state.level : nullptr, engine.physics, message))
                 {
                     continue;
                 }
@@ -230,6 +240,48 @@ namespace game
             predictPawn(prediction, engine.entities, engine.physics, tick, command, state.settings.pawns, delta);
         }
 
+        std::optional<FireButtons> scriptedFire(GameState& state, const EngineContext& engine, uint64_t tick)
+        {
+#if LOCKSTEP_DEV_TOOLS
+            if (isFireDrillRequested(engine.arguments))
+            {
+                return fireDrillButtons(state.local.controls, tick, engine.timeDomains.delta(world::TimeDomain::Player));
+            }
+#else
+            static_cast<void>(state);
+            static_cast<void>(engine);
+            static_cast<void>(tick);
+#endif
+            return std::nullopt;
+        }
+
+#if LOCKSTEP_DEV_TOOLS
+        std::optional<math::Vec3> nearestNpc(const GameState& state, const EngineContext& engine, const math::Vec3& foot)
+        {
+            std::optional<math::Vec3> nearest;
+
+            for (const Npc& npc : state.simulation.npcs.npcs)
+            {
+                const world::Entity* entity = engine.entities.find(npc.entity);
+
+                if (entity == nullptr || !isNpcAlive(npc))
+                {
+                    continue;
+                }
+
+                const math::Vec3 position = entity->transform().position;
+                const float distance = math::length(position - foot);
+
+                if (distance < k_drillTargetRange && (!nearest || distance < math::length(*nearest - foot)))
+                {
+                    nearest = position;
+                }
+            }
+
+            return nearest;
+        }
+#endif
+
         void fixedTick(GameState& state, EngineContext& engine, const TickInfo& tick)
         {
             state.lastTick = tick.tick;
@@ -238,13 +290,22 @@ namespace game
             const bool isFlying = state.flyCamera.isActive;
             state.local.weaponZone = localWeaponZone(state, engine);
             const PlayerStatus& own = state.local.statuses[localPawnIndex(engine)];
+            const PlayerStatus& partner = state.local.statuses[localPawnIndex(engine) == k_hostPawn ? k_clientPawn
+                                                                                                   : k_hostPawn];
             state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls,
                 isFlying ? idle : tick.input, !isFlying && engine.window.isCursorCaptured(),
                 WeaponControl{.isArmed = own.isArmed && !own.isDowned,
                     .zone = state.local.weaponZone,
                     .isHoldingToy = isHoldingToy(state, engine),
                     .isReady = isWeaponReady(localPawnMotion(state, engine)),
-                    .hasRounds = own.magazine > 0 && !own.isReloading});
+                    .magazine = own.magazine,
+                    .isReloading = own.isReloading,
+                    .fire = state.settings.fire,
+                    .recoil = state.settings.recoil,
+                    .aimOffset = state.local.aimOffset,
+                    .canToggleFlashlight = state.hud.prompt.empty() && !partner.isDowned,
+                    .scriptedFire = scriptedFire(state, engine, tick.tick)},
+                engine.timeDomains.delta(world::TimeDomain::Player));
 
             if (own.isDowned)
             {
@@ -252,7 +313,30 @@ namespace game
             }
 
 #if LOCKSTEP_DEV_TOOLS
-            if (isMoveDrillRequested(engine.arguments))
+            if (isKickDrillRequested(engine.arguments))
+            {
+                if (const auto foot = engine.physics.footPosition(localController(state, engine)))
+                {
+                    applyKickDrill(state.local.command, tick.tick, engine.timeDomains.delta(world::TimeDomain::Player),
+                        *foot, nearestNpc(state, engine, *foot));
+                }
+            }
+
+            if (isVaultDrillRequested(engine.arguments))
+            {
+                const float delta = engine.timeDomains.delta(world::TimeDomain::Player);
+
+                if (const auto foot = engine.physics.footPosition(localController(state, engine)))
+                {
+                    applyVaultDrill(state.local.command, *foot, tick.tick, delta);
+                }
+
+                if (engine.session.role() == net::Role::Client)
+                {
+                    logMoveDrill(state.local.prediction, tick.tick, delta);
+                }
+            }
+            else if (isMoveDrillRequested(engine.arguments))
             {
                 const float delta = engine.timeDomains.delta(world::TimeDomain::Player);
                 applyMoveDrill(state.local.command, tick.tick, delta);
@@ -291,6 +375,10 @@ namespace game
             }
 
             runHostTick(state, engine);
+#if LOCKSTEP_DEV_TOOLS
+            updateGlassDevBreaks(state, engine);
+#endif
+            publishGlass(state.glass, engine.session);
             updateLevelFlowAsHost(state, engine);
             presentLevel(state, engine);
         }

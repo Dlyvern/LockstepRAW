@@ -1,12 +1,17 @@
 #include "Simulation/HostSimulation.hpp"
 
 #include "GameState.hpp"
+#include "Gore/CorpseHits.hpp"
 #include "Gore/GoreRules.hpp"
+#include "Gore/HeadBurstDevTools.hpp"
+#include "Melee/KickRules.hpp"
 #include "Simulation/HospitalSimulation.hpp"
 #include "Simulation/NpcSimulation.hpp"
 #include "Simulation/PlayerCombat.hpp"
 #include "Simulation/RoomSimulation.hpp"
 #include "Simulation/StationSimulation.hpp"
+#include "Weapons/Penetration.hpp"
+#include "Weapons/ShotAim.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
@@ -119,6 +124,38 @@ namespace game
                 isBulletTime ? state.settings.bulletTimeScale : state.settings.worldScale);
         }
 
+        ShotPath traceFiredShot(GameState& state, EngineContext& engine, const math::Vec3& origin,
+            const math::Vec3& direction, lockstep::physics::ControllerId shooter)
+        {
+            const ShotBreaker breaker = [&state, &engine](lockstep::physics::BodyId body, const math::Vec3& point,
+                                            const math::Vec3& travel)
+            {
+                return state.level && shatterGlass(state.glass, *state.level, engine.physics, body, point, travel);
+            };
+
+            return traceShotPath(engine.physics, state.level ? &*state.level : nullptr, origin, direction,
+                state.settings.hitscan.range, shooter, state.simulation.enemy.controller, state.settings.penetration,
+                breaker);
+        }
+
+        bool shootNpcsAlong(GameState& state, EngineContext& engine, std::size_t shooterIndex, const ShotPath& path)
+        {
+            bool isNpcHit = false;
+
+            for (std::size_t index = 0; index < path.segments.size(); ++index)
+            {
+                const ShotSegment& segment = path.segments[index];
+                const bool isLast = index + 1 == path.segments.size();
+                const lockstep::physics::ControllerId struck = isLast && path.result.outcome == ShotOutcome::Player
+                    ? path.result.controller
+                    : lockstep::physics::ControllerId{};
+                isNpcHit = shootNpcs(state, engine, shooterIndex, segment.origin, segment.end, struck,
+                    segment.damageScale) || isNpcHit;
+            }
+
+            return isNpcHit;
+        }
+
         void fireShot(GameState& state, EngineContext& engine, std::size_t shooterIndex, std::optional<double> viewTick)
         {
             GameState::Simulation& simulation = state.simulation;
@@ -137,15 +174,12 @@ namespace game
                 rewind = rewindTo(simulation.lagHistory, engine.physics, *viewTick - k_viewToShotTicks, shooter.controller);
             }
 
-            const math::Vec3 direction = lookDirection(shooter.command.yaw, shooter.command.pitch);
+            const math::Vec3 direction = shotDirection(shooter.command, shooterIndex, shooter.processedShots,
+                state.settings.spread);
             const math::Vec3 origin = eyePosition(shooterEntity->transform());
-            simulation.lastShot = traceShot(engine.physics, origin, direction, state.settings.hitscan.range,
-                shooter.controller, simulation.enemy.controller);
-            const float reach = simulation.lastShot.outcome == ShotOutcome::Miss ? state.settings.hitscan.range
-                                                                                 : simulation.lastShot.distance;
-            const bool isNpcHit = shootNpcs(state, engine, shooterIndex, origin, origin + direction * reach,
-                simulation.lastShot.outcome == ShotOutcome::Player ? simulation.lastShot.controller
-                                                                   : lockstep::physics::ControllerId{});
+            const ShotPath path = traceFiredShot(state, engine, origin, direction, shooter.controller);
+            simulation.lastShot = path.result;
+            const bool isNpcHit = shootNpcsAlong(state, engine, shooterIndex, path);
             restoreRewind(engine.physics, rewind);
             simulation.lastRewindTicks = rewind.ticks;
             ++shooter.shots;
@@ -155,15 +189,30 @@ namespace game
                 return;
             }
 
-            if (simulation.lastShot.outcome == ShotOutcome::Level)
+            for (const ShotImpact& impact : path.impacts)
             {
-                shootStation(state, shooterIndex, simulation.lastShot.body);
+                if (!impact.isExit && !impact.body.isNull())
+                {
+                    shootStation(state, shooterIndex, impact.body);
+                }
             }
 
             if (simulation.lastShot.outcome != ShotOutcome::Enemy)
             {
                 std::clog << "Game: " << playerName(shooterIndex) << " shot: " << toString(simulation.lastShot.outcome)
-                          << " at " << simulation.lastShot.distance << " m\n";
+                          << " at " << simulation.lastShot.distance << " m";
+
+                if (!path.impacts.empty() && !path.impacts.back().body.isNull())
+                {
+                    std::clog << " (" << shotMaterialName(path.impacts.back().material) << ")";
+                }
+
+                if (path.penetrations > 0)
+                {
+                    std::clog << " (through " << path.penetrations << ")";
+                }
+
+                std::clog << '\n';
                 return;
             }
 
@@ -178,16 +227,28 @@ namespace game
         }
 
         void fireShots(GameState& state, EngineContext& engine, std::size_t shooterIndex, std::optional<double> viewTick,
-            bool isReady)
+            bool isReady, float delta)
         {
             Pawn& pawn = state.simulation.pawns[shooterIndex];
+            pawn.shotCooldown = std::max(pawn.shotCooldown - delta, 0.0f);
 
             while (pawn.hasCommand && pawn.processedShots != pawn.command.shotCount)
             {
                 ++pawn.processedShots;
 
-                if (!throwHeldToy(state, engine, shooterIndex) && pawn.isArmed && !pawn.isLowered && isReady
-                    && !pawn.isDowned && !pawn.entity.isNull() && takePawnRound(state, shooterIndex))
+                if (throwHeldToy(state, engine, shooterIndex) || !pawn.isArmed || pawn.isLowered || !isReady
+                    || pawn.isDowned || pawn.entity.isNull())
+                {
+                    continue;
+                }
+
+                if (!acceptShotCadence(pawn.shotCooldown, state.settings.fire))
+                {
+                    std::clog << "Game: " << playerName(shooterIndex) << " shot refused (faster than the fire rate)\n";
+                    continue;
+                }
+
+                if (takePawnRound(state, shooterIndex))
                 {
                     fireShot(state, engine, shooterIndex, viewTick);
                 }
@@ -229,9 +290,10 @@ namespace game
                 if (world::Entity* entity = engine.entities.find(pawn.entity); entity != nullptr && pawn.hasCommand)
                 {
                     movePawn(pawn, *entity, engine.physics, state.settings.pawns, delta, ignored);
+                    resolvePawnKick(state, engine, k_clientPawn);
                 }
 
-                fireShots(state, engine, k_clientPawn, input.viewTick, isReady);
+                fireShots(state, engine, k_clientPawn, input.viewTick, isReady, delta);
                 interactWithRoom(state, engine, k_clientPawn);
             }
         }
@@ -245,9 +307,11 @@ namespace game
             {
                 movePawn(pawn, *entity, engine.physics, state.settings.pawns,
                     engine.timeDomains.delta(world::TimeDomain::Player), dynamicBodies(state));
+                resolvePawnKick(state, engine, k_hostPawn);
             }
 
-            fireShots(state, engine, k_hostPawn, std::nullopt, isReady);
+            fireShots(state, engine, k_hostPawn, std::nullopt, isReady,
+                engine.timeDomains.delta(world::TimeDomain::Player));
             interactWithRoom(state, engine, k_hostPawn);
         }
 
@@ -439,11 +503,16 @@ namespace game
             updateEnemyOnHost(state, engine);
         }
 
+#if LOCKSTEP_DEV_TOOLS
+        runHeadBurstDrill(state, engine);
+#endif
         applyCorpseHits(state, engine);
         runNpcHostTick(state, engine);
+        shootBodiesWithNpcShots(state, engine);
         updateDownedPawns(state, engine);
         respawnPawns(state, engine);
         recordHittables(state, engine);
+        publishKickEvents(state.simulation.kickEvents, state.kicks.pending, engine.session);
         publishStatuses(state, engine);
         publishClientState(state, engine);
         runRoomHostTick(state, engine);

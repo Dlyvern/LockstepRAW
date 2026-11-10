@@ -137,7 +137,7 @@ namespace game
             }
 
             const float speed = (npc.isRunning ? world.settings.runSpeed : world.settings.walkSpeed)
-                * (npc.isCrouched ? k_crouchSpeedScale : 1.0f);
+                * (npc.isCrouched ? k_crouchSpeedScale : 1.0f) * (npc.staggerSeconds > 0.0f ? world.settings.staggerSpeed : 1.0f);
             expected = std::min(speed * world.delta, distance);
             const math::Vec3 direction = flat * (1.0f / distance);
             displacement = direction * expected;

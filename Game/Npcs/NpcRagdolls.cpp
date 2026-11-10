@@ -355,6 +355,11 @@ namespace game
 
         for (std::size_t body = 0; body < count; ++body)
         {
+            if (body < ragdoll.attachments.size() && ragdoll.attachments[body].anchor != k_notAttached)
+            {
+                continue;
+            }
+
             const RagdollCapsule& capsule = ragdoll.capsules[body];
             const math::Transform& pose = ragdoll.poses[body];
             const std::optional<float> distance = rayCapsule(origin, direction, outOfFrame(pose, capsule.start),

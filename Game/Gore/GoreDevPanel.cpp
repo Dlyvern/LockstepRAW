@@ -1,5 +1,7 @@
 #include "Gore/GoreDevPanel.hpp"
 
+#include "Gore/HeadBurstDevTools.hpp"
+
 #if LOCKSTEP_DEV_TOOLS
 
 #include "GameState.hpp"
@@ -152,9 +154,16 @@ namespace game
             ImGui::SliderFloat("Sever chance", &rules.severChance, 0.0f, 1.0f);
             ImGui::Checkbox("Headshot kills sever the head", &rules.headshotSevers);
             ImGui::Checkbox("NPC shots sever", &rules.npcSevers);
+            ImGui::SliderFloat("Head burst chance", &rules.headBurstChance, 0.0f, 1.0f);
+            ImGui::SliderFloat("Head burst close range (m)", &rules.headBurstRange, 0.0f, 20.0f);
+            ImGui::SliderFloat("Head burst close bonus", &rules.headBurstBonus, 0.0f, 1.0f);
+            ImGui::Checkbox("Head shots always burst", &rules.headBurstAlways);
         }
 
         tuningSliders(state.gore.tuning);
+        bloodBurstDevSection(state.gore.bursts);
+        headBurstDevSection(state.gore.headBursts.tuning);
+        hitReactionDevSection(state.npcLooks.reactionTuning);
         const GoreState& gore = state.gore;
         ImGui::Text("Pieces %zu  stumps %zu  decals %zu  droplets %zu%s", gore.pieces.size(), gore.stumps.size(),
             gore.decals.decals.size(), gore.spray.droplets.size(), gore.assets ? "" : "  (blood unavailable)");

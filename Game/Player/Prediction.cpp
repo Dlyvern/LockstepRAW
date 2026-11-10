@@ -20,6 +20,8 @@ namespace game
         constexpr std::byte k_groundedBit{0x02};
         constexpr std::byte k_crouchHeldBit{0x04};
         constexpr std::byte k_jumpHeldBit{0x08};
+        constexpr std::byte k_vaultingBit{0x10};
+        constexpr std::byte k_kickHeldBit{0x20};
         constexpr std::size_t k_flagsOffset{0};
         constexpr std::size_t k_lifeOffset{1};
         constexpr std::size_t k_footOffset{2};
@@ -35,6 +37,8 @@ namespace game
         constexpr std::size_t k_sprintRecoverOffset{42};
         constexpr std::size_t k_mantleTicksOffset{43};
         constexpr std::size_t k_mantleHeightOffset{44};
+        constexpr std::size_t k_kickTicksOffset{48};
+        constexpr std::size_t k_kickCooldownOffset{49};
         constexpr float k_mantleHeightTolerance{0.01f};
         constexpr float k_leanTolerance{0.01f};
         constexpr uint8_t k_maxStance{static_cast<uint8_t>(PawnStance::Slide)};
@@ -156,6 +160,10 @@ namespace game
                 || std::abs(acked->motion.lean - state.motion.lean) > k_leanTolerance
                 || acked->motion.sprintRecoverTicks != state.motion.sprintRecoverTicks
                 || acked->motion.mantleTicks != state.motion.mantleTicks
+                || acked->motion.isVaulting != state.motion.isVaulting
+                || acked->motion.isKickHeld != state.motion.isKickHeld
+                || acked->motion.kickTicks != state.motion.kickTicks
+                || acked->motion.kickCooldownTicks != state.motion.kickCooldownTicks
                 || std::abs(acked->motion.mantleHeight - state.motion.mantleHeight) > k_mantleHeightTolerance
                 || std::abs(acked->motion.slideSeconds - state.motion.slideSeconds) > k_slideTimeTolerance
                 || std::abs(acked->motion.slideCooldown - state.motion.slideCooldown) > k_slideTimeTolerance;
@@ -188,7 +196,9 @@ namespace game
         bytes[k_flagsOffset] = (state.isAlive ? k_aliveBit : std::byte{0})
             | (state.motion.isGrounded ? k_groundedBit : std::byte{0})
             | (state.motion.isCrouchHeld ? k_crouchHeldBit : std::byte{0})
-            | (state.motion.isJumpHeld ? k_jumpHeldBit : std::byte{0});
+            | (state.motion.isJumpHeld ? k_jumpHeldBit : std::byte{0})
+            | (state.motion.isVaulting ? k_vaultingBit : std::byte{0})
+            | (state.motion.isKickHeld ? k_kickHeldBit : std::byte{0});
         bytes[k_lifeOffset] = static_cast<std::byte>(state.life);
         writeFloat(bytes, k_footOffset, state.foot.x);
         writeFloat(bytes, k_footOffset + k_floatBytes, state.foot.y);
@@ -206,6 +216,8 @@ namespace game
         bytes[k_sprintRecoverOffset] = static_cast<std::byte>(state.motion.sprintRecoverTicks);
         bytes[k_mantleTicksOffset] = static_cast<std::byte>(state.motion.mantleTicks);
         writeFloat(bytes, k_mantleHeightOffset, state.motion.mantleHeight);
+        bytes[k_kickTicksOffset] = static_cast<std::byte>(state.motion.kickTicks);
+        bytes[k_kickCooldownOffset] = static_cast<std::byte>(state.motion.kickCooldownTicks);
 
         return bytes;
     }
@@ -237,7 +249,11 @@ namespace game
                 .lean = math::clamp(readFloat(bytes, k_leanOffset), -1.0f, 1.0f),
                 .sprintRecoverTicks = static_cast<uint8_t>(bytes[k_sprintRecoverOffset]),
                 .mantleTicks = static_cast<uint8_t>(bytes[k_mantleTicksOffset]),
-                .mantleHeight = readFloat(bytes, k_mantleHeightOffset)}};
+                .mantleHeight = readFloat(bytes, k_mantleHeightOffset),
+                .isVaulting = (bytes[k_flagsOffset] & k_vaultingBit) != std::byte{0},
+                .isKickHeld = (bytes[k_flagsOffset] & k_kickHeldBit) != std::byte{0},
+                .kickTicks = static_cast<uint8_t>(bytes[k_kickTicksOffset]),
+                .kickCooldownTicks = static_cast<uint8_t>(bytes[k_kickCooldownOffset])}};
 
         const bool isFinite = std::isfinite(state.foot.x) && std::isfinite(state.foot.y) && std::isfinite(state.foot.z)
             && std::isfinite(state.motion.verticalSpeed) && std::isfinite(state.motion.planarVelocity.x)

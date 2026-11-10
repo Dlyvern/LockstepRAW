@@ -4,6 +4,8 @@
 #include <Lockstep/Render/Renderer.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 
 namespace game
 {
@@ -18,6 +20,8 @@ namespace game
         constexpr float k_friction{0.9f};
         constexpr float k_restitution{0.05f};
         constexpr float k_fallbackRadius{0.08f};
+        constexpr float k_parallelRay{1.0e-8f};
+        constexpr float k_hitSpin{25.0f};
 
         anim::LimbMask hiddenLimbs(anim::LimbMask severed)
         {
@@ -208,6 +212,56 @@ namespace game
                     palette, piece.bounds);
             }
         }
+    }
+
+    std::optional<float> tracePiece(const SeveredPiece& piece, const math::Vec3& origin, const math::Vec3& direction,
+        float maxDistance)
+    {
+        const math::Transform placement = pieceTransform(piece, 1.0f);
+        const math::Quat inverse = math::conjugate(placement.rotation);
+        const math::Vec3 from = inverse * (origin - placement.position);
+        const math::Vec3 way = inverse * direction;
+        const std::array<float, 3> start{from.x / placement.scale.x, from.y / placement.scale.y, from.z / placement.scale.z};
+        const std::array<float, 3> step{way.x / placement.scale.x, way.y / placement.scale.y, way.z / placement.scale.z};
+        const std::array<float, 3> low{piece.bounds.min.x, piece.bounds.min.y, piece.bounds.min.z};
+        const std::array<float, 3> high{piece.bounds.max.x, piece.bounds.max.y, piece.bounds.max.z};
+        float near = 0.0f;
+        float far = maxDistance;
+
+        for (std::size_t axis = 0; axis < 3; ++axis)
+        {
+            if (std::abs(step[axis]) < k_parallelRay)
+            {
+                if (start[axis] < low[axis] || start[axis] > high[axis])
+                {
+                    return std::nullopt;
+                }
+
+                continue;
+            }
+
+            const float enter = (low[axis] - start[axis]) / step[axis];
+            const float leave = (high[axis] - start[axis]) / step[axis];
+            near = std::max(near, std::min(enter, leave));
+            far = std::min(far, std::max(enter, leave));
+        }
+
+        return near <= far ? std::optional<float>(near) : std::nullopt;
+    }
+
+    void pushPiece(physics::PhysicsWorld& physics, const SeveredPiece& piece, const math::Vec3& point,
+        const math::Vec3& push)
+    {
+        const std::optional<math::Vec3> linear = physics.linearVelocity(piece.body);
+        const std::optional<math::Vec3> angular = physics.angularVelocity(piece.body);
+
+        if (!linear || !angular)
+        {
+            return;
+        }
+
+        const math::Vec3 lever = point - piece.current.position;
+        physics.setVelocity(piece.body, *linear + push, *angular + math::cross(lever, push) * k_hitSpin);
     }
 
     void releasePiece(physics::PhysicsWorld& physics, SeveredPiece& piece)

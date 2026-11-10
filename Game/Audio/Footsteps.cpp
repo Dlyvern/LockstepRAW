@@ -27,6 +27,33 @@ namespace game
         constexpr float k_minFallDistance{0.5f};
         constexpr float k_maxFrameStep{1.5f};
         constexpr float k_bulletTimeThreshold{0.99f};
+        constexpr std::string_view k_vaultStem{"sounds/player/vault_"};
+        constexpr std::string_view k_kickSwingStem{"sounds/player/kick_swing_"};
+        constexpr std::string_view k_kickHitStem{"sounds/player/kick_hit_"};
+        constexpr math::Vec3 k_bodySoundHeight{0.0f, 0.9f, 0.0f};
+
+        void playBodySound(Footsteps& footsteps, audio::AudioSystem& audioSystem,
+            const std::vector<audio::SoundHandle>& sounds, float volume, const math::Vec3& position, float worldScale)
+        {
+            if (sounds.empty())
+            {
+                return;
+            }
+
+            const FootstepTuning& tuning = footsteps.tuning;
+            const bool isBulletTime = worldScale < k_bulletTimeThreshold;
+            const uint32_t pick = footsteps.random % static_cast<uint32_t>(sounds.size());
+            footsteps.random = footsteps.random * 1664525u + 1013904223u;
+            auto voice = audioSystem.play(sounds[pick], audio::PlayDescription{.bus = audio::Bus::Player,
+                .volume = volume * (isBulletTime ? tuning.bulletTimeVolume : 1.0f),
+                .pitch = isBulletTime ? tuning.bulletTimePitch : 1.0f,
+                .position = position});
+
+            if (voice)
+            {
+                ++footsteps.played;
+            }
+        }
 
         std::vector<audio::SoundHandle> loadVariations(audio::AudioSystem& audioSystem,
             const lockstep::assets::FileSystem& files, const std::string& stem)
@@ -205,7 +232,8 @@ namespace game
 
             if (!tracker.hasLast || isTeleport || frame.seconds <= 0.0f)
             {
-                tracker = FootstepTracker{.lastFoot = pawn.foot, .hasLast = true};
+                tracker = FootstepTracker{.lastFoot = pawn.foot, .hasLast = true, .wasVaulting = tracker.wasVaulting,
+                    .wasKicking = tracker.wasKicking};
                 return;
             }
 
@@ -259,6 +287,10 @@ namespace game
 
     void loadFootsteps(Footsteps& footsteps, audio::AudioSystem& audioSystem, const lockstep::assets::FileSystem& files)
     {
+        footsteps.bank.vaults = loadVariations(audioSystem, files, std::string(k_vaultStem));
+        footsteps.bank.kickSwings = loadVariations(audioSystem, files, std::string(k_kickSwingStem));
+        footsteps.bank.kickHits = loadVariations(audioSystem, files, std::string(k_kickHitStem));
+
         std::size_t stepCount = 0;
         std::size_t landingCount = 0;
         std::string missing;
@@ -296,6 +328,13 @@ namespace game
         std::clog << '\n';
     }
 
+    void playKickHit(Footsteps& footsteps, audio::AudioSystem& audioSystem, const math::Vec3& position,
+        float worldScale)
+    {
+        playBodySound(footsteps, audioSystem, footsteps.bank.kickHits, footsteps.tuning.kickHitVolume, position,
+            worldScale);
+    }
+
     void updateFootsteps(Footsteps& footsteps, audio::AudioSystem& audioSystem, const FootstepFrame& frame,
         std::span<const FootstepPawn> pawns)
     {
@@ -310,6 +349,21 @@ namespace game
 
             isDrawn[pawn.index] = true;
             FootstepTracker& tracker = footsteps.pawns[pawn.index];
+
+            if (pawn.isVaulting && !tracker.wasVaulting)
+            {
+                playBodySound(footsteps, audioSystem, footsteps.bank.vaults, footsteps.tuning.vaultVolume,
+                    pawn.foot + k_bodySoundHeight, frame.worldScale);
+            }
+
+            if (pawn.isKicking && !tracker.wasKicking)
+            {
+                playBodySound(footsteps, audioSystem, footsteps.bank.kickSwings, footsteps.tuning.kickSwingVolume,
+                    pawn.foot + k_bodySoundHeight, frame.worldScale);
+            }
+
+            tracker.wasVaulting = pawn.isVaulting;
+            tracker.wasKicking = pawn.isKicking;
 
             if (pawn.isLocal)
             {
@@ -344,6 +398,9 @@ namespace game
         ImGui::SliderFloat("Walk volume", &tuning.walkVolume, 0.0f, 1.5f);
         ImGui::SliderFloat("Run volume", &tuning.runVolume, 0.0f, 1.5f);
         ImGui::SliderFloat("Crouch volume", &tuning.crouchVolume, 0.0f, 1.5f);
+        ImGui::SliderFloat("Vault volume", &tuning.vaultVolume, 0.0f, 1.5f);
+        ImGui::SliderFloat("Kick swing volume", &tuning.kickSwingVolume, 0.0f, 1.5f);
+        ImGui::SliderFloat("Kick hit volume", &tuning.kickHitVolume, 0.0f, 1.5f);
         ImGui::SliderFloat("Landing volume", &tuning.landVolume, 0.0f, 2.0f);
         ImGui::SliderFloat("Landing min fall (m/s)", &tuning.landMinSpeed, 0.0f, 10.0f);
         ImGui::SliderFloat("Landing full fall (m/s)", &tuning.landFullSpeed, 1.0f, 20.0f);

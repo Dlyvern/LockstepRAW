@@ -11,7 +11,7 @@ namespace game
         constexpr std::byte k_goreTag{0x47};
         constexpr std::size_t k_headerBytes{2};
         constexpr std::byte k_corpseHitTag{0x43};
-        constexpr std::size_t k_eventBytes{1 + 8 + 1 + 12 + 12 + 4 + 1 + 1};
+        constexpr std::size_t k_eventBytes{1 + 8 + 1 + 12 + 12 + 4 + 1 + 1 + 1};
         constexpr std::size_t k_corpseHitBytes{1 + 8 + 1 + 1 + 12 + 12};
         constexpr std::size_t k_maxCount{255};
 
@@ -73,6 +73,7 @@ namespace game
             writeUint32(bytes, offset + 34, event.seed);
             bytes[offset + 38] = static_cast<std::byte>(event.body);
             bytes[offset + 39] = static_cast<std::byte>(event.shooter);
+            bytes[offset + 40] = static_cast<std::byte>(event.damage);
         }
 
         return bytes;
@@ -100,7 +101,7 @@ namespace game
             const auto kind = static_cast<uint8_t>(bytes[offset]);
             const auto limb = static_cast<uint8_t>(bytes[offset + 9]);
 
-            if (kind > static_cast<uint8_t>(GoreEventKind::Sever) || !isValidLimb(limb))
+            if (kind > static_cast<uint8_t>(GoreEventKind::HeadBurst) || !isValidLimb(limb))
             {
                 return std::nullopt;
             }
@@ -113,7 +114,8 @@ namespace game
                 .direction = readVec3(bytes, offset + 22),
                 .seed = readUint32(bytes, offset + 34),
                 .body = static_cast<uint8_t>(bytes[offset + 38]),
-                .shooter = static_cast<uint8_t>(bytes[offset + 39])});
+                .shooter = static_cast<uint8_t>(bytes[offset + 39]),
+                .damage = static_cast<uint8_t>(bytes[offset + 40])});
         }
 
         return events;

@@ -160,6 +160,8 @@ namespace game
             state.settings.enemy.spawnPoint = spawns.enemy;
             state.dialogue = loadDialogue(engine.files, shortName);
             state.npcs = findNpcPlaceholders(scene, shortName);
+            state.glass = findGlassPanes(*state.level, engine.physics);
+            clearGlassDebris(state.glassShatter);
             state.hud.localPlayer = engine.session.role() == net::Role::Client ? k_clientPawn : k_hostPawn;
 
             if (engine.session.role() != net::Role::Client)
@@ -237,6 +239,8 @@ namespace game
             state.room.reset();
             state.station.reset();
             state.level.reset();
+            state.glass = BreakableGlass{};
+            clearGlassDebris(state.glassShatter);
 
             if (auto released = engine.renderer.releaseDestroyed(); !released)
             {

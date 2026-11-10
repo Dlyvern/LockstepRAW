@@ -13,7 +13,7 @@
 namespace game
 {
     // Bytes an encoded StatusMessage takes.
-    inline constexpr std::size_t k_playerStatusBytes{2 + 12 * k_playerCount};
+    inline constexpr std::size_t k_playerStatusBytes{2 + 13 * k_playerCount};
 
     // What a player sees of a pawn's health and weapon. The host sends both players' statuses to
     // the client in a reliable Game message whenever one changes.
@@ -25,6 +25,9 @@ namespace game
     // isLowered: the armed player's weapon is lowered.
     // isCrouched: the pawn is crouched or sliding (its capsule is low).
     // isSliding: the pawn slides.
+    // isVaulting: the pawn vaults over an obstacle (its body plays the vault on the partner's
+    //           machine).
+    // isKicking: the pawn kicks (its leg swings on the partner's machine).
     // isDowned: the player is downed (crawls, can't shoot, bleeds out).
     // isReloading: a reload runs.
     // bleedSeconds: whole Player seconds a downed player has left.
@@ -32,6 +35,9 @@ namespace game
     // magazine, reserve: rounds in the weapon and carried (reserve capped at 255).
     // damageCount, damageYaw, hitCount, killCount: Pawn's hit counters and newest hit direction.
     // shotCount: shots fired, wrapping (the partner's machine plays a gunshot for each increase).
+    // isFlashlightOn: the weapon flashlight is on (the partner's machine draws its beam).
+    // lookPitch: the look pitch in radians while the flashlight is on (coarse steps, so the beam
+    //           tilts on the partner's machine without a message every tick), else 0.
     struct PlayerStatus
     {
         int32_t health{0};
@@ -42,6 +48,8 @@ namespace game
         bool isLowered{false};
         bool isCrouched{false};
         bool isSliding{false};
+        bool isVaulting{false};
+        bool isKicking{false};
         bool isDowned{false};
         bool isReloading{false};
         uint8_t bleedSeconds{0};
@@ -53,6 +61,8 @@ namespace game
         uint8_t hitCount{0};
         uint8_t killCount{0};
         uint8_t shotCount{0};
+        bool isFlashlightOn{false};
+        float lookPitch{0.0f};
 
         friend bool operator==(const PlayerStatus&, const PlayerStatus&) = default;
     };

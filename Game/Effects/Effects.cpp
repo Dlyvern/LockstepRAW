@@ -32,10 +32,6 @@ namespace game
         constexpr std::string_view k_steamPrefix{"Fx_Steam_"};
         constexpr std::string_view k_smokePrefix{"Fx_Smoke_"};
         constexpr std::string_view k_dustPrefix{"Fx_Dust_"};
-        constexpr math::Vec3 k_up{0.0f, 1.0f, 0.0f};
-        constexpr float k_muzzleReach{0.55f};
-        constexpr float k_muzzleRight{0.12f};
-        constexpr float k_muzzleDrop{0.1f};
         constexpr float k_impactLift{0.02f};
         constexpr float k_metalPuffScale{0.5f};
         constexpr float k_moteFill{0.6f};
@@ -268,43 +264,27 @@ namespace game
             }
         }
 
-        void spawnCombat(Effects& effects, const GameState& state, const math::Vec3& eye, const math::Vec3& aim)
+        void spawnImpacts(Effects& effects, const GameState& state)
         {
-            render::ParticleSystem& particles = *effects.particles;
             const SceneLevel* level = state.level ? &*state.level : nullptr;
 
-            if (effects.tuning.impacts)
-            {
-                for (const CombatImpact& impact : state.combatAudio.impacts)
-                {
-                    if (!impact.isFlesh)
-                    {
-                        spawnImpact(effects, level, impact);
-                    }
-                }
-            }
-
-            if (!effects.tuning.muzzleSmoke)
+            if (!effects.tuning.impacts)
             {
                 return;
             }
 
-            const math::Vec3 forward = math::normalize(aim);
-            const math::Vec3 right = math::normalize(math::cross(forward, k_up));
-
-            for (const CombatShot& shot : state.combatAudio.shots)
+            for (const CombatImpact& impact : state.combatAudio.impacts)
             {
-                const math::Vec3 muzzle = shot.isLocal
-                    ? eye + forward * k_muzzleReach + right * k_muzzleRight - k_up * k_muzzleDrop
-                    : shot.position;
-                static_cast<void>(particles.burst(effects.ids.muzzleSmoke, render::ParticleBurst{.position = muzzle,
-                    .direction = shot.isLocal ? forward : k_up}));
+                if (!impact.isFlesh)
+                {
+                    spawnImpact(effects, level, impact);
+                }
             }
         }
     } //namespace
 
-    void presentEffects(GameState& state, EngineContext& engine, const math::Vec3& eye, const math::Vec3& aim,
-        float worldSeconds, float frameSeconds)
+    void presentEffects(GameState& state, EngineContext& engine, const math::Vec3& eye, float worldSeconds,
+        float frameSeconds)
     {
         Effects& effects = state.effects;
         effects.eye = eye;
@@ -340,7 +320,7 @@ namespace game
 
         updateMotes(effects, state.combatAudio.interiors, eye);
         updateRain(state, engine, eye, worldSeconds, frameSeconds);
-        spawnCombat(effects, state, eye, aim);
+        spawnImpacts(effects, state);
         particles.update(worldSeconds);
         particles.submit(engine.renderer);
     }

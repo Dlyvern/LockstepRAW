@@ -137,6 +137,15 @@ namespace game
     // Returns:  true if it was queued.
     bool callOut(NpcRoster& roster, std::size_t speaker, NpcCalloutKind kind, const NpcSettings& settings);
 
+    // Host: makes a living NPC flinch from a hit that did not kill it: it holds its fire briefly
+    // (longer for a head hit) and a heavy or leg hit staggers it (it moves slower). Flinches do
+    // not stack beyond their length.
+    // npc:      the NPC.
+    // limb:     the limb struck (None if unknown).
+    // damage:   hit points the hit took.
+    // settings: NPC tuning.
+    void flinchNpc(Npc& npc, lockstep::anim::Limb limb, int32_t damage, const NpcSettings& settings);
+
     // Host: applies a hit to an NPC: takes health, suppresses it, makes it fight the attacker;
     // at 0 health it dies (controller removed, the body stays) and a groupmate may call it out.
     // roster:   the roster.

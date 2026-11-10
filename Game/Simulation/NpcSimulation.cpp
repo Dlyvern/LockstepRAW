@@ -16,6 +16,8 @@
 #include <Lockstep/World/Entities.hpp>
 #include <Lockstep/World/TimeDomains.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 
 namespace game
@@ -193,7 +195,7 @@ namespace game
 
                     if (const std::optional<math::Vec3> chest = chestOf(engine, pawn))
                     {
-                        recordHitGore(state, pawn, *chest, shotDirection(hit.source, *chest));
+                        recordHitGore(state, pawn, *chest, shotDirection(hit.source, *chest), hit.damage);
                     }
 
                     hurtPawn(state, engine, hit.target.index, hit.damage, hit.source);
@@ -208,9 +210,11 @@ namespace game
 
                     if (chest)
                     {
-                        recordNpcGore(state, NpcGoreHit{.npc = hit.target.index, .point = *chest,
-                            .direction = shotDirection(hit.source, *chest), .damage = hit.damage, .killed = killed,
-                            .isNpcShot = true});
+                        const lockstep::anim::Limb limb = recordNpcGore(state, NpcGoreHit{.npc = hit.target.index,
+                            .point = *chest, .direction = shotDirection(hit.source, *chest), .damage = hit.damage,
+                            .killed = killed, .isNpcShot = true,
+                            .distance = math::length(*chest - hit.source)});
+                        flinchNpc(roster.npcs[hit.target.index], limb, hit.damage, state.settings.npcs);
                     }
                 }
             }
@@ -234,7 +238,7 @@ namespace game
     }
 
     bool shootNpcs(GameState& state, EngineContext& engine, std::size_t pawnIndex, const math::Vec3& origin,
-        const math::Vec3& end, lockstep::physics::ControllerId controller)
+        const math::Vec3& end, lockstep::physics::ControllerId controller, float damageScale)
     {
         NpcRoster& roster = state.simulation.npcs;
         const NpcTargetRef shooter{.kind = NpcTargetRef::Kind::Pawn, .index = static_cast<uint32_t>(pawnIndex)};
@@ -255,10 +259,14 @@ namespace game
         ++pawn.hitCount;
         ++pawn.hits;
 
-        const bool killed = damageNpc(roster, *struck, state.settings.npcs.playerDamage, origin, shooter,
+        const int32_t damage = std::max(1, static_cast<int32_t>(std::lround(static_cast<float>(
+            state.settings.npcs.playerDamage) * damageScale)));
+        const bool killed = damageNpc(roster, *struck, damage, origin, shooter,
             engine.entities, engine.physics, state.settings.npcs);
-        recordNpcGore(state, NpcGoreHit{.npc = *struck, .point = end, .direction = shotDirection(origin, end),
-            .damage = state.settings.npcs.playerDamage, .killed = killed});
+        const lockstep::anim::Limb limb = recordNpcGore(state, NpcGoreHit{.npc = *struck, .point = end,
+            .direction = shotDirection(origin, end), .damage = damage, .killed = killed,
+            .shooter = static_cast<uint8_t>(pawnIndex), .distance = math::length(end - origin)});
+        flinchNpc(roster.npcs[*struck], limb, damage, state.settings.npcs);
 
         if (killed)
         {
@@ -287,7 +295,12 @@ namespace game
                 .actors = actors,
                 .settings = state.settings.npcs,
                 .delta = engine.timeDomains.delta(world::TimeDomain::World),
-                .hits = hits};
+                .hits = hits,
+                .shatter = [&state, &engine](lockstep::physics::BodyId body, const math::Vec3& point,
+                               const math::Vec3& direction)
+                {
+                    return state.level && shatterGlass(state.glass, *state.level, engine.physics, body, point, direction);
+                }};
             NpcRoster& roster = simulation.npcs;
             updateNpcGroups(roster, npcWorld);
 

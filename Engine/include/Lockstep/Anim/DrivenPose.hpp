@@ -19,6 +19,26 @@ namespace lockstep::anim
         math::Transform world{};
     };
 
+    // A rotation added on top of an animated joint (procedural hit reactions, aim offsets, look-at),
+    // in model space and about the joint's own position; the joints below it follow.
+    // joint:    index into the skeleton.
+    // rotation: the added rotation in model space (identity for none).
+    struct JointRotationOffset
+    {
+        uint32_t joint{k_noJoint};
+        math::Quat rotation{};
+    };
+
+    // Computes model-space joint matrices from local transforms and adds rotations on top: each
+    // offset joint is turned about its own position after its parent (offsets of ancestors and
+    // descendants stack).
+    // skeleton: the skeleton.
+    // pose:     local transforms, one per joint.
+    // offsets:  the added rotations, any order; unknown joint indices are ignored.
+    // model:    receives one matrix per joint; must have the joint count.
+    void computeOffsetJointMatrices(const Skeleton& skeleton, const Pose& pose,
+        std::span<const JointRotationOffset> offsets, std::span<math::Mat4> model);
+
     // Computes model-space joint matrices where some joints are placed in world space and every
     // other joint follows its parent with its local transform from `pose` (so fingers ride on a
     // ragdoll's forearm in the pose they had).

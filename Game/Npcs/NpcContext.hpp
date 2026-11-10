@@ -4,6 +4,7 @@
 #include "Npcs/NavGrid.hpp"
 #include "Npcs/Npc.hpp"
 
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -51,6 +52,8 @@ namespace game
     // settings: NPC tuning.
     // delta:    the World domain's delta of this tick.
     // hits:     hits landed by NPC shots this tick, for the host rules to apply (appended to).
+    // shatter:  called when an NPC bullet strikes a static body (body, point, unit direction);
+    //           returns true if the body broke (glass) and the bullet flies on. May be empty.
     struct NpcWorld
     {
         const NavGrid& grid;
@@ -60,6 +63,7 @@ namespace game
         const NpcSettings& settings;
         float delta{0.0f};
         std::vector<NpcHit>& hits;
+        std::function<bool(lockstep::physics::BodyId, const math::Vec3&, const math::Vec3&)> shatter{};
     };
 
     // actors:  the actors of this tick.

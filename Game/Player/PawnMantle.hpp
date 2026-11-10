@@ -19,8 +19,8 @@ namespace game
     // Starts a mantle when a buffered jump press meets a ledge: moving forward, something within
     // reach in front, a walkable top between PawnSettings::mantleMinHeight and mantleMaxHeight
     // above the feet, room above the pawn to rise and room on top for its capsule. Finds the ledge
-    // with rays against shared geometry only (sharedRaycast()), so host and client agree. A thin
-    // top (a railing, a low wall) becomes a vault: the pawn goes over and drops on the far side.
+    // with rays against shared geometry only (sharedRaycast()), so host and client agree. Thin
+    // obstacles are vaulted instead (tryStartVault() is tried first).
     // motion:     the pawn's motion; on success the mantle starts (mantleTicks, mantleHeight, the
     //             forward velocity) and the jump press is used up.
     // controller: the pawn's controller.

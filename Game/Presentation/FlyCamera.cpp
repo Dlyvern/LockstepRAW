@@ -25,7 +25,7 @@ namespace game
 
     void toggleFlyCamera(FlyCamera& camera, const platform::Input& input, const math::Vec3& eye, float yaw, float pitch)
     {
-        if (!input.wasKeyPressed(platform::Key::V))
+        if (!input.wasKeyPressed(platform::Key::F7))
         {
             return;
         }

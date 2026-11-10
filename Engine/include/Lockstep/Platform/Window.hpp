@@ -58,6 +58,14 @@ namespace lockstep::platform
         // Returns: true while the cursor is captured.
         [[nodiscard]] bool isCursorCaptured() const;
 
+        // Switches between a window and borderless fullscreen on the window's current monitor.
+        // The swapchain follows the new size on the next frame.
+        // fullscreen: true for borderless fullscreen, false for the window.
+        void setFullscreen(bool fullscreen);
+
+        // Returns: true while the window is fullscreen.
+        [[nodiscard]] bool isFullscreen() const;
+
     private:
         friend WindowState& windowState(Window& window);
 

@@ -2,7 +2,9 @@
 
 #if LOCKSTEP_DEV_TOOLS
 
+#include "Breakables/GlassDevTools.hpp"
 #include "GameState.hpp"
+#include "Presentation/WeaponPresentation.hpp"
 #include "Gore/GoreDevPanel.hpp"
 #include "Hospital/HospitalDevPanel.hpp"
 #include "Level/RoomDevPanel.hpp"
@@ -49,6 +51,11 @@ namespace game
 
         const char* stanceName(const PawnMotion& motion)
         {
+            if (isVaulting(motion))
+            {
+                return "vaulting";
+            }
+
             if (isMantling(motion))
             {
                 return "mantling";
@@ -145,6 +152,52 @@ namespace game
             }
         }
 
+        void vaultSection(VaultSettings& vault)
+        {
+            if (!ImGui::TreeNode("Vault"))
+            {
+                return;
+            }
+
+            ImGui::SliderFloat("Min height (m)", &vault.minHeight, 0.1f, 1.5f);
+            ImGui::SliderFloat("Max height (m)", &vault.maxHeight, 0.2f, 2.0f);
+            ImGui::SliderFloat("Reach (m)", &vault.reach, 0.0f, 1.5f);
+            ImGui::SliderFloat("Reach per m/s (m)", &vault.reachPerSpeed, 0.0f, 0.3f);
+            ImGui::SliderFloat("Max thickness (m)", &vault.maxThickness, 0.1f, 2.0f);
+            ImGui::SliderFloat("Clearance (m)", &vault.clearance, 0.0f, 0.3f);
+            ImGui::SliderFloat("Landing margin (m)", &vault.landMargin, 0.0f, 0.6f);
+            ImGui::SliderFloat("Sprint distance (m per m/s)", &vault.sprintDistance, 0.0f, 0.5f);
+            ImGui::SliderFloat("Max drop (m)", &vault.maxDrop, 0.2f, 4.0f);
+            ImGui::SliderFloat("Rise speed (m/s)", &vault.riseSpeed, 1.0f, 15.0f);
+            ImGui::SliderFloat("Rise speed per m/s", &vault.riseSpeedPerSpeed, 0.0f, 2.0f);
+            ImGui::SliderFloat("Min cross speed", &vault.minSpeed, 0.5f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Max cross speed", &vault.maxSpeed, 0.5f, k_maxMoveSpeed);
+            ImGui::SliderFloat("Exit speed kept", &vault.exitScale, 0.0f, 1.0f);
+            ImGui::SliderFloat("Exit drop speed (m/s)", &vault.exitDropSpeed, 0.0f, 6.0f);
+            ImGui::TreePop();
+        }
+
+        void kickSection(KickSettings& kick)
+        {
+            if (!ImGui::TreeNode("Kick"))
+            {
+                return;
+            }
+
+            ImGui::SliderFloat("Length (s)", &kick.seconds, 0.1f, 1.5f);
+            ImGui::SliderFloat("Strike at (s)", &kick.impactSeconds, 0.02f, 1.0f);
+            ImGui::SliderFloat("Cooldown (s)", &kick.cooldownSeconds, 0.0f, 2.0f);
+            ImGui::SliderFloat("Move speed x", &kick.moveScale, 0.0f, 1.0f);
+            ImGui::SliderFloat("Range (m)", &kick.range, 0.3f, 3.0f);
+            ImGui::SliderFloat("Cone cos", &kick.coneCos, 0.0f, 1.0f);
+            ImGui::SliderFloat("Height (m)", &kick.height, 0.2f, 1.6f);
+            ImGui::SliderInt("Damage", &kick.damage, 0, 200);
+            ImGui::SliderFloat("NPC shove (m)", &kick.shove, 0.0f, 2.0f);
+            ImGui::SliderFloat("Prop speed (m/s)", &kick.bodySpeed, 0.0f, 20.0f);
+            ImGui::SliderFloat("Prop lift (m/s)", &kick.bodyLift, 0.0f, 10.0f);
+            ImGui::TreePop();
+        }
+
         void hostSection(GameState& state, const EngineContext& engine)
         {
             GameState::Settings& settings = state.settings;
@@ -191,6 +244,8 @@ namespace game
             ImGui::SliderFloat("Mantle rise speed", &settings.pawns.mantleRiseSpeed, 0.5f, 10.0f);
             ImGui::SliderFloat("Mantle forward (m)", &settings.pawns.mantleForwardDistance, 0.0f, 1.5f);
             ImGui::SliderFloat("Mantle forward time (s)", &settings.pawns.mantleForwardSeconds, 0.02f, 1.0f);
+            vaultSection(settings.pawns.vault);
+            kickSection(settings.pawns.kick);
             ImGui::SliderFloat("Lean distance (m)", &settings.pawns.leanDistance, 0.0f, 0.8f);
             ImGui::SliderFloat("Lean time (s)", &settings.pawns.leanSeconds, 0.0f, 1.0f);
             ImGui::SliderFloat("Lean wall clearance (m)", &settings.pawns.leanClearance, 0.0f, 0.5f);
@@ -308,9 +363,13 @@ namespace game
             pawnCharactersDevSection(state.pawnCharacters ? &*state.pawnCharacters : nullptr);
             headMotionDevSection(state.headMotion);
             footstepsDevSection(state.footsteps);
+            kickEffectsDevSection(state.kicks);
             npcLooksDevSection(state.npcLooks, engine.physics);
             combatAudioDevSection(state.combatAudio);
+            weaponsDevSection(state);
             effectsDevSection(state.effects);
+            weaponFxDevSection(state.weaponFx);
+            glassDevSection(state, engine);
             weatherDevSection(state.weather);
             lightAnimationDevSection(state.lightAnimation);
             goreDevSection(state, engine);
@@ -322,7 +381,7 @@ namespace game
             ImGui::Separator();
             ImGui::TextDisabled("WASD walk, hold Shift to run, mouse look, left click fire, R reload, F use");
             ImGui::TextDisabled("Downed: crawl; the partner holds F next to you to revive");
-            ImGui::TextDisabled("Space jump, hold Q / E to lean");
+            ImGui::TextDisabled("Space jump or vault, V kick, hold Q / E to lean, F7 fly camera");
             ImGui::TextDisabled("Hold Ctrl or toggle C to crouch; Ctrl or C while running slides");
             ImGui::TextDisabled("Armed: weapon up by default; hold right mouse to aim down sights (slower)");
             ImGui::TextDisabled("X lowers / raises the weapon (fire or aim raises it); safe zones keep it lowered");

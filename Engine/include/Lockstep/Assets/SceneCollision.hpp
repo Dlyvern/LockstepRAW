@@ -77,6 +77,18 @@ namespace lockstep::assets
     void setInstanceTransform(Scene& scene, const SceneCollision& collision, physics::PhysicsWorld& physics,
         uint32_t instance, const math::Transform& transform);
 
+    // Gives one instance a collider: one createSceneCollision() skipped (e.g. an alpha-blended glass
+    // pane Game wants to be solid and breakable), or one removeInstanceCollider() took away.
+    // collision: the scene's bodies; the new body is added.
+    // physics:   the physics world the bodies live in.
+    // scene:     the scene the instance belongs to (its mesh's collision shape or geometry is used).
+    // instance:  index into Scene::instances.
+    // Returns:   the new body, the existing one if the instance already has a collider, or
+    //            InvalidArgument for an instance out of range or a mesh without collision geometry,
+    //            or the physics error.
+    [[nodiscard]] Result<physics::BodyId> addInstanceCollider(SceneCollision& collision,
+        physics::PhysicsWorld& physics, const Scene& scene, uint32_t instance);
+
     // Destroys an instance's collider, e.g. for a prop that was picked up and hidden. The
     // instance stays in the scene (hide it with SceneInstance::isVisible).
     // collision: the scene's bodies; the entry is removed.

@@ -2,12 +2,15 @@
 #define LOCKSTEP_GAME_CHARACTERS_VIEW_MODEL_HPP
 
 #include "Characters/CharacterModel.hpp"
+#include "Characters/WeaponSway.hpp"
 
 #include <Lockstep/Anim/SkinnedModel.hpp>
 #include <Lockstep/Core/Math.hpp>
 #include <Lockstep/Core/Result.hpp>
+#include <Lockstep/Core/Transform.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace lockstep::render
@@ -23,10 +26,25 @@ namespace game
     // pose (ViewModelTuning::lowered*), so the hands keep the same grip.
     // character: the arms model.
     // aimClip:   the raised pose (ready stance and aiming down sights).
+    // tacticalReloadClip, emptyReloadClip: the reload clips (ReloadTactical, ReloadEmpty), if the
+    //            model has them; without them a reload lowers the weapon instead.
     struct FirstPersonModel
     {
         CharacterModel character;
         uint32_t aimClip{0};
+        std::optional<uint32_t> tacticalReloadClip{};
+        std::optional<uint32_t> emptyReloadClip{};
+    };
+
+    // A reload the viewmodel plays.
+    // isActive: a reload runs.
+    // isEmpty:  from an empty magazine (the clip with the charging handle).
+    // seconds:  Player seconds the whole reload takes (the clip is stretched to it).
+    struct ViewModelReload
+    {
+        bool isActive{false};
+        bool isEmpty{false};
+        float seconds{2.0f};
     };
 
     // Where the viewmodel sits in one pose, in view space (x right, y up, -z forward, metres):
@@ -48,6 +66,10 @@ namespace game
     // Feel of the viewmodel's procedural motion, editable from the dev panel.
     // aimSeconds:     time to go into or out of aiming down sights.
     // raiseSeconds:   time to raise or lower the weapon (pose crossfade and placement).
+    // vaultSeconds:   time to swing the weapon down and aside for a vault (the left hand plants
+    //                 on the obstacle) and back.
+    // kickLift:       upward speed (m/s) a kick gives the weapon (the arms brace as the leg goes).
+    // kickPitch:      muzzle climb rate (rad/s) a kick gives it.
     // aimDip:         how far the weapon dips (down and back, metres) halfway into aiming.
     // swayLag:        radians the weapon lags per radian of look.
     // swayLimit:      largest lag, in radians.
@@ -57,12 +79,8 @@ namespace game
     // swayRoll:       roll per radian of sideways sway (the weapon cants as it trails a turn).
     // bobAmount:      sideways bob in metres at walking speed (vertical is two thirds of it).
     // bobRoll:        roll of the bob in radians at walking speed.
-    // breatheAmount:  idle breathing sway, radians.
-    // breatheRate:    breaths per second.
-    // recoilKick:     muzzle climb speed one shot adds, rad/s.
-    // recoilBack:     metres the weapon moves back per radian of climb.
-    // recoilStiffness, recoilDamping: the recoil spring.
-    // crouchRecoilScale: recoil multiplier while crouched or sliding.
+    // kick:           how each shot throws the weapon (climb, sideways, roll, back).
+    // breath:         breathing sway, stamina and the held breath.
     // strafeTilt:     roll into a strafe at strafe speed, radians.
     // strafeShift:    sideways lag at strafe speed, metres (the weapon trails the move).
     // moveKick:       metres/s of weapon lag per m/s of velocity change (back and down when
@@ -83,7 +101,8 @@ namespace game
     // airStiffness, airDamping: the spring of the jump and landing dips.
     // airLimit:       largest jump or landing drop, metres (the pitch is limited to twice that in
     //                 radians).
-    // aimDamping:     multiplier of sway, bob and recoil while aiming.
+    // aimDamping:     multiplier of look sway, bob and movement reactions while aiming (the kick
+    //                 and the breathing have their own aiming amounts).
     // readyOffset:    extra view-space offset with the weapon up (ready or lowered).
     // aimOffset:      extra view-space offset while aiming down sights.
     // loweredPitch, loweredYaw, loweredRoll: how the lowered pose turns the ready pose, radians
@@ -101,6 +120,9 @@ namespace game
     {
         float aimSeconds{0.15f};
         float raiseSeconds{0.3f};
+        float vaultSeconds{0.1f};
+        float kickLift{0.45f};
+        float kickPitch{1.2f};
         float aimDip{0.012f};
         float swayLag{0.16f};
         float swayLimit{0.08f};
@@ -109,13 +131,8 @@ namespace game
         float swayRoll{0.6f};
         float bobAmount{0.006f};
         float bobRoll{0.008f};
-        float breatheAmount{0.004f};
-        float breatheRate{0.25f};
-        float recoilKick{0.9f};
-        float recoilBack{1.2f};
-        float recoilStiffness{320.0f};
-        float recoilDamping{26.0f};
-        float crouchRecoilScale{0.7f};
+        WeaponKickTuning kick{};
+        BreathTuning breath{};
         float strafeTilt{0.08f};
         float strafeShift{0.012f};
         float moveKick{0.02f};
@@ -159,8 +176,9 @@ namespace game
     // raiseBlend: 0 lowered, 1 up, moved linearly by raiseSeconds.
     // sprintBlend: 0 not running, 1 in the running pose, moved linearly by sprintSeconds.
     // sway:       look lag as (yaw, pitch) radians, and its rate.
-    // breathePhase: idle breathing cycle, radians.
-    // recoil:     muzzle climb in radians, and its rate.
+    // kick:       the weapon kick of the shots.
+    // breath:     breathing, stamina and the held breath.
+    // breathSway: this frame's breathing sway as (yaw, pitch) radians.
     // shotCount:  the local shot counter last seen, so each new shot kicks once.
     // tilt, tiltRate: strafe roll in radians, and its rate.
     // moveOffset, moveRate: view-space lag from velocity changes and strafing, and its rate.
@@ -172,6 +190,12 @@ namespace game
     // lastVelocity: world planar velocity of the previous frame (x, z; m/s).
     // lastYaw, lastPitch: the look of the previous frame.
     // isDrawn:    drawn last frame; false restarts the motion state.
+    // wasVaulting: the vault swing is still returning (raises at vaultSeconds).
+    // wasKicking: kicking last frame.
+    // isReloadPlaying: a reload clip plays.
+    // view:       where the model was placed last frame, in view space (before the camera turn).
+    // camera:     the camera rotation it was placed with (look, head motion and roll).
+    // eye:        the camera position it was placed with.
     // tuning:     feel settings.
     struct ViewModelState
     {
@@ -181,9 +205,9 @@ namespace game
         float sprintBlend{0.0f};
         math::Vec2 sway{0.0f, 0.0f};
         math::Vec2 swayRate{0.0f, 0.0f};
-        float breathePhase{0.0f};
-        float recoil{0.0f};
-        float recoilRate{0.0f};
+        WeaponKickState kick{};
+        BreathState breath{};
+        math::Vec2 breathSway{0.0f, 0.0f};
         uint8_t shotCount{0};
         float tilt{0.0f};
         float tiltRate{0.0f};
@@ -199,6 +223,12 @@ namespace game
         float lastYaw{0.0f};
         float lastPitch{0.0f};
         bool isDrawn{false};
+        bool wasVaulting{false};
+        bool wasKicking{false};
+        bool isReloadPlaying{false};
+        math::Transform view{};
+        math::Quat camera{};
+        math::Vec3 eye{0.0f, 0.0f, 0.0f};
         ViewModelTuning tuning{};
     };
 
@@ -216,10 +246,15 @@ namespace game
     // isCrouched:   crouched or sliding (less recoil).
     // isAiming:     the player aims down sights.
     // isLowered:    the weapon is lowered.
-    // isSprinting:  the player runs (the weapon swings into the running pose).
+    // isVaulting:   the player vaults (the weapon swings down and aside quickly, freeing the
+    //               left hand; no shot fires meanwhile).
+    // isKicking:    the player kicks (the weapon jolts up as the leg goes out).
+    // isSprinting:  the player runs (the weapon swings into the running pose; drains stamina).
+    // wantsHoldBreath: the hold-breath key (Shift) is down; holds the breath while aiming.
     // canFire:      a click fires the weapon (false while it throws a held toy); with the weapon
     //               lowered no shot kicks either.
     // shotCount:    the local shot counter; each increase kicks when the weapon fires.
+    // reload:       the running reload, played as a clip.
     // deltaSeconds: Player time since the previous frame.
     struct ViewModelInput
     {
@@ -238,9 +273,13 @@ namespace game
         bool isCrouched{false};
         bool isAiming{false};
         bool isLowered{false};
+        bool isVaulting{false};
+        bool isKicking{false};
         bool isSprinting{false};
+        bool wantsHoldBreath{false};
         bool canFire{true};
         uint8_t shotCount{0};
+        ViewModelReload reload{};
         float deltaSeconds{0.0f};
     };
 
@@ -252,9 +291,10 @@ namespace game
     [[nodiscard]] lockstep::Result<FirstPersonModel> createFirstPersonModel(CharacterModel&& character,
         std::string_view aimClip);
 
-    // Animates the viewmodel (raise/lower crossfade, look sway with overshoot and cant, idle
-    // breathing, walk bob, strafe tilt, lag and muzzle dip when starting and stopping, dips on
-    // jumping and landing, running pose swinging with the steps, aim-in, recoil) and
+    // Animates the viewmodel (raise/lower crossfade, look sway with overshoot and cant,
+    // breathing (stamina, held breath), walk bob, strafe tilt, lag and muzzle dip when starting and
+    // stopping, dips on jumping and landing, running pose swinging with the steps, aim-in, weapon
+    // kick) and
     // queues it on render::k_viewModelLayer, placed relative to the camera. Sway turns it about the
     // eye; bob, dip and recoil together move it at most a few centimetres, so it never comes near
     // the eye.

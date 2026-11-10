@@ -46,6 +46,8 @@ namespace game
     // placement:   where the character stands and which way it faces.
     // pose:        how they stand (from the role, or a pose suffix of the node name).
     // gearLook:    their head gear (from the role, or a look suffix of the node name).
+    // body:        their character model (civilians, survivors and prisoners the SWAT body, the
+    //              rest squadBody()).
     // phase:       0 to 1: where in its clip the NPC starts, so neighbours don't move in step.
     // instance:    pose and animator.
     // isStarted:   the clip was started (at `phase`).
@@ -58,6 +60,7 @@ namespace game
         math::Transform placement{};
         NpcPose pose{NpcPose::Idle};
         GearLook gearLook{GearLook::Full};
+        NpcBody body{NpcBody::Swat};
         float phase{0.0f};
         lockstep::anim::SkinnedInstance instance{};
         bool isStarted{false};
@@ -85,7 +88,8 @@ namespace game
     // Npc_CordonOfficer and Npc_Guard are armed; the rest idle. A
     // name part "_Idle", "_Crouch", "_Armed" or "_Aim" (any case, e.g. Npc_Civilian_2_Idle)
     // overrides the pose. Civilians, survivors and prisoners wear only the balaclava; everyone else
-    // gets squadGearLook() (both honour "_Full", "_NoNVG", "_Balaclava").
+    // gets squadGearLook() (both honour "_Full", "_NoNVG", "_Balaclava") and squadBody() (the SWAT
+    // operator or the tactical outfit; "_Swat" / "_Tactical" override it).
     // scene: the loaded level.
     // level: the level's short name ("station"), the first part of line ids.
     // Returns: the placeholders (none without markers).
@@ -101,8 +105,8 @@ namespace game
     void updateNpcBarks(NpcPlaceholders& placeholders, DialogueBook& dialogue, Subtitles& subtitles,
         const std::optional<math::Vec3>& localFoot, float playerDelta);
 
-    // Animates and queues every placeholder for drawing: the unarmed or the armed body, by pose,
-    // each looping its pose's clip from its own phase.
+    // Animates and queues every placeholder for drawing: the unarmed or the armed model of its
+    // body, by pose, each looping its pose's clip from its own phase.
     // renderer:     the renderer.
     // placeholders: the level's placeholders.
     // characters:   the pawn characters; nothing is drawn without them. Armed poses use the

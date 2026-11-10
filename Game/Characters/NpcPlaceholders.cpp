@@ -121,9 +121,17 @@ namespace game
             return pose == NpcPose::Armed || pose == NpcPose::Aim;
         }
 
-        const CharacterModel& modelFor(NpcPose pose, const PawnCharacters& characters)
+        const CharacterModel& modelFor(NpcPose pose, NpcBody body, const PawnCharacters& characters)
         {
-            return isArmedPose(pose) && characters.armed ? characters.armed->body : characters.unarmed;
+            if (isArmedPose(pose))
+            {
+                if (const std::optional<NpcArmedView> armed = npcArmedModel(characters, body))
+                {
+                    return *armed->body;
+                }
+            }
+
+            return npcUnarmedModel(characters, body);
         }
 
         uint32_t clipFor(const anim::SkinnedModel& model, NpcPose pose, const PawnCharacters& characters)
@@ -205,13 +213,14 @@ namespace game
             }
 
             const std::string role = roleOf(node.name);
+            const bool isCivilian = contains(k_civilianRoles, role);
             placeholders.npcs.push_back(NpcPlaceholder{.name = node.name,
                 .barkPrefix = barkPrefix(level, role),
                 .placement = math::Transform{.position = node.transform.position,
                     .rotation = node.transform.rotation * math::angleAxis(math::k_pi, k_upAxis)},
                 .pose = poseOf(name, role),
-                .gearLook = contains(k_civilianRoles, role) ? gearLookSuffix(name).value_or(GearLook::Balaclava)
-                                                            : squadGearLook(name),
+                .gearLook = isCivilian ? gearLookSuffix(name).value_or(GearLook::Balaclava) : squadGearLook(name),
+                .body = isCivilian ? NpcBody::Swat : squadBody(name),
                 .phase = startPhase(name)});
         }
 
@@ -262,7 +271,7 @@ namespace game
         for (std::size_t index = 0; index < placeholders.npcs.size(); ++index)
         {
             NpcPlaceholder& npc = placeholders.npcs[index];
-            const CharacterModel& character = modelFor(npc.pose, *characters);
+            const CharacterModel& character = modelFor(npc.pose, npc.body, *characters);
             const anim::SkinnedModel& model = character.skinned();
             const uint32_t clip = clipFor(model, npc.pose, *characters);
             npc.instance.animator().play(clip, k_idleFadeSeconds,

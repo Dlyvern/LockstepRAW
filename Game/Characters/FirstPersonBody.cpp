@@ -56,11 +56,11 @@ namespace game
     }
 
     math::Transform firstPersonBodyPlacement(const math::Transform& placement, const FirstPersonBodyTuning& tuning,
-        const FirstPersonBodyView& view, float crouch)
+        const FirstPersonBodyView& view, float crouch, float kick)
     {
         const float lookDown = std::clamp(-view.lookPitch / k_fullLookDown, 0.0f, 1.0f);
         const float back = tuning.backOffset + tuning.lookDownBack * lookDown
-            + tuning.crouchBack * std::clamp(crouch, 0.0f, 1.0f);
+            + tuning.crouchBack * std::clamp(crouch, 0.0f, 1.0f) - tuning.kickForward * std::clamp(kick, 0.0f, 1.0f);
         const math::Vec3 forward{-std::sin(view.lookYaw), 0.0f, -std::cos(view.lookYaw)};
         math::Transform moved = placement;
         moved.position = placement.position - forward * back;
@@ -87,6 +87,7 @@ namespace game
         ImGui::SliderFloat("Behind the eye (m)", &tuning.backOffset, -0.2f, 0.5f);
         ImGui::SliderFloat("Extra back looking down (m)", &tuning.lookDownBack, 0.0f, 0.5f);
         ImGui::SliderFloat("Extra back crouched (m)", &tuning.crouchBack, 0.0f, 0.5f);
+        ImGui::SliderFloat("Forward with a kick (m)", &tuning.kickForward, 0.0f, 0.6f);
         ImGui::TextDisabled("Casts a shadow without head (the Engine has no per-draw shadow switch yet)");
         ImGui::TreePop();
     }

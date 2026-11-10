@@ -132,6 +132,10 @@ namespace game
             ImGui::SliderInt("Squad damage", &settings.squad.damage, 0, k_maxDamage);
             ImGui::SliderFloat("Squad spread (rad)", &settings.squad.spread, 0.0f, 0.2f);
             ImGui::SliderInt("Player damage to NPCs", &settings.playerDamage, 1, k_maxDamage);
+            ImGui::SliderFloat("Hit flinch (s)", &settings.flinchSeconds, 0.0f, 1.0f);
+            ImGui::SliderFloat("Stagger (s)", &settings.staggerSeconds, 0.0f, 2.0f);
+            ImGui::SliderInt("Stagger damage", &settings.staggerDamage, 1, k_maxDamage);
+            ImGui::SliderFloat("Stagger speed factor", &settings.staggerSpeed, 0.0f, 1.0f);
             ImGui::SliderFloat("Sight range (m)", &settings.sightRange, 1.0f, 80.0f);
             ImGui::SliderFloat("Sight half angle (rad)", &settings.sightHalfAngle, 0.1f, 3.14f);
             ImGui::SliderFloat("Hearing range (m)", &settings.hearingRange, 0.0f, 80.0f);
@@ -173,6 +177,7 @@ namespace game
             ImGui::SliderInt("Max reserve", &ammo.maxReserve, 0, k_maxRounds);
             ImGui::SliderInt("Issued reserve", &ammo.issuedReserve, 0, k_maxRounds);
             ImGui::SliderFloat("Reload time (s)", &ammo.reloadSeconds, 0.1f, 5.0f);
+            ImGui::SliderFloat("Empty reload time (s)", &ammo.emptyReloadSeconds, 0.1f, 5.0f);
             ImGui::TextDisabled("Crawl scale is shared with the client's prediction: change it offline.");
             ImGui::TreePop();
         }

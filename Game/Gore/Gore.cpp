@@ -26,6 +26,7 @@ namespace game
         constexpr math::Vec3 k_up{0.0f, 1.0f, 0.0f};
         constexpr math::Vec3 k_down{0.0f, -1.0f, 0.0f};
         constexpr float k_twoPi{2.0f * math::k_pi};
+        constexpr float k_piecePush{3.0f};
         constexpr float k_exitOffset{0.7f};
         constexpr float k_floorProbe{2.5f};
         constexpr float k_poolDelaySeconds{0.7f};
@@ -54,6 +55,8 @@ namespace game
         constexpr float k_minPoolSize{0.45f};
         constexpr float k_minDripSize{0.03f};
         constexpr float k_minFloorNormal{0.8f};
+        constexpr float k_headshotSplatterScale{1.5f};
+        constexpr float k_headshotDroplets{1.5f};
 
         std::optional<world::EntityId> localEntity(const EngineContext& engine, world::EntityId hostEntity)
         {
@@ -106,6 +109,7 @@ namespace game
             if (fitDecal(physics, decal, k_minSplatterSize))
             {
                 addDecal(gore.decals, decal, gore.tuning.maxDecals);
+                layWallRun(gore.decals, assets, physics, hit, decal.size, gore.tuning.runs, gore.tuning.maxDecals, random);
             }
         }
 
@@ -115,28 +119,37 @@ namespace game
             const math::Vec3 exit = event.point + event.direction * k_exitOffset;
             const math::Vec3 sprayed = math::normalize(event.direction + k_down * random.range(0.0f, 0.4f));
 
-            if (const auto hit = physics.raycast(exit, sprayed, gore.tuning.splatterReach); hit && !hit->body.isNull())
+            if (const auto hit = physics.raycast(exit, sprayed, gore.tuning.splatterReach); hit && isPaintable(gore.decals, *hit))
             {
                 const float reach = std::min(hit->distance / gore.tuning.splatterReach, 1.0f);
                 laySplatter(gore, assets, physics, *hit, gore.tuning.splatterSize * scale * (0.6f + 0.6f * reach), random);
             }
 
-            if (const auto floor = physics.raycast(exit, k_down, k_floorProbe); floor && !floor->body.isNull())
+            if (const auto floor = physics.raycast(exit, k_down, k_floorProbe); floor && isPaintable(gore.decals, *floor))
             {
                 laySplatter(gore, assets, physics, *floor, gore.tuning.splatterSize * scale * k_floorSplatterShare, random);
             }
         }
 
+        bool isHeadshot(const GoreEvent& event)
+        {
+            return event.kind == GoreEventKind::Hit && event.limb == anim::Limb::Head;
+        }
+
         void showHit(GoreState& gore, const BloodAssets& assets, const lockstep::physics::PhysicsWorld& physics,
             const GoreEvent& event, GoreRandom& random)
         {
+            const float head = isHeadshot(event) ? k_headshotDroplets : 1.0f;
+            const float strength = bloodStrength(gore.bursts, event.damage) * head;
+            const auto droplets = static_cast<uint32_t>(static_cast<float>(gore.tuning.hitDroplets) * strength + 0.5f);
             throwDroplets(gore.spray, SprayBurst{.point = event.point, .direction = event.direction,
-                .count = gore.tuning.hitDroplets, .speed = k_hitSpeed, .spread = k_hitSpread},
+                .count = droplets, .speed = k_hitSpeed * std::min(strength, 1.4f), .spread = k_hitSpread},
                 gore.tuning.maxDroplets, random);
             throwDroplets(gore.spray, SprayBurst{.point = event.point, .direction = -event.direction,
-                .count = gore.tuning.hitDroplets / 3, .speed = k_backSpraySpeed, .spread = k_hitSpread},
+                .count = droplets / 3, .speed = k_backSpraySpeed, .spread = k_hitSpread},
                 gore.tuning.maxDroplets, random);
-            splatterBehind(gore, assets, physics, event, 1.0f, random);
+            splatterBehind(gore, assets, physics, event,
+                std::min(strength, 1.5f) * (isHeadshot(event) ? k_headshotSplatterScale : 1.0f), random);
         }
 
         void addPiece(GoreState& gore, lockstep::physics::PhysicsWorld& physics, SeveredPiece piece)
@@ -203,6 +216,8 @@ namespace game
             const anim::LimbInfo* info = anim::findLimb(*look->model, event.limb);
             const math::Vec3 cut = info != nullptr ? jointWorld(*look, info->rootJoint) : event.point;
             look->severedLimbs = static_cast<anim::LimbMask>(look->severedLimbs | anim::limbBit(event.limb));
+            piece.value().owner = *entity;
+            piece.value().limb = event.limb;
             addPiece(gore, engine.physics, std::move(piece).value());
             std::clog << "Game: " << anim::toString(event.limb) << " severed\n";
             gore.stumps.push_back(BleedingStump{.entity = *entity, .limb = event.limb});
@@ -234,7 +249,7 @@ namespace game
                 const math::Vec3 hips = jointWorld(look, 0);
                 const auto floor = engine.physics.raycast(hips + k_up * k_poolProbeLift, k_down, k_floorProbe);
 
-                if (!floor || floor->body.isNull() || floor->normal.y < k_minFloorNormal)
+                if (!floor || !isPaintable(gore.decals, *floor) || floor->normal.y < k_minFloorNormal)
                 {
                     continue;
                 }
@@ -314,7 +329,7 @@ namespace game
             piece.lastSmear = position;
             const auto floor = physics.raycast(position, k_down, k_smearHeight);
 
-            if (!floor || floor->body.isNull())
+            if (!floor || !isPaintable(gore.decals, *floor))
             {
                 return;
             }
@@ -383,6 +398,22 @@ namespace game
             const std::optional<world::EntityId> entity = localEntity(engine, event.target);
             NpcLook* look = entity ? findLook(state.npcLooks, *entity) : nullptr;
 
+            if (event.body == k_pieceBody)
+            {
+                const auto piece = std::find_if(state.gore.pieces.begin(), state.gore.pieces.end(),
+                    [&](const SeveredPiece& candidate) { return entity && candidate.owner == *entity
+                        && candidate.limb == event.limb; });
+
+                if (piece == state.gore.pieces.end())
+                {
+                    return false;
+                }
+
+                shown.point = piece->current.position;
+                pushPiece(engine.physics, *piece, piece->current.position, event.direction * k_piecePush);
+                return true;
+            }
+
             if (look == nullptr || !look->ragdoll || event.body >= look->ragdoll->joints.size())
             {
                 return false;
@@ -392,6 +423,56 @@ namespace game
             pushNpcBody(engine.physics, state.npcLooks, *look, event.body,
                 event.direction * state.npcLooks.ragdolls.tuning.hitImpulse, std::nullopt);
             return true;
+        }
+
+        void showParticleBlood(GameState& state, const GoreEvent& event, bool isBodyHit)
+        {
+            Effects& effects = state.effects;
+            spawnBloodBurst(state.gore.burstEffects, effects.particles ? &*effects.particles : nullptr, effects.atlas,
+                state.gore.bursts, BloodBurstHit{.point = event.point,
+                    .direction = event.direction,
+                    .damage = event.damage,
+                    .isHeadshot = isHeadshot(event) || (event.kind == GoreEventKind::Sever && event.limb == anim::Limb::Head),
+                    .isCorpse = isBodyHit});
+        }
+
+        void flinch(GameState& state, EngineContext& engine, const GoreEvent& event)
+        {
+            const std::optional<world::EntityId> entity = localEntity(engine, event.target);
+            const ReactionHit hit{.point = event.point, .direction = event.direction, .damage = event.damage};
+
+            if (NpcLook* look = entity ? findLook(state.npcLooks, *entity) : nullptr)
+            {
+                reactToNpcHit(state.npcLooks, *look, hit);
+                return;
+            }
+
+            const world::Entity* found = entity ? engine.entities.find(*entity) : nullptr;
+
+            if (found != nullptr && found->owner() != world::EntityOwner::Host && state.pawnCharacters)
+            {
+                reactToPawnHit(*state.pawnCharacters, found->owner(), hit);
+            }
+        }
+
+        bool isLocalPawn(const EngineContext& engine, const GoreEvent& event, uint8_t local)
+        {
+            const std::optional<world::EntityId> entity = localEntity(engine, event.target);
+            const world::Entity* found = entity ? engine.entities.find(*entity) : nullptr;
+            const world::EntityOwner own = local == 0 ? world::EntityOwner::Player1 : world::EntityOwner::Player2;
+            return found != nullptr && found->owner() == own;
+        }
+
+        void soundHit(GameState& state, EngineContext& engine, const GoreEvent& event, uint8_t local)
+        {
+            if (event.shooter == local || isLocalPawn(engine, event, local))
+            {
+                return;
+            }
+
+            const bool isHead = event.limb == anim::Limb::Head;
+            playFleshHit(state.combatAudio, engine.audio, event.point, bloodStrength(state.gore.bursts, event.damage),
+                isHead);
         }
 
         void applyEvents(GameState& state, EngineContext& engine, const BloodAssets& assets)
@@ -406,13 +487,38 @@ namespace game
                 const bool isOwnBodyHit = isBodyHit && event.shooter == local;
                 const bool isPushed = isBodyHit && !isOwnBodyHit && pushBody(state, engine, event, shown);
 
-                if (event.kind == GoreEventKind::Sever)
+                if (event.kind == GoreEventKind::HeadBurst)
+                {
+                    const std::optional<world::EntityId> entity = localEntity(engine, event.target);
+
+                    if (NpcLook* look = entity ? findLook(state.npcLooks, *entity) : nullptr)
+                    {
+                        showHeadBurst(state, engine, assets, *look, shown, random);
+                    }
+                    else
+                    {
+                        showHit(state.gore, assets, engine.physics, shown, random);
+                    }
+                }
+                else if (event.kind == GoreEventKind::Sever)
                 {
                     showSever(state, engine, assets, shown, random);
+                    showParticleBlood(state, shown, isBodyHit);
                 }
                 else if (!isBodyHit || isPushed)
                 {
                     showHit(state.gore, assets, engine.physics, shown, random);
+                    showParticleBlood(state, shown, isBodyHit);
+                }
+
+                if (!isBodyHit)
+                {
+                    flinch(state, engine, event);
+                }
+
+                if (event.kind != GoreEventKind::Hit || !isBodyHit || isPushed)
+                {
+                    soundHit(state, engine, shown, local);
                 }
             }
 
@@ -447,11 +553,13 @@ namespace game
         }
 
         const BloodAssets& assets = *gore.assets;
+        gore.decals.unpaintable = state.level ? state.level->blockers : std::vector<lockstep::physics::BodyId>{};
         applyEvents(state, engine, assets);
         dropSeveredRagdollBodies(state, engine.physics);
         layPools(state, engine, assets);
         bleedStumps(state, seconds);
         updatePieces(gore, assets, engine.physics, seconds);
+        presentHeadBursts(state, engine, alpha, seconds);
         updateSpray(gore.spray, engine.physics, DripTarget{.decals = gore.decals, .material = assets.drop,
             .maxDecals = gore.tuning.maxDecals}, seconds, gore.random);
         updateDecals(gore.decals, seconds);
@@ -461,7 +569,9 @@ namespace game
             drawPiece(engine.renderer, piece, alpha);
         }
 
-        drawDecals(engine.renderer, gore.decals, assets.decalQuad);
+        drawDecals(engine.renderer, gore.decals, assets.decalQuad,
+            assets.hasRuns ? std::span<const lockstep::render::MeshHandle>(assets.runQuads)
+                           : std::span<const lockstep::render::MeshHandle>());
         drawSpray(engine.renderer, gore.spray, assets.droplet, assets.dropletLook);
     }
 
@@ -473,6 +583,7 @@ namespace game
         }
 
         gore.pieces.clear();
+        clearHeadBursts(gore.headBursts, physics);
         gore.stumps.clear();
         gore.pooled.clear();
         gore.decals.decals.clear();

@@ -36,9 +36,14 @@ namespace game
     // jumpDip:       downward eye speed (m/s) when a jump leaves the ground (the take-off push).
     // strafeRoll:    roll in radians at full strafe speed (leans into the strafe).
     // slideRoll:     roll while sliding, radians (negative tilts left).
+    // vaultRoll:     roll while vaulting, radians (negative tilts left, towards the planted hand).
+    // vaultSmoothRate: how fast the eye catches up with the vault's rise, 1/s (lower rounds the
+    //               hop into an arc).
+    // vaultMaxOffset: largest vault rise smoothed, metres.
     // rollRate:      how fast roll follows its target, 1/s.
-    // recoilKick:    camera pitch velocity one shot adds, rad/s (visual only; the aim the host
-    //                checks never moves).
+    // recoilKick:    camera pitch velocity one shot adds, rad/s: a quick punch on top of the camera
+    //                recoil in the command's look (aiming down sights the shots follow it, since
+    //                they follow the sights).
     // recoilStiffness, recoilDamping: the camera recoil spring.
     // aimRecoilScale: camera recoil multiplier while aiming down sights.
     // crouchRecoilScale: camera recoil multiplier while crouched or sliding.
@@ -77,6 +82,9 @@ namespace game
         float jumpDip{0.55f};
         float strafeRoll{0.018f};
         float slideRoll{-0.07f};
+        float vaultRoll{-0.08f};
+        float vaultSmoothRate{13.0f};
+        float vaultMaxOffset{1.6f};
         float rollRate{8.0f};
         float recoilKick{0.35f};
         float recoilStiffness{160.0f};
@@ -107,6 +115,9 @@ namespace game
     // isGrounded:    on the ground.
     // isCrouched:    crouched or sliding.
     // isSliding:     sliding.
+    // isVaulting:    vaulting over an obstacle.
+    // kickSeconds:   seconds into the pawn's kick, negative while not kicking.
+    // kickImpactSeconds: when in the kick it strikes (KickSettings::impactSeconds).
     // isAiming:      aiming down sights.
     // isSprinting:   running (field of view kick).
     // isBulletTime:  the World domain is slowed (the head feels heavier, the view narrows; the
@@ -128,6 +139,9 @@ namespace game
         bool isGrounded{true};
         bool isCrouched{false};
         bool isSliding{false};
+        bool isVaulting{false};
+        float kickSeconds{-1.0f};
+        float kickImpactSeconds{0.17f};
         bool isAiming{false};
         bool isSprinting{false};
         bool isBulletTime{false};
@@ -184,6 +198,8 @@ namespace game
     // bulletTimeWeight: 0 normal to 1 fully in bullet-time, eased.
     // shotCount:    the local shot counter last seen.
     // weight:       the body's weight reactions.
+    // wasVaulting:  vaulting last frame.
+    // lastKickSeconds: HeadMotionInput::kickSeconds of the last frame.
     struct HeadMotionState
     {
         HeadMotionTuning tuning{};
@@ -209,6 +225,8 @@ namespace game
         float bulletTimeWeight{0.0f};
         uint8_t shotCount{0};
         HeadWeightState weight{};
+        bool wasVaulting{false};
+        float lastKickSeconds{-1.0f};
     };
 
     // Advances the head motion by one frame: eases the eye to the stance's height, smooths steps

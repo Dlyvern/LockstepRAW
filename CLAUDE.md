@@ -116,6 +116,11 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   operator, `Game/Characters/PawnCharacters.hpp` names scenes and clips in one place). Run with
   `--content Content/cooked/characters.pak`. Cook `swat_armed` (the NPC body) with `--limbs`:
   without it the model has no limb regions or wound caps and dismemberment silently turns off.
+  NPC bodies (`NpcBody`, `Game/Characters/NpcBodies.hpp`): squad/police alternate SWAT and
+  `tactical` by marker number (`_Swat`/`_Tactical` override), mercs use `robber_armed`; all keep
+  the SWAT skeleton, clips and model name "SWAT". They are built by
+  `Content/source/scripts/chars/` (`fit_char.py` -> `finish_char.py` -> `merge_glb.py`, which keeps
+  swat.glb's skeleton and clips byte-identical); cook them with `--limbs --wound gore.glb` too.
 - **Audio: FMOD Core 2.03.08** in `external/fmod` (as in Velix; SDK files git-ignored, only our
   CMakeLists tracked; `LOCKSTEP_WITH_FMOD` defaults ON when the SDK exists, else a silent backend).
   FMOD is private to `Engine/src/Audio`. The World bus follows the World time-domain scale (pitch +
@@ -182,6 +187,19 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   baked into UVs or split into materials. Cooked levels are format version 4 (v2, v3 still load);
   recook after cooker changes. The Echo recorder saves both players' movement and
   interactions (`--echo-play <file>` replays it).
+- **Shooting:** a shot leaves the eye along `shotDirection()` (`Game/Weapons/ShotAim`): the
+  command's look (which already holds the camera recoil, `Weapons/Recoil`) turned by
+  `PlayerCommand::aimOffset`, the sight line the shooter saw (front post as drawn while aiming
+  down sights, the look/crosshair from the hip; sway, breathing, weapon kick, head motion), which
+  the host clamps to `SpreadSettings::maxAimOffset`, plus a spread cone hashed from shooter and shot
+  number, so client impacts match host hits. Fire modes Semi/Burst/Auto (B) run in the client's
+  trigger; the host refuses shots faster than the cyclic rate. Penetration (`Weapons/Penetration`):
+  material from node names, thickness by an inside/back trace, at most 2 surfaces (glass free),
+  impacts on both faces (`CombatImpact::isExit`). World-space points of the drawn viewmodel
+  (muzzle, sights, light rail; viewmodel FOV accounted for) come from `Characters/ViewModelSights`.
+  F toggles the weapon flashlight when nothing can be interacted with; its state (and a coarse
+  pitch) reaches the partner in `PlayerStatus`. Shift while aiming holds the breath. Dev:
+  `--dev-fire-drill`.
 - **Level lighting and surfaces (authoring):** `Zone_Interior_*` cube empties (display size 1,
   scaled so the cube covers the interior including its outer walls and roof; boxes are made
   axis-aligned) dim the sky's image-based light inside and add a fill light (per pixel; blends in
@@ -198,7 +216,7 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   named `Decal_*` (or under such a node) are decals: thin meshes 2-5 mm off a surface with an
   Alpha Blend material, drawn right after opaque geometry in scene order. Glass: Principled
   Transmission > 0 (KHR_materials_transmission) or Alpha Blend with low alpha renders as glass
-  with Fresnel reflections; an opaque dark "glass" material stays a dark panel. Time of day: one
+  with Fresnel reflections; an opaque dark "glass" material stays a dark panel. Breakable glass: every object whose name starts with `Breakable_Glass` is one pane (its own object, origin at the pane centre, thin box, glass material); it gets a collider although glass is alpha-blended, and one bullet (player, partner or NPC) breaks it: host-authoritative, broken set replicated (late join included), reset on level load, kept over checkpoint restarts; the pane stops drawing, its collider is removed and the bullet flies on (`Game/Breakables/`; shards, floor debris and sound in `Game/Effects/GlassShatter`; dev: `--dev-break-glass <n>`). Time of day: one
   empty named `Level_Look_Day|Evening|Night` picks a Game preset (`Game/Presentation/LevelLook`:
   sun, sky, IBL, exposure range, grade); none means Day. Custom properties (glTF extras) are not
   cooked, so these conventions are all names and materials. Weather: an empty named
@@ -223,6 +241,13 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   Blender). Engine/Debug owns the ImGui integration and engine panels. Game draws its own panels
   by calling ImGui directly; this is the one external header Game may include, and only inside
   `#if LOCKSTEP_DEV_TOOLS` blocks, so the `shipping` preset builds without ImGui.
+  Frame captures (screen capture tools don't work on this Wayland desktop):
+  `Renderer::captureNextFrame(path)` saves the next presented frame (tonemapped, with overlays) as a
+  PNG without stalling; `--dev-capture <frame> <file.png>` (repeatable) or
+  `--dev-capture <first>:<step>:<count> <prefix>` (writes `<prefix>_<frame>.png`) does it from the
+  command line in dev builds. Captures need ~3 frames between them (later ones wait). Use the
+  `release` build for captures: the debug build shows the dev overlay by default. Combine with
+  `--dev-fire-drill` to look at weapon effects.
 
 ## Code style
 

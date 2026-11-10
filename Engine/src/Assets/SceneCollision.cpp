@@ -3,6 +3,7 @@
 #include "Lockstep/Physics/PhysicsWorld.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <vector>
 
@@ -30,6 +31,36 @@ namespace lockstep::assets
             const math::Vec3 extent = math::size(instance.worldBounds);
 
             return extent.x >= options.minExtent || extent.y >= options.minExtent || extent.z >= options.minExtent;
+        }
+
+        Result<physics::BodyId> createInstanceBody(physics::PhysicsWorld& physics, const Scene& scene,
+            const SceneMesh& mesh, const math::Transform& transform)
+        {
+            if (mesh.collisionShape < scene.collisionShapes.size())
+            {
+                const std::array<math::Transform, 1> transforms{transform};
+                auto bodies = physics.createStaticMeshes(scene.collisionShapes[mesh.collisionShape], transforms);
+
+                if (!bodies)
+                {
+                    return bodies.error();
+                }
+
+                if (bodies.value().empty())
+                {
+                    return Error{ErrorCode::PhysicsFailure, "addInstanceCollider: no body was created"};
+                }
+
+                return physics::BodyId{bodies.value().front()};
+            }
+
+            if (mesh.collisionIndices.empty())
+            {
+                return Error{ErrorCode::InvalidArgument,
+                    "addInstanceCollider: the instance's mesh has no collision geometry"};
+            }
+
+            return physics.createStaticMesh(mesh.collisionPositions, mesh.collisionIndices, transform);
         }
 
         bool hasCollisionGeometry(const Scene& scene)
@@ -180,6 +211,35 @@ namespace lockstep::assets
         {
             physics.setTransform(*body, transform);
         }
+    }
+
+    Result<physics::BodyId> addInstanceCollider(SceneCollision& collision, physics::PhysicsWorld& physics,
+        const Scene& scene, uint32_t instance)
+    {
+        if (instance >= scene.instances.size())
+        {
+            return Error{ErrorCode::InvalidArgument, "addInstanceCollider: instance out of range"};
+        }
+
+        if (const std::optional<physics::BodyId> existing = findInstanceBody(collision, instance))
+        {
+            return physics::BodyId{*existing};
+        }
+
+        const SceneInstance& placed = scene.instances[instance];
+        const SceneMesh& mesh = scene.meshes[placed.mesh];
+        auto body = createInstanceBody(physics, scene, mesh, placed.transform);
+
+        if (!body)
+        {
+            return body.error();
+        }
+
+        collision.bodies.push_back(body.value());
+        collision.instances.push_back(instance);
+        collision.triangleCount += mesh.triangleCount;
+
+        return physics::BodyId{body.value()};
     }
 
     bool removeInstanceCollider(SceneCollision& collision, physics::PhysicsWorld& physics, uint32_t instance)

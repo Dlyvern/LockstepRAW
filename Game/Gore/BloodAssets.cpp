@@ -3,10 +3,13 @@
 #include "Gore/BloodTextures.hpp"
 
 #include <Lockstep/Assets/FileSystem.hpp>
+#include <Lockstep/Physics/PhysicsWorld.hpp>
 #include <Lockstep/Render/PbrMaterial.hpp>
 #include <Lockstep/Render/Renderer.hpp>
 #include <Lockstep/Render/Shapes.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
@@ -29,6 +32,9 @@ namespace game
         constexpr lockstep::math::Vec4 k_dropletColour{0.16f, 0.004f, 0.003f, 1.0f};
         constexpr std::string_view k_goreScene{"characters/gore/scene"};
         constexpr std::string_view k_bloodNode{"Blood_Splat"};
+        constexpr std::string_view k_splatterNode{"Blood_Splatter"};
+        constexpr std::string_view k_poolNode{"Blood_Pool"};
+        constexpr std::array<std::string_view, k_runLooks> k_runNodes{"Blood_Run_1", "Blood_Run_2", "Blood_Run_3"};
 
         std::optional<lockstep::assets::Scene> loadArt(render::Renderer& renderer,
             const lockstep::assets::FileSystem& files)
@@ -50,11 +56,11 @@ namespace game
             return std::move(loaded).value();
         }
 
-        std::optional<render::MaterialHandle> splatMaterial(const lockstep::assets::Scene& scene)
+        std::optional<render::MaterialHandle> nodeMaterial(const lockstep::assets::Scene& scene, std::string_view node)
         {
             for (const lockstep::assets::SceneInstance& instance : scene.instances)
             {
-                if (instance.node < scene.nodes.size() && scene.nodes[instance.node].name == k_bloodNode
+                if (instance.node < scene.nodes.size() && scene.nodes[instance.node].name == node
                     && instance.mesh < scene.meshes.size())
                 {
                     return scene.meshes[instance.mesh].material;
@@ -86,6 +92,53 @@ namespace game
                 .doubleSided = true});
         }
 
+        lockstep::Result<render::MeshHandle> createRunQuad(render::Renderer& renderer, float share)
+        {
+            const float end = -0.5f + share;
+            const std::vector<render::PbrVertex> vertices{
+                {{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+                {{-0.5f, 0.0f, end}, {0.0f, 1.0f, 0.0f}, {0.0f, share}, {1.0f, 0.0f, 0.0f, 1.0f}},
+                {{0.5f, 0.0f, end}, {0.0f, 1.0f, 0.0f}, {1.0f, share}, {1.0f, 0.0f, 0.0f, 1.0f}},
+                {{0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}}};
+            const std::vector<uint32_t> indices{0, 1, 2, 0, 2, 3};
+
+            return renderer.createMesh(std::span<const render::PbrVertex>(vertices), std::span<const uint32_t>(indices));
+        }
+
+        lockstep::Result<bool> createRuns(render::Renderer& renderer, BloodAssets& assets)
+        {
+            if (!assets.art)
+            {
+                return false;
+            }
+
+            for (std::size_t look = 0; look < k_runLooks; ++look)
+            {
+                const std::optional<render::MaterialHandle> run = nodeMaterial(*assets.art, k_runNodes[look]);
+
+                if (!run)
+                {
+                    return false;
+                }
+
+                assets.runs[look] = *run;
+            }
+
+            for (std::size_t step = 0; step < k_runSteps; ++step)
+            {
+                auto quad = createRunQuad(renderer, static_cast<float>(step + 1) / static_cast<float>(k_runSteps));
+
+                if (!quad)
+                {
+                    return quad.error();
+                }
+
+                assets.runQuads[step] = quad.value();
+            }
+
+            return true;
+        }
+
         lockstep::Result<render::MeshHandle> createDecalQuad(render::Renderer& renderer)
         {
             const std::vector<render::PbrVertex> vertices{
@@ -103,7 +156,21 @@ namespace game
     {
         BloodAssets assets{};
         assets.art = loadArt(renderer, files);
-        const std::optional<render::MaterialHandle> splat = assets.art ? splatMaterial(*assets.art) : std::nullopt;
+        const std::optional<render::MaterialHandle> splat = assets.art ? nodeMaterial(*assets.art, k_bloodNode)
+                                                                       : std::nullopt;
+        const std::optional<render::MaterialHandle> splatter = assets.art
+            ? nodeMaterial(*assets.art, k_splatterNode) : std::nullopt;
+        const std::optional<render::MaterialHandle> artPool = assets.art ? nodeMaterial(*assets.art, k_poolNode)
+                                                                         : std::nullopt;
+
+        if (auto runs = createRuns(renderer, assets))
+        {
+            assets.hasRuns = runs.value();
+        }
+        else
+        {
+            return runs.error();
+        }
         auto quad = createDecalQuad(renderer);
 
         if (!quad)
@@ -125,7 +192,7 @@ namespace game
 
         for (std::size_t index = 0; index < assets.splatters.size() && splat; ++index)
         {
-            assets.splatters[index] = *splat;
+            assets.splatters[index] = index > 0 && splatter ? *splatter : *splat;
         }
 
         for (std::size_t index = 0; index < assets.splatters.size() && !splat; ++index)
@@ -141,7 +208,8 @@ namespace game
             assets.splatters[index] = splatter.value();
         }
 
-        auto pool = splat ? lockstep::Result<render::MaterialHandle>(render::MaterialHandle{*splat})
+        const std::optional<render::MaterialHandle> poolArt = artPool ? artPool : splat;
+        auto pool = poolArt ? lockstep::Result<render::MaterialHandle>(render::MaterialHandle{*poolArt})
                           : bloodMaterial(renderer, BloodTextureKind::Pool, k_largeSize, k_poolSeed, k_poolRoughness);
 
         if (!pool)
@@ -170,5 +238,21 @@ namespace game
         assets.dropletLook = dropletLook.value();
 
         return assets;
+    }
+
+    void layWallRun(BloodDecals& decals, const BloodAssets& assets, const lockstep::physics::PhysicsWorld& physics,
+        const lockstep::physics::RaycastHit& hit, float size, const WallRunTuning& tuning, uint32_t maxDecals,
+        GoreRandom& random)
+    {
+        if (!assets.hasRuns || !isRunningSurface(hit.normal) || random.next() >= tuning.chance)
+        {
+            return;
+        }
+
+        const auto look = std::min(static_cast<std::size_t>(random.next() * static_cast<float>(k_runLooks)),
+            k_runLooks - 1);
+        addWallRun(decals, physics, assets.runs[look], hit.point, hit.normal,
+            size * tuning.lengthShare * random.range(0.7f, 1.2f), random.range(tuning.minSeconds, tuning.maxSeconds),
+            maxDecals);
     }
 } //namespace game

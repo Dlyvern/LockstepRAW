@@ -5,20 +5,33 @@ add_executable(LockstepGame
     Audio/CombatAudio.cpp
     Audio/Footsteps.cpp
     Audio/Surfaces.cpp
+    Audio/WeaponSounds.cpp
+    Breakables/BreakableGlass.cpp
+    Breakables/GlassDevTools.cpp
+    Breakables/GlassReplication.cpp
     Characters/CharacterModel.cpp
     Characters/FirstPersonBody.cpp
+    Characters/KickPose.cpp
     Characters/GearLooks.cpp
     Characters/Locomotion.cpp
+    Characters/NpcBodies.cpp
     Characters/NpcPlaceholders.cpp
     Characters/PawnCharacters.cpp
     Characters/ViewModel.cpp
+    Characters/ViewModelReload.cpp
+    Characters/ViewModelSights.cpp
+    Characters/WeaponSway.cpp
     Dialogue/Dialogue.cpp
     Echo/EchoRecording.cpp
     Effects/EffectLibrary.cpp
     Effects/EffectTextures.cpp
     Effects/Effects.cpp
+    Effects/GlassShatter.cpp
+    Effects/MuzzleFlashes.cpp
+    Effects/ViewModelFlash.cpp
     Enemies/Enemy.cpp
     Gore/BloodAssets.cpp
+    Gore/BloodBursts.cpp
     Gore/BloodDecals.cpp
     Gore/BloodSpray.cpp
     Gore/BloodTextures.cpp
@@ -27,6 +40,8 @@ add_executable(LockstepGame
     Gore/GoreDevPanel.cpp
     Gore/GoreEvents.cpp
     Gore/GoreRules.cpp
+    Gore/HeadBurstDevTools.cpp
+    Gore/HeadBursts.cpp
     Gore/SeveredLimbs.cpp
     Hospital/HospitalDevPanel.cpp
     Hospital/HospitalMission.cpp
@@ -44,6 +59,10 @@ add_executable(LockstepGame
     Lights/LightAnimation.cpp
     Lights/LightBuzz.cpp
     Lights/LightPatterns.cpp
+    Melee/KickEvents.cpp
+    Melee/KickPresentation.cpp
+    Melee/KickRules.cpp
+    Npcs/HitReactions.cpp
     Npcs/NavGrid.cpp
     Npcs/NpcBrain.cpp
     Npcs/NpcFiring.cpp
@@ -57,11 +76,14 @@ add_executable(LockstepGame
     Npcs/NpcRoster.cpp
     Npcs/NpcSenses.cpp
     Npcs/NpcTactics.cpp
+    Player/FireDrill.cpp
     Player/LocalPlayer.cpp
     Player/MoveDrill.cpp
     Player/PawnHealth.cpp
     Player/PawnLean.cpp
+    Player/PawnKick.cpp
     Player/PawnMantle.cpp
+    Player/PawnVault.cpp
     Player/PawnMovement.cpp
     Player/PawnRays.cpp
     Player/Pawns.cpp
@@ -69,6 +91,7 @@ add_executable(LockstepGame
     Player/PlayerStatus.cpp
     Player/Prediction.cpp
     Presentation/CombatHud.cpp
+    Presentation/DevCapture.cpp
     Presentation/FirstPerson.cpp
     Presentation/FlyCamera.cpp
     Presentation/Frame.cpp
@@ -84,6 +107,7 @@ add_executable(LockstepGame
     Presentation/SceneCharacters.cpp
     Presentation/Mirrors.cpp
     Presentation/Visuals.cpp
+    Presentation/WeaponPresentation.cpp
     Simulation/HospitalSimulation.cpp
     Simulation/HostSimulation.cpp
     Simulation/LevelFlow.cpp
@@ -96,9 +120,20 @@ add_executable(LockstepGame
     Station/StationState.cpp
     Weapons/Ammo.cpp
     Weapons/DroppedWeapons.cpp
+    Weapons/FireModes.cpp
+    Weapons/Flashlight.cpp
     Weapons/Hitscan.cpp
     Weapons/LagCompensation.cpp
+    Weapons/Penetration.cpp
+    Weapons/Recoil.cpp
+    Weapons/ReloadCues.cpp
+    Weapons/ShotAim.cpp
+    Weapons/WeaponDebris.cpp
+    Weapons/WeaponDebrisLooks.cpp
+    Weapons/WeaponFx.cpp
+    Weapons/WeaponSockets.cpp
     Weapons/WeaponStance.cpp
+    Weapons/WeaponFeedback.cpp
     Weather/RainLook.cpp
     Weather/RainParticles.cpp
     Weather/Weather.cpp

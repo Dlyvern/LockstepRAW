@@ -1,6 +1,7 @@
 #include "Player/LocalPlayer.hpp"
 
 #include "GameState.hpp"
+#include "Player/PawnKick.hpp"
 #include "Simulation/HostSimulation.hpp"
 
 #include <Lockstep/Net/Session.hpp>
@@ -43,7 +44,9 @@ namespace game
         return PawnLook{.isArmed = status.isArmed && !status.isDowned, .isAiming = status.isArmed && status.isAiming,
             .isLowered = status.isArmed && status.isLowered,
             .crouch = pawnCrouchAmount(transform, state.settings.pawns),
-            .isSliding = status.isSliding};
+            .isSliding = status.isSliding,
+            .isVaulting = status.isVaulting,
+            .isKicking = status.isKicking};
     }
 
     PawnLook localPawnLook(const GameState& state, const EngineContext& engine,
@@ -57,7 +60,9 @@ namespace game
             .isLowered = isArmed && isWeaponLowered(state.local.command.lower, state.local.weaponZone,
                 isHoldingToy(state, engine)),
             .crouch = transform ? pawnCrouchAmount(*transform, state.settings.pawns) : 0.0f,
-            .isSliding = isSliding(localPawnMotion(state, engine))};
+            .isSliding = isSliding(localPawnMotion(state, engine)),
+            .isVaulting = isVaulting(localPawnMotion(state, engine)),
+            .isKicking = isKicking(localPawnMotion(state, engine))};
     }
 
     const PawnMotion& localPawnMotion(const GameState& state, const EngineContext& engine)

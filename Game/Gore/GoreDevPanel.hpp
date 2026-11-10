@@ -7,7 +7,7 @@ namespace game
 {
 #if LOCKSTEP_DEV_TOOLS
     // Draws the gore section of the Game dev panel: the sever rules (host), the blood and piece
-    // tuning, counters, and buttons to sever a random limb of the NPC nearest the camera or clear
+    // tuning, particle blood and hit reaction tuning, counters, and buttons to sever a random limb of the NPC nearest the camera or clear
     // all blood. On a client the button only shows the cut on this machine.
     // state:  the game state.
     // engine: Engine services.

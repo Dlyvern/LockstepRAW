@@ -2,18 +2,23 @@
 #define LOCKSTEP_GAME_GAME_STATE_HPP
 
 #include "Audio/CombatAudio.hpp"
+#include "Breakables/BreakableGlass.hpp"
 #include "Audio/Footsteps.hpp"
 #include "Characters/NpcPlaceholders.hpp"
 #include "Characters/PawnCharacters.hpp"
 #include "Dialogue/Dialogue.hpp"
 #include "Echo/EchoRecording.hpp"
 #include "Effects/Effects.hpp"
+#include "Presentation/DevCapture.hpp"
+#include "Weapons/WeaponFx.hpp"
+#include "Effects/GlassShatter.hpp"
 #include "Enemies/Enemy.hpp"
 #include "Gore/Gore.hpp"
 #include "Hospital/HospitalMission.hpp"
 #include "Level/ApartmentRoom.hpp"
 #include "Level/Arena.hpp"
 #include "Level/SceneLevel.hpp"
+#include "Melee/KickPresentation.hpp"
 #include "Lights/LightAnimation.hpp"
 #include "Npcs/NavGrid.hpp"
 #include "Npcs/Npc.hpp"
@@ -34,6 +39,10 @@
 #include "Simulation/LevelFlow.hpp"
 #include "Station/StationMission.hpp"
 #include "Weapons/Ammo.hpp"
+#include "Weapons/Flashlight.hpp"
+#include "Weapons/Penetration.hpp"
+#include "Weapons/ShotAim.hpp"
+#include "Weapons/WeaponFeedback.hpp"
 #include "Weapons/Hitscan.hpp"
 #include "Weapons/LagCompensation.hpp"
 #include "Weapons/WeaponStance.hpp"
@@ -57,6 +66,8 @@ namespace lockstep::app
         // startArmed:      players join carrying the weapon (--armed, or the arena without a level);
         //                  otherwise they are armed later by the story (or the dev panel).
         // gore:            when a hit severs a limb.
+        // fire, recoil, spread, penetration: the weapon's fire rate and modes, camera recoil, shot
+        //                  cone and sight offset limit, and how rounds go through thin things.
         struct Settings
         {
             float worldScale{1.0f};
@@ -72,6 +83,10 @@ namespace lockstep::app
             game::AmmoSettings ammo{};
             game::NpcSettings npcs{};
             game::GoreRules gore{};
+            game::FireModeSettings fire{};
+            game::RecoilSettings recoil{};
+            game::SpreadSettings spread{};
+            game::PenetrationSettings penetration{};
         };
 
         // This machine's player.
@@ -90,6 +105,7 @@ namespace lockstep::app
         // isRestarting: the squad failed and the checkpoint restart is coming (fade out).
         // npcViews:   the client's newest NPC state message (the host reads its roster instead).
         // combatHud:  hit feedback, damage indicators and the restart fade.
+        // aimOffset:  the sight offset of the newest presented frame, sent with the next command.
         struct Local
         {
             game::LocalControls controls{};
@@ -103,6 +119,7 @@ namespace lockstep::app
             bool isRestarting{false};
             game::NpcStateMessage npcViews{};
             game::CombatHud combatHud{};
+            math::Vec2 aimOffset{0.0f, 0.0f};
         };
 
         // The host's simulation. Unused on a client.
@@ -126,6 +143,7 @@ namespace lockstep::app
         // goreSeed:           counter the gore events' seeds are made from.
         // corpseReports:      bullets of the host's player that hit dead bodies on its machine,
         //                     applied next tick.
+        // kickEvents:         kicks that struck this tick, published at its end.
         struct Simulation
         {
             std::array<game::Pawn, game::k_playerCount> pawns{};
@@ -145,6 +163,7 @@ namespace lockstep::app
             std::vector<game::GoreEvent> goreEvents{};
             uint32_t goreSeed{0};
             std::vector<game::CorpseHitReport> corpseReports{};
+            std::vector<game::KickEvent> kickEvents{};
         };
 
         game::Visuals visuals{};
@@ -168,8 +187,15 @@ namespace lockstep::app
         game::FlyCamera flyCamera{};
         game::HeadMotionState headMotion{};
         game::Footsteps footsteps{};
+        game::KickEffects kicks{};
         game::CombatAudio combatAudio{};
         game::Effects effects{};
+        game::WeaponFx weaponFx{};
+        game::DevCapture devCapture{};
+        game::FlashlightState flashlights{};
+        game::WeaponFeedback weaponFeedback{};
+        game::BreakableGlass glass{};
+        game::GlassShatter glassShatter{};
         game::LightAnimation lightAnimation{};
         game::Weather weather{};
         Settings settings{};

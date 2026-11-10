@@ -171,4 +171,16 @@ namespace lockstep::platform
     {
         return m_state->isCursorCaptured;
     }
+
+    void Window::setFullscreen(bool fullscreen)
+    {
+        m_state->window.setMode(fullscreen ? vela::core::WindowMode::BorderlessFullscreen
+                                           : vela::core::WindowMode::Windowed);
+        m_state->lastCursorPosition.reset();
+    }
+
+    bool Window::isFullscreen() const
+    {
+        return m_state->window.getMode() != vela::core::WindowMode::Windowed;
+    }
 } //namespace lockstep::platform

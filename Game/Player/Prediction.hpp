@@ -24,7 +24,7 @@ namespace lockstep::net
 namespace game
 {
     // Bytes an encoded OwnPawnState takes.
-    inline constexpr std::size_t k_ownPawnStateBytes{48};
+    inline constexpr std::size_t k_ownPawnStateBytes{50};
 
     // Smallest gap between the predicted and the host's foot position, in metres, that counts as
     // a misprediction and makes the client rewind and replay.

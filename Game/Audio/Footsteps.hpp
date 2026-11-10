@@ -41,6 +41,9 @@ namespace game
     //                play on the Player bus, which bullet-time leaves alone; this only makes them
     //                feel heavier.
     // remoteFallSpeed: downward speed (m/s) from which another player's pawn counts as falling.
+    // vaultVolume:   volume of the vault sound (hand plant and scuff).
+    // kickSwingVolume: volume of the kick's whoosh.
+    // kickHitVolume: volume of the thud of a kick that struck something.
     struct FootstepTuning
     {
         float walkVolume{0.35f};
@@ -54,16 +57,25 @@ namespace game
         float bulletTimePitch{0.88f};
         float bulletTimeVolume{0.8f};
         float remoteFallSpeed{2.5f};
+        float vaultVolume{0.75f};
+        float kickSwingVolume{0.6f};
+        float kickHitVolume{1.0f};
     };
 
     // The loaded footstep sounds, per surface. A surface without its own sounds uses Concrete's.
     // steps:    step variations (`sounds/footsteps/<surface>_<n>.wav` or `.ogg`, n from 1).
     // landings: landing variations (`sounds/footsteps/<surface>_land_<n>.wav`); steps are used
     //           where there are none.
+    // vaults:   vault variations (`sounds/player/vault_<n>.wav`), played as a vault starts.
+    // kickSwings: kick whooshes (`sounds/player/kick_swing_<n>.wav`), played as a kick starts.
+    // kickHits: kick thuds (`sounds/player/kick_hit_<n>.wav`).
     struct FootstepBank
     {
         std::array<std::vector<lockstep::audio::SoundHandle>, k_surfaceCount> steps{};
         std::array<std::vector<lockstep::audio::SoundHandle>, k_surfaceCount> landings{};
+        std::vector<lockstep::audio::SoundHandle> vaults{};
+        std::vector<lockstep::audio::SoundHandle> kickSwings{};
+        std::vector<lockstep::audio::SoundHandle> kickHits{};
     };
 
     // Footfall tracking of one pawn drawn this frame. Presentation only.
@@ -74,6 +86,8 @@ namespace game
     // fallSpeed:    fastest fall seen in it.
     // footfalls, landings: the local head motion's counters last seen (local pawn).
     // surface:      the surface of the newest step.
+    // wasVaulting:  the pawn vaulted last frame.
+    // wasKicking:   the pawn kicked last frame.
     struct FootstepTracker
     {
         math::Vec3 lastFoot{0.0f, 0.0f, 0.0f};
@@ -84,6 +98,8 @@ namespace game
         uint32_t footfalls{0};
         uint32_t landings{0};
         Surface surface{Surface::Concrete};
+        bool wasVaulting{false};
+        bool wasKicking{false};
     };
 
     // Footstep sounds of both players. Presentation only, never replicated.
@@ -114,6 +130,8 @@ namespace game
     // landSpeed:  local only: HeadPose::landSpeed.
     // speed:      local only: its planar speed, m/s (others' is measured).
     // isCrouched: crouched or sliding (quieter, shorter strides).
+    // isVaulting: vaulting over an obstacle (the vault sound plays as it starts).
+    // isKicking:  kicking (the whoosh plays as it starts).
     struct FootstepPawn
     {
         std::size_t index{0};
@@ -125,6 +143,8 @@ namespace game
         float landSpeed{0.0f};
         float speed{0.0f};
         bool isCrouched{false};
+        bool isVaulting{false};
+        bool isKicking{false};
     };
 
     // What the footsteps of one frame depend on besides the pawns.
@@ -168,6 +188,14 @@ namespace game
     // pawns:     the pawns drawn this frame.
     void updateFootsteps(Footsteps& footsteps, lockstep::audio::AudioSystem& audio, const FootstepFrame& frame,
         std::span<const FootstepPawn> pawns);
+
+    // Plays the thud of a kick that struck something.
+    // footsteps:  the footstep state (its kick sounds).
+    // audio:      the audio system.
+    // position:   where it struck.
+    // worldScale: the World time domain's scale (bullet-time makes it heavier).
+    void playKickHit(Footsteps& footsteps, lockstep::audio::AudioSystem& audio, const math::Vec3& position,
+        float worldScale);
 
 #if LOCKSTEP_DEV_TOOLS
     // Draws the footstep tuning controls of the Game dev panel.

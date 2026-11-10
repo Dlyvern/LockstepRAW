@@ -303,6 +303,15 @@ namespace lockstep::render
         // Returns: success, or an error if the frame could not be recorded or presented.
         [[nodiscard]] Status render();
 
+        // Saves the next rendered frame as a PNG, as presented (tonemapped, with overlays), for dev
+        // checks of how things look without a screenshot tool. Nothing stalls: the pixels are
+        // copied at the end of the next render() and the file is written during a later one, once
+        // the GPU finished that frame (about frames-in-flight frames later); success or failure is
+        // logged on the "Render" channel then.
+        // path:    the file to write (overwritten); RGB, uncompressed, so about 6 MB at 1080p.
+        // Returns: an error if the path is empty or a capture is still pending.
+        [[nodiscard]] Status captureNextFrame(std::string_view path);
+
     private:
         friend RendererState& rendererState(Renderer& renderer);
 

@@ -161,6 +161,10 @@ Every new asset gets a line here when it's added.
 |---|---|---|
 | Locker Equipment | `locker-equipment.zip` (downloaded by the developer) | Apartment: gear lockers |
 | Small TV stand | `small-tv-stand.zip` (downloaded by the developer) | Apartment: TV stand |
+| Blood Decals - 3 Free Realistic PBR Decals (4K) - Splatter, Drips, Pool | Weasel Whistle, https://www.fab.com/listings/a4ffffd4-faa8-4e50-9ccd-278f1e7ec45c (README: free for personal and commercial use) | Gore: blood splatters, wall runs, pools (`Content/source/characters/gore/blooddecals/`) |
+| Tactical Soldier Outfit for MetaHuman (UE 5.6+) | RMDavid, https://www.fab.com/listings/8547291f-699f-45b3-87ca-3fdf2db85bb7 (no licence stated in the files or on the listing) | Squad officers and police: the tactical outfit body, decimated, on the SWAT skeleton with the SWAT operator's head (`Content/source/characters/tactical/`) |
+| Robb | Eemanuel3Dl, https://www.fab.com/listings/c5359728-85aa-4b27-95e6-4352d637a71a (no licence stated in the files or on the listing) | Mercs: the masked robber body on the SWAT skeleton (`Content/source/characters/robber/`) |
+| Wound stump mesh and texture, blood splat | made for the project by the developer (`wound.fbx`, `Textures_wound.png`, `blood.png`) | Gore: wound stumps, blood splats |
 
 ## Sounds (Data/sounds)
 

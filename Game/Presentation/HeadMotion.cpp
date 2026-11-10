@@ -35,17 +35,18 @@ namespace game
             const bool isStep = input.isGrounded && state.wasGrounded && seconds > 0.0f
                 && std::abs(rise) > tuning.stepMinSpeed * seconds;
 
-            if (isStep)
+            if (isStep || input.isVaulting)
             {
                 state.stepOffset -= rise;
             }
 
-            if (std::abs(state.stepOffset) > tuning.stepMaxOffset)
+            if (std::abs(state.stepOffset) > (input.isVaulting ? tuning.vaultMaxOffset : tuning.stepMaxOffset))
             {
                 state.stepOffset = 0.0f;
             }
 
-            state.stepOffset = follow(state.stepOffset, 0.0f, tuning.stepSmoothRate, seconds);
+            state.stepOffset = follow(state.stepOffset, 0.0f,
+                input.isVaulting ? tuning.vaultSmoothRate : tuning.stepSmoothRate, seconds);
         }
 
         uint32_t updateBob(HeadMotionState& state, const HeadMotionInput& input, float seconds)
@@ -128,7 +129,8 @@ namespace game
             const HeadMotionTuning& tuning = state.tuning;
             const float lateral = math::dot(input.planarVelocity, rightOf(input.yaw));
             const float strafe = math::clamp(lateral / std::max(input.strafeSpeed, k_minSpeed), -1.0f, 1.0f);
-            const float target = input.isSliding ? tuning.slideRoll : strafe * tuning.strafeRoll;
+            const float target = input.isVaulting ? tuning.vaultRoll
+                                                  : (input.isSliding ? tuning.slideRoll : strafe * tuning.strafeRoll);
             const float rate = tuning.rollRate * (1.0f + (tuning.bulletTimeRoll - 1.0f) * state.bulletTimeWeight);
             state.roll = follow(state.roll, target, rate, seconds);
         }
@@ -189,15 +191,23 @@ namespace game
                 .footfalls = footfalls,
                 .stepStrength = bobStrength,
                 .isTakeoff = air.isTakeoff,
+                .isVaultStart = input.isVaulting && !state.wasVaulting,
+                .isKickStart = input.kickSeconds >= 0.0f
+                    && (state.lastKickSeconds < 0.0f || input.kickSeconds < state.lastKickSeconds),
+                .isKickImpact = input.kickSeconds >= input.kickImpactSeconds
+                    && (state.lastKickSeconds < input.kickImpactSeconds || input.kickSeconds < state.lastKickSeconds),
                 .landSpeed = air.landSpeed,
                 .seconds = seconds});
+        state.wasVaulting = input.isVaulting;
+        state.lastKickSeconds = input.kickSeconds;
 
         const float bob = state.bobDepth * state.bobWeight;
         const float vertical = -bob * (1.0f - std::abs(std::cos(state.bobPhase)));
         const float side = bob * tuning.bobSide * std::cos(state.bobPhase);
         const math::Vec3 eye = input.foot
             + math::Vec3{0.0f, state.eyeHeight + state.stepOffset + vertical + state.dip + weight.drop, 0.0f}
-            + rightOf(input.yaw) * side + input.leanOffset;
+            + rightOf(input.yaw) * side + input.leanOffset
+            + math::Vec3{-std::sin(input.yaw), 0.0f, -std::cos(input.yaw)} * weight.forward;
 
         return HeadPose{.eye = eye,
             .pitchOffset = state.kick + weight.pitch,
@@ -257,6 +267,9 @@ namespace game
         ImGui::SliderFloat("Jump take-off dip (m/s)", &tuning.jumpDip, 0.0f, 2.0f);
         ImGui::SliderFloat("Strafe roll (rad)", &tuning.strafeRoll, 0.0f, 0.08f);
         ImGui::SliderFloat("Slide roll (rad)", &tuning.slideRoll, -0.2f, 0.2f);
+        ImGui::SliderFloat("Vault roll (rad)", &tuning.vaultRoll, -0.3f, 0.3f);
+        ImGui::SliderFloat("Vault camera smoothing rate", &tuning.vaultSmoothRate, 2.0f, 60.0f);
+        ImGui::SliderFloat("Vault max smoothed (m)", &tuning.vaultMaxOffset, 0.2f, 3.0f);
         ImGui::SliderFloat("Lean roll (rad)", &tuning.leanRoll, 0.0f, 0.4f);
         ImGui::SliderFloat("Sprint FOV (rad)", &tuning.sprintFov, 0.0f, 0.2f);
         ImGui::SliderFloat("Bullet-time FOV (rad)", &tuning.bulletTimeFov, -0.2f, 0.1f);

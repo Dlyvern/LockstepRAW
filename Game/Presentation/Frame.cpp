@@ -7,11 +7,14 @@
 #include "Gore/CorpseHits.hpp"
 #include "Lights/LightAnimation.hpp"
 #include "Player/LocalPlayer.hpp"
+#include "Player/PawnKick.hpp"
 #include "Presentation/FirstPerson.hpp"
 #include "Presentation/Hud.hpp"
 #include "Presentation/LensEffects.hpp"
 #include "Presentation/Mirrors.hpp"
+#include "Presentation/WeaponPresentation.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Weapons/WeaponFx.hpp"
 #include "Weather/Weather.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
@@ -54,6 +57,11 @@ namespace game
 
         void updateCursorCapture(platform::Window& window, const platform::Input& input)
         {
+            if (input.wasKeyPressed(platform::Key::F12))
+            {
+                window.setFullscreen(!window.isFullscreen());
+            }
+
             if (input.wasKeyPressed(platform::Key::Escape))
             {
                 if (window.isCursorCaptured())
@@ -84,7 +92,9 @@ namespace game
             return FootstepPawn{.index = index,
                 .foot = pawnFootPosition(transform),
                 .controller = controller,
-                .isCrouched = look.isSliding || look.crouch > 0.5f};
+                .isCrouched = look.isSliding || look.crouch > 0.5f,
+                .isVaulting = look.isVaulting,
+                .isKicking = look.isKicking};
         }
 
         void presentHost(GameState& state, EngineContext& engine, float alpha, float playerSeconds,
@@ -212,6 +222,8 @@ namespace game
                     .isRestarting = state.local.isRestarting,
                     .canRevive = canRevive,
                     .isArmed = own.isArmed && localPawn.has_value(),
+                    .magazine = state.local.controls.trigger.rounds,
+                    .fireMode = fireModeName(state.local.controls.trigger.mode),
                     .eye = eye,
                     .direction = direction,
                     .lookYaw = lookYaw,
@@ -283,7 +295,9 @@ namespace game
                     .landings = head.landings,
                     .landSpeed = head.landSpeed,
                     .speed = math::length(motion.planarVelocity),
-                    .isCrouched = motion.stance != PawnStance::Stand});
+                    .isCrouched = motion.stance != PawnStance::Stand,
+                    .isVaulting = isVaulting(motion),
+                    .isKicking = isKicking(motion)});
             }
 
             const PawnSettings& pawns = state.settings.pawns;
@@ -355,6 +369,10 @@ namespace game
                 .localController = localPawn ? localController(state, engine) : lockstep::physics::ControllerId{},
                 .eye = eye,
                 .aim = aim,
+                .command = &state.local.command,
+                .level = state.level ? &*state.level : nullptr,
+                .spread = &state.settings.spread,
+                .penetration = &state.settings.penetration,
                 .statuses = state.local.statuses,
                 .listener = eye,
                 .rain = rainSoundAmount(state.weather),
@@ -378,6 +396,7 @@ namespace game
     void presentFrame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
     {
         updateCursorCapture(engine.window, frameInfo.input);
+        updateDevCapture(state.devCapture, engine.renderer);
         drawArena(engine.renderer, state.visuals, state.arena);
 
         if (state.level)
@@ -426,6 +445,7 @@ namespace game
         }
 
         endNpcLooks(state.npcLooks, engine.physics, engine.renderer, frameInfo.alpha, worldSeconds);
+        presentKicks(state, engine, worldSeconds);
 
         const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
         presentMirrors(engine.renderer, state.level ? &state.level->scene : nullptr);
@@ -462,16 +482,26 @@ namespace game
 
         presentFootsteps(state, engine, steps, localPawn, head, playerSeconds);
         presentWeather(state, engine, worldSeconds, frameInfo.frameSeconds);
-        presentCombatAudio(state, engine, steps, localPawn, view.eye, view.direction, playerSeconds, isClient);
-        presentEffects(state, engine, state.flyCamera.isActive ? state.flyCamera.position : view.eye, view.direction,
-            worldSeconds, frameInfo.frameSeconds);
-        presentToys(state, engine, frameInfo.alpha, localPawn ? std::optional<View>(view) : std::nullopt);
-        const PawnLook ownLook = localPawnLook(state, engine);
-        presentCorpseShots(state, engine, view.eye, view.direction,
-            localPawn && ownLook.isArmed && !ownLook.isLowered && !isHoldingToy(state, engine));
-        presentGore(state, engine, frameInfo.alpha, worldSeconds, view.eye);
         presentViewModel(state, engine, localPawn ? std::optional<math::Vec3>(view.eye) : std::nullopt, head, look,
             playerSeconds);
+        presentCombatAudio(state, engine, steps, localPawn, view.eye, view.direction, playerSeconds, isClient);
+        presentGlassShatter(state, engine);
+        presentWeaponFx(state, engine, WeaponFxFrame{.eye = view.eye,
+            .aim = view.direction,
+            .hasLocalPawn = localPawn.has_value(),
+            .worldFov = firstPersonCamera(view.eye, view.cameraDirection,
+                state.pawnCharacters ? viewModelZoom(state.pawnCharacters->viewModel) : 0.0f, view.up,
+                localPawn ? head.fovOffset : 0.0f).verticalFov,
+            .playerSeconds = playerSeconds,
+            .worldSeconds = worldSeconds});
+        presentEffects(state, engine, state.flyCamera.isActive ? state.flyCamera.position : view.eye, worldSeconds,
+            frameInfo.frameSeconds);
+        presentToys(state, engine, frameInfo.alpha, localPawn ? std::optional<View>(view) : std::nullopt);
+        const PawnLook ownLook = localPawnLook(state, engine);
+        presentCorpseShots(state, engine, view.eye, localShotDirection(state, engine, state.local.command.shotCount),
+            localPawn && ownLook.isArmed && !ownLook.isLowered && !isHoldingToy(state, engine));
+        presentGore(state, engine, frameInfo.alpha, worldSeconds, view.eye);
+        presentWeaponHandling(state, engine, localPawn, head, playerSeconds);
 
         if (state.level)
         {
@@ -486,7 +516,7 @@ namespace game
         presentLevelLights(state.lightAnimation, engine, state.level ? &state.level->scene : nullptr,
             state.flyCamera.isActive ? state.flyCamera.position : view.eye, worldSeconds);
         presentLensEffects(engine.renderer.settings(), engine.timeDomains.scale(world::TimeDomain::World),
-            frameInfo.frameSeconds);
+            heldBreathFocus(state), frameInfo.frameSeconds);
 
         if (presentFlyCamera(state, engine, frameInfo, view))
         {

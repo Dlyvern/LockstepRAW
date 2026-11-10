@@ -14,6 +14,8 @@ namespace game
         constexpr unsigned k_gearLookShift{2};
         constexpr std::byte k_gearLookBits{0x03};
         constexpr std::byte k_hitBit{0x10};
+        constexpr unsigned k_bodyShift{5};
+        constexpr std::byte k_bodyBits{0x03};
         constexpr float k_headingSteps{256.0f};
         constexpr std::size_t k_headerBytes{2};
         constexpr std::size_t k_entityBytes{8};
@@ -52,6 +54,12 @@ namespace game
             return value < k_gearLookCount ? static_cast<GearLook>(value) : GearLook::Full;
         }
 
+        NpcBody bodyOf(std::byte bits)
+        {
+            const auto value = static_cast<uint8_t>(bits);
+            return value < k_npcBodyCount ? static_cast<NpcBody>(value) : NpcBody::Swat;
+        }
+
         std::optional<uint8_t> headingStep(const std::optional<float>& yaw)
         {
             if (!yaw)
@@ -84,6 +92,7 @@ namespace game
             .isAlert = npc.mode == NpcMode::Alert || npc.mode == NpcMode::Combat,
             .shotCount = npc.shotCount,
             .gearLook = npc.faction == NpcFaction::Squad ? squadGearLook(npc.name) : mercGearLook(npc.name),
+            .body = npc.faction == NpcFaction::Squad ? squadBody(npc.name) : mercBody(),
             .hitHeading = npc.mode == NpcMode::Dead ? headingStep(npc.hitYaw) : std::nullopt,
             .hitLimb = npc.mode == NpcMode::Dead ? npc.hitLimb : lockstep::anim::Limb::None};
     }
@@ -110,8 +119,9 @@ namespace game
             const NpcView& view = message.npcs[index];
             writeEntity(bytes, view.entity);
             const std::byte gearLook = (static_cast<std::byte>(view.gearLook) & k_gearLookBits) << k_gearLookShift;
+            const std::byte body = (static_cast<std::byte>(view.body) & k_bodyBits) << k_bodyShift;
             bytes.push_back((view.isDead ? k_deadBit : std::byte{0}) | (view.isAlert ? k_alertBit : std::byte{0})
-                | (view.hitHeading ? k_hitBit : std::byte{0}) | gearLook);
+                | (view.hitHeading ? k_hitBit : std::byte{0}) | gearLook | body);
             bytes.push_back(static_cast<std::byte>(view.shotCount));
             bytes.push_back(static_cast<std::byte>(view.hitHeading.value_or(0)));
             bytes.push_back(static_cast<std::byte>(view.hitLimb));
@@ -145,6 +155,7 @@ namespace game
                 .isAlert = (flags & k_alertBit) != std::byte{0},
                 .shotCount = static_cast<uint8_t>(bytes[offset + k_entityBytes + 1]),
                 .gearLook = gearLookOf((flags >> k_gearLookShift) & k_gearLookBits),
+                .body = bodyOf((flags >> k_bodyShift) & k_bodyBits),
                 .hitHeading = (flags & k_hitBit) != std::byte{0}
                     ? std::optional<uint8_t>(static_cast<uint8_t>(bytes[offset + k_entityBytes + 2]))
                     : std::nullopt,

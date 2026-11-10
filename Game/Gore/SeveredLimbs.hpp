@@ -6,8 +6,10 @@
 #include <Lockstep/Core/Result.hpp>
 #include <Lockstep/Core/Transform.hpp>
 #include <Lockstep/Physics/PhysicsTypes.hpp>
+#include <Lockstep/World/Entities.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace lockstep::physics
@@ -40,6 +42,8 @@ namespace game
     // seconds:    World seconds since it was cut.
     // lastSmear:  where it last left a smear while sliding.
     // drip:       World seconds until it drips again.
+    // owner:      local entity of the character it was cut from (null for a dropped weapon).
+    // limb:       the limb it is (None for a dropped weapon).
     struct SeveredPiece
     {
         const lockstep::anim::SkinnedModel* model{nullptr};
@@ -55,6 +59,8 @@ namespace game
         float seconds{0.0f};
         math::Vec3 lastSmear{0.0f, 0.0f, 0.0f};
         float drip{0.0f};
+        lockstep::world::EntityId owner{};
+        lockstep::anim::Limb limb{lockstep::anim::Limb::None};
     };
 
     // The character a limb is cut from, as it was last drawn.
@@ -123,6 +129,24 @@ namespace game
     // piece:    the piece.
     // alpha:    interpolation between the body's last two placements.
     void drawPiece(lockstep::render::Renderer& renderer, const SeveredPiece& piece, float alpha);
+
+    // Traces a ray against a piece's box (its frozen bounds where its body is now).
+    // piece:       the piece.
+    // origin:      ray start.
+    // direction:   unit ray direction.
+    // maxDistance: longest hit distance.
+    // Returns:     the hit distance, or nothing.
+    [[nodiscard]] std::optional<float> tracePiece(const SeveredPiece& piece, const math::Vec3& origin,
+        const math::Vec3& direction, float maxDistance);
+
+    // Pushes a piece as a bullet hit at a point would: its velocity changes by `push`, and it
+    // spins up around the hit point's offset from its centre.
+    // physics: the physics world.
+    // piece:   the piece.
+    // point:   world point of the hit.
+    // push:    change of velocity, m/s (direction times strength).
+    void pushPiece(lockstep::physics::PhysicsWorld& physics, const SeveredPiece& piece, const math::Vec3& point,
+        const math::Vec3& push);
 
     // Destroys a piece's debris body.
     // physics: the physics world.

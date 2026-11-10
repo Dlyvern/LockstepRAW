@@ -60,6 +60,7 @@ namespace game
     // hitCount:       hits this player landed on hostile NPCs, wrapping (hit markers).
     // killCount:      hostile NPCs this player killed, wrapping (kill markers).
     // ammo:           magazine, reserve and reload.
+    // shotCooldown:   Player seconds until the next shot may fire (the cadence check).
     struct Pawn
     {
         lockstep::world::EntityId entity{};
@@ -86,6 +87,7 @@ namespace game
         uint8_t hitCount{0};
         uint8_t killCount{0};
         Ammo ammo{};
+        float shotCooldown{0.0f};
     };
 
     // Settings of a pawn's capsule controller.

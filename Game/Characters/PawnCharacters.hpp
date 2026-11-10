@@ -3,8 +3,11 @@
 
 #include "Characters/CharacterModel.hpp"
 #include "Characters/FirstPersonBody.hpp"
+#include "Characters/KickPose.hpp"
 #include "Characters/Locomotion.hpp"
+#include "Characters/NpcBodies.hpp"
 #include "Characters/ViewModel.hpp"
+#include "Npcs/HitReactions.hpp"
 #include "Player/Pawns.hpp"
 #include "Presentation/Visuals.hpp"
 
@@ -79,6 +82,8 @@ namespace game
     //            (ready stance, the aiming set).
     // crouch:   how far the pawn is crouched (pawnCrouchAmount(): 0 standing, 1 crouched).
     // isSliding: the pawn slides.
+    // isVaulting: the pawn vaults over an obstacle (a procedural side vault: no clip exists).
+    // isKicking: the pawn kicks (a procedural front kick, see KickPose.hpp; starts when it turns on).
     struct PawnLook
     {
         bool isArmed{false};
@@ -86,6 +91,8 @@ namespace game
         bool isLowered{false};
         float crouch{0.0f};
         bool isSliding{false};
+        bool isVaulting{false};
+        bool isKicking{false};
     };
 
     // Stand-in for the crouch and slide clips that are missing (armed crouch, slide): the
@@ -96,6 +103,11 @@ namespace game
     // slideSquash:   extra fraction taken off while sliding.
     // slideLean:     backward lean while sliding, radians.
     // slideBlendRate: how fast the slide pose blends in and out, 1/s.
+    // vaultRoll:     sideways tilt of the procedural vault (legs swing over to the side), radians.
+    // vaultLean:     forward lean of the vault, radians.
+    // vaultSquash:   fraction of height taken off while vaulting (legs tucked).
+    // vaultPivot:    height above the feet the vault pose turns about (the hips), metres.
+    // vaultBlendRate: how fast the vault pose blends in and out, 1/s.
     struct PawnPoseTuning
     {
         float crouchSquash{0.3f};
@@ -103,6 +115,11 @@ namespace game
         float slideSquash{0.1f};
         float slideLean{0.35f};
         float slideBlendRate{10.0f};
+        float vaultRoll{0.55f};
+        float vaultLean{0.3f};
+        float vaultSquash{0.22f};
+        float vaultPivot{0.9f};
+        float vaultBlendRate{16.0f};
     };
 
     // One player pawn's animated character. Presentation only, never replicated.
@@ -112,6 +129,13 @@ namespace game
     // wasDrawn:      drawn last frame; a pawn that skipped a frame (dead, absent) restarts tracking.
     // isArmedModel:  drawn with the armed body last time; a switch restarts tracking.
     // slideBlend:    0 upright to 1 in the slide pose, eased.
+    // vaultBlend:    0 upright to 1 in the vault pose, eased.
+    // kickSeconds:   presentation seconds into the kick shown, or negative without one.
+    // wasKicking:    PawnLook::isKicking last frame.
+    // placement:     the world placement it was drawn with this frame.
+    // yaw:           the pawn's yaw this frame.
+    // reaction:      procedural hit reaction on top of its animation (other players only).
+    // reactionRig:   the joints it turns on the model last drawn.
     struct PawnCharacter
     {
         lockstep::anim::SkinnedInstance instance{};
@@ -120,6 +144,13 @@ namespace game
         bool wasDrawn{false};
         bool isArmedModel{false};
         float slideBlend{0.0f};
+        float vaultBlend{0.0f};
+        float kickSeconds{-1.0f};
+        bool wasKicking{false};
+        math::Transform placement{};
+        float yaw{0.0f};
+        HitReaction reaction{};
+        ReactionRig reactionRig{};
     };
 
     // The armed body, its two locomotion sets and the parts the first-person camera may show
@@ -145,6 +176,9 @@ namespace game
     // unarmedFirstPersonBody: the unarmed body's parts the first-person camera may show, or
     //              nothing for a model cooked without limbs.
     // firstPersonBody: how the local body shows in the first-person camera.
+    // kickPose:    how the procedural kick looks.
+    // reactionTuning: how hit reactions on the pawns look.
+    // npcBodies:   the other character models NPCs may be drawn with (see NpcBody).
     struct PawnCharacters
     {
         CharacterModel unarmed;
@@ -157,9 +191,13 @@ namespace game
         PawnPoseTuning pose{};
         std::optional<FirstPersonBodyMasks> unarmedFirstPersonBody{};
         FirstPersonBodyTuning firstPersonBody{};
+        HitReactionTuning reactionTuning{.impulse = 4.5f, .staggerImpulse = 5.0f};
+        KickPoseTuning kickPose{};
+        NpcBodies npcBodies{};
     };
 
-    // Loads the k_pawnCharacter models from the mounted content and logs their stride speeds.
+    // Loads the k_pawnCharacter models and the NPC bodies from the mounted content and logs their
+    // stride speeds.
     // renderer: uploads the models.
     // files:    the mounted content.
     // Returns:  the characters, or nothing when the unarmed body isn't mounted or can't be used
@@ -209,6 +247,13 @@ namespace game
         lockstep::world::EntityOwner owner, const math::Transform& transform, const PawnLook& look,
         float deltaSeconds, lockstep::render::RenderLayers layers = lockstep::render::k_defaultRenderLayer,
         const FirstPersonBodyView* firstPerson = nullptr);
+
+    // Makes a pawn's character flinch from a hit (presentation only; the local player's own body
+    // never does, so the first-person view stays steady).
+    // characters: the pawn characters.
+    // owner:      the pawn's player.
+    // hit:        the hit.
+    void reactToPawnHit(PawnCharacters& characters, lockstep::world::EntityOwner owner, const ReactionHit& hit);
 
     // owner:   a pawn's player.
     // Returns: the planar speed its character was last drawn moving at, m/s (0 without one).

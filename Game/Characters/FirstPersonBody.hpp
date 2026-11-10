@@ -38,12 +38,15 @@ namespace game
     // lookDownBack: extra distance back at a full look down, metres (the view then shows the
     //               legs in front instead of the vest from inside).
     // crouchBack:   extra distance back while crouched or sliding, metres.
+    // kickForward:  how far the body comes forward with a kick at full extension, metres (so the
+    //               kicking leg shows at the bottom of the view).
     struct FirstPersonBodyTuning
     {
         FirstPersonBodyMode mode{FirstPersonBodyMode::TorsoAndLegs};
         float backOffset{0.16f};
         float lookDownBack{0.14f};
         float crouchBack{0.08f};
+        float kickForward{0.15f};
     };
 
     // The parts of one character model the first-person camera may show. Needs a model cooked
@@ -87,9 +90,10 @@ namespace game
     // tuning:     the first-person body settings.
     // view:       this frame's look.
     // crouch:     0 standing to 1 crouched or sliding.
+    // kick:       how far a kick's leg is out, 0 to 1 (appendKickOffsets()).
     // Returns:    the placement for the first-person camera.
     [[nodiscard]] math::Transform firstPersonBodyPlacement(const math::Transform& placement,
-        const FirstPersonBodyTuning& tuning, const FirstPersonBodyView& view, float crouch);
+        const FirstPersonBodyTuning& tuning, const FirstPersonBodyView& view, float crouch, float kick);
 
 #if LOCKSTEP_DEV_TOOLS
     // Draws the first-person body controls of the Game dev panel.

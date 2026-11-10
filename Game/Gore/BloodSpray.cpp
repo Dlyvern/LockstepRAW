@@ -69,7 +69,7 @@ namespace game
                 const std::optional<lockstep::physics::RaycastHit> hit = physics.raycast(droplet.position,
                     travel / distance, distance);
 
-                if (hit && !hit->body.isNull())
+                if (hit && isPaintable(target.decals, *hit))
                 {
                     BloodDecal decal = decalOnSurface(hit->point, hit->normal, random.range(0.0f, 2.0f * math::k_pi));
                     decal.material = target.material;

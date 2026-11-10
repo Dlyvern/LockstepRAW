@@ -135,6 +135,8 @@ namespace game
     //               direction from the shooter), set when it dies; nothing if the shooter stood
     //               on top of it (or a dev kill).
     // hitLimb:      the limb the killing shot hit (from the host's drawn pose); None if unknown.
+    // flinchSeconds: World seconds left of a flinch from a hit (it holds its fire).
+    // staggerSeconds: World seconds left of a stagger from a heavy or leg hit (it moves slower).
     struct Npc
     {
         lockstep::world::EntityId entity{};
@@ -178,6 +180,8 @@ namespace game
         std::optional<math::Vec3> avoidSpot{};
         std::optional<float> hitYaw{};
         lockstep::anim::Limb hitLimb{lockstep::anim::Limb::None};
+        float flinchSeconds{0.0f};
+        float staggerSeconds{0.0f};
     };
 
     // Capsule height of an NPC crouched behind low cover, metres.
@@ -290,6 +294,10 @@ namespace game
     // calloutRange:    a client shows a callout within this of the speaker, metres.
     // calloutCooldown: World seconds between callouts of a group.
     // playerDamage:    hit points a player's shot takes from an NPC.
+    // flinchSeconds:   World seconds a hit stops an NPC firing back (head hits twice that).
+    // staggerSeconds:  World seconds a heavy or leg hit slows it.
+    // staggerDamage:   a hit of at least this damage staggers (leg hits always do).
+    // staggerSpeed:    factor on its speed while staggered.
     struct NpcSettings
     {
         NpcFighterSettings merc{};
@@ -333,6 +341,10 @@ namespace game
         float calloutRange{30.0f};
         float calloutCooldown{2.0f};
         int32_t playerDamage{34};
+        float flinchSeconds{0.18f};
+        float staggerSeconds{0.45f};
+        int32_t staggerDamage{30};
+        float staggerSpeed{0.35f};
     };
 
     // The host's armed NPCs.

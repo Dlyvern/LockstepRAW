@@ -6,6 +6,7 @@
 #include <Lockstep/Net/Session.hpp>
 #include <Lockstep/Physics/Ragdoll.hpp>
 
+#include <algorithm>
 #include <iostream>
 
 namespace game
@@ -23,6 +24,11 @@ namespace game
             uint32_t hash = ++state.simulation.goreSeed * 2654435761u;
             hash ^= hash >> 15;
             return hash * 2246822519u;
+        }
+
+        uint8_t damageByte(int32_t damage)
+        {
+            return static_cast<uint8_t>(std::clamp(damage, 0, 255));
         }
 
         float chanceRoll(uint32_t seed)
@@ -57,6 +63,22 @@ namespace game
             return isLimb && (isHeadshot || isHeavy) && (!isNpcShot || rules.npcSevers);
         }
 
+        GoreEventKind severKind(const GoreRules& rules, anim::Limb limb, int32_t damage, float distance, uint32_t seed)
+        {
+            if (limb != anim::Limb::Head)
+            {
+                return GoreEventKind::Sever;
+            }
+
+            const float scale = std::clamp(static_cast<float>(damage) / static_cast<float>(std::max(rules.severDamage, 1)),
+                0.0f, 1.5f);
+            const bool isClose = distance > 0.0f && distance < rules.headBurstRange;
+            const float close = isClose ? rules.headBurstBonus * (1.0f - distance / rules.headBurstRange) : 0.0f;
+            const float roll = static_cast<float>(((seed * 2246822519u) >> 20) & 0xFFFu) / 4096.0f;
+            const bool bursts = rules.headBurstAlways || roll < rules.headBurstChance * scale + close;
+            return bursts ? GoreEventKind::HeadBurst : GoreEventKind::Sever;
+        }
+
         const Npc* deadNpc(const GameState& state, lockstep::world::EntityId entity)
         {
             for (const Npc& npc : state.simulation.npcs.npcs)
@@ -74,32 +96,40 @@ namespace game
         {
             const Npc* npc = deadNpc(state, report.target);
 
-            if (npc == nullptr || report.body >= lockstep::physics::k_maxRagdollBodies)
+            const bool isPiece = report.body == k_pieceBody;
+
+            if (npc == nullptr || (report.body >= lockstep::physics::k_maxRagdollBodies && !isPiece))
             {
                 return;
             }
 
             const uint32_t seed = nextSeed(state);
-            const bool severs = decideSever(state.settings.gore, report.limb, state.settings.npcs.playerDamage, false,
-                seed);
+            const bool severs = !isPiece
+                && decideSever(state.settings.gore, report.limb, state.settings.npcs.playerDamage, false, seed);
+
+            const GoreEventKind kind = severs
+                ? severKind(state.settings.gore, report.limb, state.settings.npcs.playerDamage, 0.0f, seed)
+                : GoreEventKind::Hit;
 
             if (severs)
             {
-                std::clog << "Game: the body of '" << npc->name << "' loses the " << anim::toString(report.limb) << '\n';
+                std::clog << "Game: the body of '" << npc->name << "' loses the " << anim::toString(report.limb)
+                          << (kind == GoreEventKind::HeadBurst ? " (bursts)" : "") << '\n';
             }
 
-            state.simulation.goreEvents.push_back(GoreEvent{.kind = severs ? GoreEventKind::Sever : GoreEventKind::Hit,
+            state.simulation.goreEvents.push_back(GoreEvent{.kind = kind,
                 .target = report.target,
-                .limb = severs ? report.limb : anim::Limb::None,
+                .limb = severs || isPiece ? report.limb : anim::Limb::None,
                 .point = report.point,
                 .direction = report.direction,
                 .seed = seed,
                 .body = report.body,
-                .shooter = shooter});
+                .shooter = shooter,
+                .damage = damageByte(state.settings.npcs.playerDamage)});
         }
     } //namespace
 
-    void recordNpcGore(GameState& state, const NpcGoreHit& hit)
+    anim::Limb recordNpcGore(GameState& state, const NpcGoreHit& hit)
     {
         Npc& npc = state.simulation.npcs.npcs[hit.npc];
         const uint32_t seed = nextSeed(state);
@@ -111,27 +141,36 @@ namespace game
             npc.hitLimb = limb;
         }
 
+        const GoreEventKind kind = severs ? severKind(state.settings.gore, limb, hit.damage, hit.distance, seed)
+                                         : GoreEventKind::Hit;
+
         if (severs)
         {
-            std::clog << "Game: NPC '" << npc.name << "' loses the " << anim::toString(limb) << '\n';
+            std::clog << "Game: NPC '" << npc.name << "' loses the " << anim::toString(limb)
+                      << (kind == GoreEventKind::HeadBurst ? " (bursts)" : "") << '\n';
         }
 
-        state.simulation.goreEvents.push_back(GoreEvent{.kind = severs ? GoreEventKind::Sever : GoreEventKind::Hit,
+        state.simulation.goreEvents.push_back(GoreEvent{.kind = kind,
             .target = npc.entity,
-            .limb = severs ? limb : anim::Limb::None,
+            .limb = limb,
             .point = hit.point,
             .direction = hit.direction,
-            .seed = seed});
+            .seed = seed,
+            .shooter = hit.shooter,
+            .damage = damageByte(hit.damage)});
+
+        return limb;
     }
 
     void recordHitGore(GameState& state, lockstep::world::EntityId target, const math::Vec3& point,
-        const math::Vec3& direction)
+        const math::Vec3& direction, int32_t damage)
     {
         state.simulation.goreEvents.push_back(GoreEvent{.kind = GoreEventKind::Hit,
             .target = target,
             .point = point,
             .direction = direction,
-            .seed = nextSeed(state)});
+            .seed = nextSeed(state),
+            .damage = damageByte(damage)});
     }
 
     void recordSever(GameState& state, lockstep::world::EntityId target, anim::Limb limb, const math::Vec3& point)
@@ -148,7 +187,9 @@ namespace game
     {
         if (engine.session.role() != net::Role::Client)
         {
-            state.simulation.corpseReports.push_back(report);
+            CorpseHitReport own = report;
+            own.shooter = static_cast<uint8_t>(k_hostPawn);
+            state.simulation.corpseReports.push_back(own);
             return;
         }
 
@@ -167,7 +208,7 @@ namespace game
     {
         for (const CorpseHitReport& report : state.simulation.corpseReports)
         {
-            recordCorpseGore(state, report, static_cast<uint8_t>(k_hostPawn));
+            recordCorpseGore(state, report, report.shooter);
         }
 
         state.simulation.corpseReports.clear();

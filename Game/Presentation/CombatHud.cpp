@@ -34,6 +34,9 @@ namespace game
         constexpr float k_restartFadeRate{1.2f};
         constexpr std::size_t k_maxMarks{6};
         constexpr math::Vec2 k_ammoPosition{0.96f, 0.9f};
+        constexpr math::Vec2 k_fireModePosition{0.96f, 0.945f};
+        constexpr math::Vec4 k_fireModeColour{0.75f, 0.78f, 0.82f, 0.8f};
+        constexpr float k_fireModeSize{18.0f};
         constexpr math::Vec2 k_statePosition{0.5f, 0.66f};
         constexpr math::Vec2 k_detailPosition{0.5f, 0.70f};
         constexpr math::Vec4 k_ammoColour{0.9f, 0.92f, 0.95f, 0.9f};
@@ -146,7 +149,8 @@ namespace game
 
             if (frame.isArmed && !own.isDowned)
             {
-                std::string ammo = std::to_string(own.magazine) + " / " + std::to_string(own.reserve);
+                const int32_t magazine = own.isReloading ? own.magazine : std::min(frame.magazine, own.magazine);
+                std::string ammo = std::to_string(magazine) + " / " + std::to_string(own.reserve);
 
                 if (own.isReloading)
                 {
@@ -154,8 +158,14 @@ namespace game
                 }
 
                 renderer.submitText(ammo, k_ammoPosition, render::TextStyle{.size = k_ammoSize,
-                    .color = own.magazine > 0 || own.isReloading ? k_ammoColour : k_emptyColour,
+                    .color = magazine > 0 || own.isReloading ? k_ammoColour : k_emptyColour,
                     .align = render::TextAlign::Right});
+
+                if (frame.fireMode != nullptr)
+                {
+                    renderer.submitText(frame.fireMode, k_fireModePosition, render::TextStyle{.size = k_fireModeSize,
+                        .color = k_fireModeColour, .align = render::TextAlign::Right});
+                }
             }
 
             if (frame.isRestarting)

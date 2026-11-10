@@ -256,6 +256,8 @@ namespace game
         }
 
         npc.suppression = std::max(npc.suppression - settings.suppressionDecay * world.delta, 0.0f);
+        npc.flinchSeconds = std::max(npc.flinchSeconds - world.delta, 0.0f);
+        npc.staggerSeconds = std::max(npc.staggerSeconds - world.delta, 0.0f);
         npc.threatAge += world.delta;
         hearShots(roster, npc, *eye, settings);
 

@@ -2,8 +2,10 @@
 
 #include "Player/WireBytes.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
+#include <limits>
 
 namespace game
 {
@@ -21,6 +23,9 @@ namespace game
         constexpr std::byte k_leanLeftBit{0x01};
         constexpr std::byte k_leanRightBit{0x02};
         constexpr std::byte k_interactHeldBit{0x04};
+        constexpr std::byte k_flashlightBit{0x08};
+        constexpr std::byte k_kickBit{0x10};
+        constexpr float k_aimOffsetQuantization{8192.0f};
         constexpr float k_moveQuantization{127.0f};
         constexpr std::size_t k_flagsOffset{0};
         constexpr std::size_t k_moveXOffset{1};
@@ -31,6 +36,8 @@ namespace game
         constexpr std::size_t k_interactCountOffset{12};
         constexpr std::size_t k_moreFlagsOffset{13};
         constexpr std::size_t k_reloadCountOffset{14};
+        constexpr std::size_t k_aimOffsetYawOffset{15};
+        constexpr std::size_t k_aimOffsetPitchOffset{17};
 
         float axis(const platform::Input& input, platform::Key positive, platform::Key negative)
         {
@@ -43,6 +50,23 @@ namespace game
             return std::bit_cast<std::byte>(quantized);
         }
 
+        void writeAngle(std::span<std::byte> bytes, std::size_t offset, float radians)
+        {
+            const auto quantized = static_cast<int16_t>(std::clamp(std::lround(radians * k_aimOffsetQuantization),
+                long{std::numeric_limits<int16_t>::min()},
+                long{std::numeric_limits<int16_t>::max()}));
+            const auto bits = std::bit_cast<uint16_t>(quantized);
+            bytes[offset] = static_cast<std::byte>(bits & 0xFFu);
+            bytes[offset + 1] = static_cast<std::byte>(bits >> 8);
+        }
+
+        float readAngle(std::span<const std::byte> bytes, std::size_t offset)
+        {
+            const auto bits = static_cast<uint16_t>(static_cast<uint16_t>(bytes[offset])
+                | (static_cast<uint16_t>(bytes[offset + 1]) << 8));
+            return static_cast<float>(std::bit_cast<int16_t>(bits)) / k_aimOffsetQuantization;
+        }
+
         float dequantizeAxis(std::byte value)
         {
             return math::clamp(static_cast<float>(std::bit_cast<int8_t>(value)) / k_moveQuantization, -1.0f, 1.0f);
@@ -50,11 +74,15 @@ namespace game
     } //namespace
 
     PlayerCommand sampleLocalCommand(LocalControls& controls, const ControlSettings& settings,
-        const platform::Input& input, bool isCursorCaptured, const WeaponControl& weapon)
+        const platform::Input& input, bool isCursorCaptured, const WeaponControl& weapon, float deltaSeconds)
     {
         const bool canRaise = weapon.zone != WeaponZone::Safe && !weapon.isHoldingToy;
         const bool wasLowered = weapon.isArmed && isWeaponLowered(controls.wantsLowered, weapon.zone, weapon.isHoldingToy);
+        const bool isArmedWeapon = weapon.isArmed && !weapon.isHoldingToy;
+        Trigger& trigger = controls.trigger;
+        syncTriggerRounds(trigger, weapon.magazine, weapon.isReloading);
         bool isAiming = false;
+        bool isFirePressed = false;
 
         if (isCursorCaptured)
         {
@@ -70,19 +98,29 @@ namespace game
                 controls.wantsLowered = !controls.wantsLowered;
             }
 
+            if (weapon.isArmed && input.wasKeyPressed(k_fireModeKey))
+            {
+                trigger.mode = nextFireMode(trigger.mode);
+                trigger.queued = 0;
+            }
+
             if (input.wasMouseButtonPressed(platform::MouseButton::Left))
             {
                 if (wasLowered && !weapon.isHoldingToy)
                 {
                     controls.wantsLowered = controls.wantsLowered && !canRaise;
                 }
-                else if (weapon.isArmed && !weapon.isHoldingToy && !weapon.hasRounds)
+                else if (!isArmedWeapon)
+                {
+                    ++controls.shotCount;
+                }
+                else if (trigger.rounds <= 0 && !weapon.isReloading)
                 {
                     ++controls.reloadCount;
                 }
-                else if (weapon.isReady || weapon.isHoldingToy || !weapon.isArmed)
+                else
                 {
-                    ++controls.shotCount;
+                    isFirePressed = true;
                 }
             }
 
@@ -96,12 +134,29 @@ namespace game
             if (input.wasKeyPressed(platform::Key::F))
             {
                 ++controls.interactCount;
+
+                if (weapon.isArmed && weapon.canToggleFlashlight)
+                {
+                    controls.isFlashlightOn = !controls.isFlashlightOn;
+                }
             }
 
             if (input.wasKeyPressed(platform::Key::R))
             {
                 ++controls.reloadCount;
             }
+        }
+
+        bool isFireHeld = isCursorCaptured && input.isMouseButtonDown(platform::MouseButton::Left);
+
+        if (weapon.scriptedFire)
+        {
+            isAiming = weapon.isArmed && canRaise && weapon.scriptedFire->isAiming;
+            isFireHeld = weapon.scriptedFire->isHeld;
+            const bool hasRounds = trigger.rounds > 0 || weapon.isReloading;
+            isFirePressed = weapon.scriptedFire->isPressed && isArmedWeapon && !wasLowered && hasRounds;
+            controls.reloadCount = static_cast<uint8_t>(controls.reloadCount
+                + (weapon.scriptedFire->isPressed && isArmedWeapon && !hasRounds ? 1 : 0));
         }
 
         const bool isSprintHeld = input.isKeyDown(platform::Key::LeftShift) || input.isKeyDown(platform::Key::RightShift);
@@ -119,11 +174,29 @@ namespace game
 
         const bool isCrouchHeld = input.isKeyDown(platform::Key::LeftControl)
             || input.isKeyDown(platform::Key::RightControl);
+        const bool isCrouching = controls.isCrouchToggled || isCrouchHeld;
+        const bool canFire = (isCursorCaptured || weapon.scriptedFire) && isArmedWeapon && !wasLowered && weapon.isReady
+            && !weapon.isReloading;
+        const uint8_t shots = stepTrigger(trigger, weapon.fire, TriggerInput{.isPressed = isFirePressed,
+            .isHeld = isFireHeld,
+            .canFire = canFire,
+            .deltaSeconds = deltaSeconds});
+
+        for (uint8_t shot = 0; shot < shots; ++shot)
+        {
+            ++controls.shotCount;
+            kickRecoil(controls.recoil, weapon.recoil, isAiming, isCrouching);
+        }
+
+        const math::Vec2 settled = stepRecoil(controls.recoil, weapon.recoil, deltaSeconds);
+        controls.yaw = std::remainder(controls.yaw + settled.x, 2.0f * math::k_pi);
+        controls.pitch = math::clamp(controls.pitch + settled.y, -settings.maxPitch, settings.maxPitch);
+        const math::Vec2 recoil = controls.recoil.offset;
 
         return PlayerCommand{
             .move = {axis(input, platform::Key::D, platform::Key::A), axis(input, platform::Key::W, platform::Key::S)},
-            .yaw = controls.yaw,
-            .pitch = controls.pitch,
+            .yaw = std::remainder(controls.yaw + recoil.x, 2.0f * math::k_pi),
+            .pitch = math::clamp(controls.pitch + recoil.y, -settings.maxPitch, settings.maxPitch),
             .shotCount = controls.shotCount,
             .bulletTime = input.isKeyDown(platform::Key::LeftAlt)
                 || (isCursorCaptured && input.isMouseButtonDown(platform::MouseButton::Middle)),
@@ -132,11 +205,14 @@ namespace game
             .aim = isAiming,
             .lower = controls.wantsLowered,
             .isWeaponUp = weapon.isArmed && !isWeaponLowered(controls.wantsLowered, weapon.zone, weapon.isHoldingToy),
-            .crouch = controls.isCrouchToggled || isCrouchHeld,
+            .crouch = isCrouching,
             .jump = input.isKeyDown(platform::Key::Space),
             .lean = static_cast<int8_t>(axis(input, platform::Key::E, platform::Key::Q)),
             .reloadCount = controls.reloadCount,
-            .isInteractHeld = isCursorCaptured && input.isKeyDown(platform::Key::F)};
+            .isInteractHeld = isCursorCaptured && input.isKeyDown(platform::Key::F),
+            .aimOffset = weapon.isArmed ? weapon.aimOffset : math::Vec2{0.0f, 0.0f},
+            .isFlashlightOn = weapon.isArmed && controls.isFlashlightOn,
+            .kick = input.isKeyDown(platform::Key::V)};
     }
 
     void restrictDownedCommand(PlayerCommand& command, float crawlScale)
@@ -153,6 +229,7 @@ namespace game
         command.isWeaponUp = false;
         command.crouch = true;
         command.jump = false;
+        command.kick = false;
         command.lean = 0;
         command.bulletTime = false;
     }
@@ -171,7 +248,11 @@ namespace game
             | (command.crouch ? k_crouchBit : std::byte{0}) | (command.jump ? k_jumpBit : std::byte{0});
         bytes[k_moreFlagsOffset] = (command.lean < 0 ? k_leanLeftBit : std::byte{0})
             | (command.lean > 0 ? k_leanRightBit : std::byte{0})
-            | (command.isInteractHeld ? k_interactHeldBit : std::byte{0});
+            | (command.isInteractHeld ? k_interactHeldBit : std::byte{0})
+            | (command.isFlashlightOn ? k_flashlightBit : std::byte{0})
+            | (command.kick ? k_kickBit : std::byte{0});
+        writeAngle(bytes, k_aimOffsetYawOffset, command.aimOffset.x);
+        writeAngle(bytes, k_aimOffsetPitchOffset, command.aimOffset.y);
         bytes[k_reloadCountOffset] = static_cast<std::byte>(command.reloadCount);
         bytes[k_moveXOffset] = quantizeAxis(command.move.x);
         bytes[k_moveYOffset] = quantizeAxis(command.move.y);
@@ -216,6 +297,9 @@ namespace game
             .jump = (bytes[k_flagsOffset] & k_jumpBit) != std::byte{0},
             .lean = static_cast<int8_t>((isLeaningRight ? 1 : 0) - (isLeaningLeft ? 1 : 0)),
             .reloadCount = static_cast<uint8_t>(bytes[k_reloadCountOffset]),
-            .isInteractHeld = (leanFlags & k_interactHeldBit) != std::byte{0}};
+            .isInteractHeld = (leanFlags & k_interactHeldBit) != std::byte{0},
+            .aimOffset = {readAngle(bytes, k_aimOffsetYawOffset), readAngle(bytes, k_aimOffsetPitchOffset)},
+            .isFlashlightOn = (leanFlags & k_flashlightBit) != std::byte{0},
+            .kick = (leanFlags & k_kickBit) != std::byte{0}};
     }
 } //namespace game

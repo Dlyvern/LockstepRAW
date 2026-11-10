@@ -31,6 +31,7 @@ namespace game
         constexpr float k_shotMinDistance{4.0f};
         constexpr float k_shotMaxDistance{220.0f};
         constexpr float k_impactMaxDistance{40.0f};
+        constexpr float k_exitVolume{0.6f};
         constexpr float k_sirenDistance{120.0f};
         constexpr float k_thunderDistance{300.0f};
         constexpr float k_minThunderRain{0.3f};
@@ -265,6 +266,28 @@ namespace game
             }
         }
 
+        const std::vector<audio::SoundHandle>& impactSounds(const CombatSoundBank& bank, const ShotImpact& impact,
+            bool isFlesh)
+        {
+            if (isFlesh)
+            {
+                return bank.fleshHits;
+            }
+
+            return impact.material == ShotMaterial::Metal && !bank.metalHits.empty() ? bank.metalHits : bank.concreteHits;
+        }
+
+        ShotPath ownShotPath(const CombatAudioFrame& frame, uint8_t shotNumber)
+        {
+            const bool hasRules = frame.command != nullptr && frame.spread != nullptr && frame.penetration != nullptr;
+            const math::Vec3 direction = hasRules ? shotDirection(*frame.command, frame.localIndex, shotNumber, *frame.spread)
+                                                  : frame.aim;
+            const PenetrationSettings stopAtFirst{.maxPenetrations = 0};
+
+            return traceShotPath(*frame.physics, frame.level, frame.eye, direction, k_impactRange, frame.localController,
+                {}, hasRules ? *frame.penetration : stopAtFirst);
+        }
+
         void playOwnShots(CombatAudio& combat, audio::AudioSystem& audioSystem, const CombatAudioFrame& frame,
             const PlayerStatus& own)
         {
@@ -281,20 +304,51 @@ namespace game
                     continue;
                 }
 
-                const std::optional<physics::RaycastHit> hit = frame.physics->raycast(frame.eye, frame.aim, k_impactRange,
-                    physics::RaycastIgnore{.controller = frame.localController});
+                const auto shotNumber = static_cast<uint8_t>(frame.localShots - shots + 1 + shot);
+                const ShotPath path = ownShotPath(frame, shotNumber);
 
-                if (hit && hit->distance < k_impactMaxDistance)
+                for (std::size_t index = 0; index < path.impacts.size(); ++index)
                 {
-                    const bool isFlesh = landedHit || !hit->controller.isNull();
-                    combat.impacts.push_back(CombatImpact{.point = hit->point, .normal = hit->normal, .body = hit->body,
-                        .isFlesh = isFlesh});
-                    playAt(combat, audioSystem, isFlesh ? combat.bank.fleshHits : combat.bank.concreteHits, hit->point,
-                        combat.tuning.impactVolume, audio::Bus::World);
+                    const ShotImpact& impact = path.impacts[index];
+
+                    if (math::length(impact.point - frame.eye) >= k_impactMaxDistance)
+                    {
+                        break;
+                    }
+
+                    const bool isLast = index + 1 == path.impacts.size();
+                    const bool isFlesh = !impact.controller.isNull() || (landedHit && isLast && !impact.isExit);
+                    combat.impacts.push_back(CombatImpact{.point = impact.point, .normal = impact.normal,
+                        .body = impact.body, .isFlesh = isFlesh, .isExit = impact.isExit});
+                    playAt(combat, audioSystem, impactSounds(combat.bank, impact, isFlesh), impact.point,
+                        combat.tuning.impactVolume * (impact.isExit ? k_exitVolume : 1.0f), audio::Bus::World);
                 }
             }
         }
     } //namespace
+
+    void playFleshHit(CombatAudio& combat, audio::AudioSystem& audioSystem, const math::Vec3& point, float strength,
+        bool isHeadshot)
+    {
+        const std::vector<audio::SoundHandle>& sounds = combat.bank.fleshHits;
+
+        if (sounds.empty())
+        {
+            return;
+        }
+
+        const float loudness = std::clamp(0.55f + 0.45f * strength, 0.4f, 1.4f) * combat.tuning.fleshHitVolume
+            * (isHeadshot ? combat.tuning.headshotVolume : 1.0f);
+        const float pitch = (isHeadshot ? 0.86f : 1.0f) * randomRange(combat, 0.94f, 1.06f) / std::clamp(0.8f + 0.2f * strength, 0.85f, 1.2f);
+        static_cast<void>(audioSystem.play(sounds[nextRandom(combat) % sounds.size()], audio::PlayDescription{
+            .bus = audio::Bus::World, .volume = loudness, .pitch = pitch, .position = point}));
+
+        if (isHeadshot)
+        {
+            static_cast<void>(audioSystem.play(sounds[nextRandom(combat) % sounds.size()], audio::PlayDescription{
+                .bus = audio::Bus::World, .volume = loudness * 0.7f, .pitch = pitch * 0.72f, .position = point}));
+        }
+    }
 
     CombatSoundBank loadCombatSounds(audio::AudioSystem& audioSystem, const lockstep::assets::FileSystem& files)
     {
@@ -311,7 +365,8 @@ namespace game
         bank.concreteHits = loadMany(audioSystem, files, "impacts/concrete_", impact);
         bank.metalHits = loadMany(audioSystem, files, "impacts/metal_", impact);
         bank.fleshHits = loadMany(audioSystem, files, "impacts/flesh_", impact);
-        bank.reload = loadOne(audioSystem, files, "weapons/v45_reload", near);
+        bank.glassBreaks = loadMany(audioSystem, files, "impacts/glass_break_",
+            audio::SoundDescription{.is3d = true, .minDistance = 2.0f, .maxDistance = 45.0f});
         bank.dryFire = loadOne(audioSystem, files, "weapons/dryfire", near);
         bank.heartbeat = loadOne(audioSystem, files, "player/heartbeat",
             audio::SoundDescription{.is3d = false, .isLooping = true});
@@ -339,7 +394,6 @@ namespace game
             for (std::size_t index = 0; index < k_playerCount; ++index)
             {
                 combat.lastShots[index] = frame.statuses[index].shotCount;
-                combat.lastReloading[index] = frame.statuses[index].isReloading;
             }
 
             for (const NpcShotSource& npc : frame.npcs)
@@ -375,14 +429,7 @@ namespace game
                 }
             }
 
-            if (status.isReloading && !combat.lastReloading[index] && combat.bank.reload)
-            {
-                static_cast<void>(audioSystem.play(*combat.bank.reload, audio::PlayDescription{.bus = audio::Bus::Player,
-                    .volume = combat.tuning.reloadVolume, .position = where}));
-            }
-
             combat.lastShots[index] = status.shotCount;
-            combat.lastReloading[index] = status.isReloading;
         }
 
         if (own.damageCount != combat.lastDamage)
@@ -436,8 +483,9 @@ namespace game
         ImGui::SliderFloat("NPC gunshots", &tuning.npcShotVolume, 0.0f, 2.0f);
         ImGui::SliderFloat("Distant from (m)", &tuning.farDistance, 5.0f, 100.0f);
         ImGui::SliderFloat("Impacts", &tuning.impactVolume, 0.0f, 2.0f);
-        ImGui::SliderFloat("Reloads", &tuning.reloadVolume, 0.0f, 2.0f);
         ImGui::SliderFloat("Hurt", &tuning.hurtVolume, 0.0f, 2.0f);
+        ImGui::SliderFloat("Flesh hits (others' shots)", &tuning.fleshHitVolume, 0.0f, 2.0f);
+        ImGui::SliderFloat("Headshot factor", &tuning.headshotVolume, 0.5f, 3.0f);
         ImGui::SliderFloat("Heartbeat", &tuning.heartbeatVolume, 0.0f, 2.0f);
         ImGui::SliderFloat("Street", &tuning.streetVolume, 0.0f, 2.0f);
         ImGui::SliderFloat("Hospital hum", &tuning.humVolume, 0.0f, 2.0f);

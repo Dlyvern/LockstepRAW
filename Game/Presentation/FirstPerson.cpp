@@ -1,7 +1,9 @@
 #include "Presentation/FirstPerson.hpp"
 
+#include "Characters/ViewModelReload.hpp"
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
+#include "Player/PawnKick.hpp"
 
 #include <Lockstep/Platform/Input.hpp>
 #include <Lockstep/Platform/Window.hpp>
@@ -83,6 +85,9 @@ namespace game
                 .isGrounded = motion.isGrounded,
                 .isCrouched = motion.stance != PawnStance::Stand,
                 .isSliding = isSliding(motion),
+                .isVaulting = isVaulting(motion),
+                .kickSeconds = kickSeconds(motion, engine.timeDomains.delta(world::TimeDomain::Player)),
+                .kickImpactSeconds = pawns.kick.impactSeconds - engine.timeDomains.delta(world::TimeDomain::Player),
                 .isAiming = pawnLook.isAiming,
                 .isSprinting = isLocalSprinting(state, engine),
                 .isBulletTime = engine.timeDomains.scale(world::TimeDomain::World) < k_bulletTimeThreshold,
@@ -114,7 +119,12 @@ namespace game
         const PawnMotion& motion = localPawnMotion(state, engine);
         const math::Vec3 forward = lookDirection(look.yaw, 0.0f);
         const math::Vec3 right = rightOf(forward);
-        const bool isReloading = state.local.statuses[localPawnIndex(engine)].isReloading;
+        const std::size_t index = localPawnIndex(engine);
+        const PlayerStatus& status = state.local.statuses[index];
+        const bool isReloading = status.isReloading;
+        const PlayerReload& shown = state.weaponFx.reloads.players[index];
+        const bool isEmptyReload = shown.isActive ? shown.kind == ReloadKind::Empty : status.magazine <= 0;
+        const bool isClipReload = isReloading && hasReloadClips(*characters.firstPerson);
         drawViewModel(engine.renderer, *characters.firstPerson, characters.viewModel,
             ViewModelInput{.eye = *eye,
                 .yaw = look.yaw,
@@ -126,14 +136,20 @@ namespace game
                 .bobStrength = head.bobStrength,
                 .velocity = {math::dot(motion.planarVelocity, right), math::dot(motion.planarVelocity, forward)},
                 .verticalSpeed = motion.verticalSpeed,
-                .isGrounded = motion.isGrounded || isMantling(motion),
+                .isGrounded = motion.isGrounded || (isMantling(motion) && !isVaulting(motion)),
                 .strafeSpeed = state.settings.pawns.strafeSpeed,
                 .isCrouched = motion.stance != PawnStance::Stand,
                 .isAiming = pawnLook.isAiming && !isReloading,
-                .isLowered = pawnLook.isLowered || isReloading,
-                .isSprinting = isLocalSprinting(state, engine),
+                .isLowered = pawnLook.isLowered || (isReloading && !isClipReload),
+                .isVaulting = isVaulting(motion),
+                .isKicking = isKicking(motion),
+                .isSprinting = isLocalSprinting(state, engine) && !isClipReload,
+                .wantsHoldBreath = state.local.command.sprint,
                 .canFire = !isHoldingToy(state, engine) && !isReloading,
                 .shotCount = state.local.command.shotCount,
+                .reload = ViewModelReload{.isActive = isClipReload,
+                    .isEmpty = isEmptyReload,
+                    .seconds = isEmptyReload ? state.settings.ammo.emptyReloadSeconds : state.settings.ammo.reloadSeconds},
                 .deltaSeconds = playerSeconds});
     }
 } //namespace game

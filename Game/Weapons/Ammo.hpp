@@ -9,13 +9,15 @@ namespace game
     // magazineSize:   rounds in a full magazine.
     // maxReserve:     most rounds carried besides the magazine.
     // issuedReserve:  reserve handed out with the weapon (armory, --armed, a combat level).
-    // reloadSeconds:  Player seconds from pressing R to a full magazine.
+    // reloadSeconds:  Player seconds from pressing R to a full magazine, with rounds left.
+    // emptyReloadSeconds: the same from an empty magazine (the charging handle is pulled too).
     struct AmmoSettings
     {
         int32_t magazineSize{30};
         int32_t maxReserve{120};
         int32_t issuedReserve{90};
-        float reloadSeconds{2.1f};
+        float reloadSeconds{2.0f};
+        float emptyReloadSeconds{2.6f};
     };
 
     // One player's rounds.
@@ -47,9 +49,10 @@ namespace game
     // settings: the reserve maximum.
     void refillReserve(Ammo& ammo, const AmmoSettings& settings);
 
-    // Starts a reload when the magazine is not full, rounds are left and none runs yet.
+    // Starts a reload when the magazine is not full, rounds are left and none runs yet; from an
+    // empty magazine it takes emptyReloadSeconds.
     // ammo:     the rounds, changed.
-    // settings: magazine size and reload time.
+    // settings: magazine size and reload times.
     // Returns:  true if a reload started.
     bool startReload(Ammo& ammo, const AmmoSettings& settings);
 

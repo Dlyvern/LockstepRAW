@@ -22,6 +22,7 @@ namespace game
     // isAlert:    alert or fighting (drawn with the weapon up), else relaxed.
     // shotCount:  shots fired, wrapping; each increase flashes its muzzle.
     // gearLook:   its head gear (from its marker name, so both machines draw the same).
+    // body:       its character model (squadBody() of its marker name, mercBody() for mercs).
     // hitHeading: heading the killing shot travelled along, in 256 steps of a full turn
     //             (seeds the body's ragdoll push); nothing if unknown.
     // hitLimb:    the limb the killing shot hit (its ragdoll body is pushed); None if unknown.
@@ -32,6 +33,7 @@ namespace game
         bool isAlert{false};
         uint8_t shotCount{0};
         GearLook gearLook{GearLook::Full};
+        NpcBody body{NpcBody::Swat};
         std::optional<uint8_t> hitHeading{};
         lockstep::anim::Limb hitLimb{lockstep::anim::Limb::None};
 

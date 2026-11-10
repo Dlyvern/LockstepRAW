@@ -5,3 +5,9 @@ Ambience: 100 CC0 SFX #2 by rubberduck (CC0) https://opengameart.org/content/100
 Footsteps: "Footsteps on different surfaces" (CC-BY 3.0) https://opengameart.org/content/footsteps-on-different-surfaces (contains sounds by freesound.org authors, see the pack licence files)
 Siren, heartbeat, fluorescent buzz and crackles (ambience/fluorescent_*): synthesised.
 Rain (ambience/rain_outdoor, ambience/rain_indoor) and thunder (ambience/thunder_*): synthesised (ffmpeg noise generators).
+Glass breaking (impacts/glass_break_*): synthesised (noise crash and sine tinkles, Python + ffmpeg).
+Flashlight click, fire mode switch (weapons/flashlight_click, weapons/firemode_switch), held breath and exhale (player/breath_hold, player/breath_release): synthesised (ffmpeg).
+Reload parts (weapons/v45_mag_out, v45_mag_in, v45_charge): cut from the rubberduck CC0 pack above (metal_04, switch_02, spring_03).
+Casings (casings/*), dropped magazines (magazines/*), gunshot tails (tails/*): synthesised (Content/source/scripts/make_weapon_fx_sounds.py; tails convolve the firearms library transient with generated room/echo responses).
+Vault (player/vault_*): synthesised (Content/source/scripts/make_vault_sounds.py: hand slap, cloth scuff, gear rattle).
+Kick (player/kick_swing_*, player/kick_hit_*): synthesised (Content/source/scripts/make_kick_sounds.py: air and cloth whoosh, boot thud).

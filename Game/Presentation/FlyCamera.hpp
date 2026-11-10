@@ -11,7 +11,7 @@ namespace game
 {
     namespace math = lockstep::math;
 
-    // Free-flying dev camera for inspecting levels, toggled with V. Presentation only: while it
+    // Free-flying dev camera for inspecting levels, toggled with F7. Presentation only: while it
     // is active the local pawn gets idle input and stands still, and nothing is replicated.
     // isActive: the camera replaces the first-person view.
     // position: eye position.
@@ -27,7 +27,7 @@ namespace game
         float speed{6.0f};
     };
 
-    // Toggles the camera on V. Turning it on starts it at the current view.
+    // Toggles the camera on F7 (V kicks). Turning it on starts it at the current view.
     // camera: the fly camera.
     // input:  this frame's input.
     // eye:    the current view's eye position.

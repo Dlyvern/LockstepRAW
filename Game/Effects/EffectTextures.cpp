@@ -11,6 +11,7 @@ namespace game
         constexpr uint32_t k_smokeSeed{17};
         constexpr uint32_t k_chunkSeed{91};
         constexpr uint32_t k_chunkCorners{9};
+        constexpr uint32_t k_flashSeed{53};
 
         struct Texel
         {
@@ -109,8 +110,57 @@ namespace game
             return Texel{.red = light, .green = light, .blue = light, .alpha = coverage};
         }
 
+        Texel flameColour(float heat, float alpha)
+        {
+            const float hot = std::clamp(heat, 0.0f, 1.0f);
+
+            return Texel{.red = 1.0f, .green = 0.45f + 0.5f * hot, .blue = 0.12f + 0.68f * hot * hot, .alpha = alpha};
+        }
+
+        Texel flashTexel(float u, float v, uint32_t variant)
+        {
+            const float dx = (u - 0.5f) * 2.0f;
+            const float dy = (v - 0.5f) * 2.0f;
+            const float radius = std::sqrt(dx * dx + dy * dy);
+            const float angle = std::atan2(dy, dx);
+            const uint32_t seed = k_flashSeed + variant * 11u;
+            const float petals = 4.0f + static_cast<float>(variant);
+            const float wave = 0.5f + 0.5f * std::cos(angle * petals + lattice(static_cast<int32_t>(variant), 3, seed) * k_twoPi);
+            const float ragged = fractalNoise(std::cos(angle) * 3.0f + 7.0f, std::sin(angle) * 3.0f + 7.0f, seed);
+            const float reach = 0.25f + 0.7f * std::pow(wave, 3.0f) * (0.55f + 0.45f * ragged);
+            const float petal = std::clamp((reach - radius) / std::max(reach, 0.05f), 0.0f, 1.0f);
+            const float core = std::exp(-radius * radius * 18.0f);
+            const float alpha = std::clamp(core + smooth(petal) * 0.85f, 0.0f, 1.0f);
+
+            return flameColour(core + petal * 0.4f, alpha);
+        }
+
+        Texel flashSideTexel(float u, float v)
+        {
+            const float across = std::abs(v - 0.5f) * 2.0f;
+            const float swell = std::sin(std::clamp(u, 0.0f, 1.0f) * (k_twoPi * 0.5f) * 0.85f + 0.25f);
+            const float width = std::max(0.08f, 0.85f * swell * (1.0f - u * 0.55f));
+            const float ragged = fractalNoise(u * 6.0f, v * 2.0f, k_flashSeed + 97u);
+            const float edge = std::clamp((width * (0.75f + 0.5f * ragged) - across) / width, 0.0f, 1.0f);
+            const float tip = std::clamp((1.0f - u) * 4.0f, 0.0f, 1.0f);
+            const float base = std::clamp(u * 12.0f, 0.0f, 1.0f);
+            const float alpha = smooth(edge) * tip * base;
+
+            return flameColour((1.0f - across) * (1.0f - u * 0.6f), alpha);
+        }
+
         Texel cellTexel(uint32_t frame, float u, float v)
         {
+            if (frame >= k_flashFrame && frame < k_flashFrame + k_flashFrames)
+            {
+                return flashTexel(u, v, frame - k_flashFrame);
+            }
+
+            if (frame == k_flashSideFrame)
+            {
+                return flashSideTexel(u, v);
+            }
+
             if (frame >= k_smokeFrame && frame < k_smokeFrame + k_smokeFrames)
             {
                 return smokeTexel(u, v, frame - k_smokeFrame);
@@ -156,6 +206,30 @@ namespace game
                 const float v = (static_cast<float>(y % k_effectCellSize) + 0.5f) / static_cast<float>(k_effectCellSize);
                 const Texel texel = cellTexel(frame, u, v);
                 const std::size_t offset = (static_cast<std::size_t>(y) * k_effectAtlasSize + x) * 4;
+
+                pixels[offset] = encodeSrgb(texel.red);
+                pixels[offset + 1] = encodeSrgb(texel.green);
+                pixels[offset + 2] = encodeSrgb(texel.blue);
+                pixels[offset + 3] = static_cast<std::byte>(std::lround(std::clamp(texel.alpha, 0.0f, 1.0f) * 255.0f));
+            }
+        }
+
+        return pixels;
+    }
+
+    std::vector<std::byte> effectStripPixels(uint32_t firstFrame, uint32_t frameCount)
+    {
+        const uint32_t width = frameCount * k_effectCellSize;
+        std::vector<std::byte> pixels(static_cast<std::size_t>(width) * k_effectCellSize * 4);
+
+        for (uint32_t y = 0; y < k_effectCellSize; ++y)
+        {
+            for (uint32_t x = 0; x < width; ++x)
+            {
+                const float u = (static_cast<float>(x % k_effectCellSize) + 0.5f) / static_cast<float>(k_effectCellSize);
+                const float v = (static_cast<float>(y) + 0.5f) / static_cast<float>(k_effectCellSize);
+                const Texel texel = cellTexel(firstFrame + x / k_effectCellSize, u, v);
+                const std::size_t offset = (static_cast<std::size_t>(y) * width + x) * 4;
 
                 pixels[offset] = encodeSrgb(texel.red);
                 pixels[offset + 1] = encodeSrgb(texel.green);

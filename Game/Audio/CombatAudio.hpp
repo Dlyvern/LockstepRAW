@@ -1,7 +1,10 @@
 #ifndef LOCKSTEP_GAME_AUDIO_COMBAT_AUDIO_HPP
 #define LOCKSTEP_GAME_AUDIO_COMBAT_AUDIO_HPP
 
+#include "Player/PlayerCommand.hpp"
 #include "Player/PlayerStatus.hpp"
+#include "Weapons/Penetration.hpp"
+#include "Weapons/ShotAim.hpp"
 
 #include <Lockstep/Audio/AudioTypes.hpp>
 #include <Lockstep/Core/Math.hpp>
@@ -39,7 +42,8 @@ namespace game
     // npcShots, npcFarShots:   NPC rifles, close and distant (`weapons/merc_shot_<n>`,
     //                          `weapons/merc_shot_far_<n>`).
     // concreteHits, metalHits, fleshHits: bullet impacts (`impacts/<kind>_<n>`).
-    // reload, dryFire:         `weapons/v45_reload`, `weapons/dryfire`.
+    // glassBreaks:             a pane shattering, crash and tinkle (`impacts/glass_break_<n>`).
+    // dryFire:                 `weapons/dryfire` (reload sounds are WeaponSounds').
     // heartbeat:               looping, while the local player is downed (`player/heartbeat`).
     // street, hum:             looping ambience outdoors and indoors (`ambience/street_loop`,
     //                          `ambience/hospital_hum`).
@@ -56,7 +60,7 @@ namespace game
         std::vector<lockstep::audio::SoundHandle> concreteHits;
         std::vector<lockstep::audio::SoundHandle> metalHits;
         std::vector<lockstep::audio::SoundHandle> fleshHits;
-        std::optional<lockstep::audio::SoundHandle> reload;
+        std::vector<lockstep::audio::SoundHandle> glassBreaks;
         std::optional<lockstep::audio::SoundHandle> dryFire;
         std::optional<lockstep::audio::SoundHandle> heartbeat;
         std::optional<lockstep::audio::SoundHandle> street;
@@ -71,8 +75,10 @@ namespace game
     // shotVolume, npcShotVolume: gunshot volumes.
     // farDistance:     metres from the listener beyond which the distant gunshot variants play.
     // impactVolume:    bullet impacts.
-    // reloadVolume:    reloads.
     // hurtVolume:      the thud when the local player is hit.
+    // fleshHitVolume:  a confirmed hit on a character heard by everyone but the shooter (scaled by
+    //                  the hit's strength).
+    // headshotVolume:  factor on a head hit, which also layers a second, lower flesh sound.
     // heartbeatVolume: the downed heartbeat.
     // streetVolume, humVolume: ambience loops at full weight.
     // indoorStreet:    how much of the street loop is heard indoors.
@@ -90,8 +96,9 @@ namespace game
         float npcShotVolume{0.8f};
         float farDistance{28.0f};
         float impactVolume{0.6f};
-        float reloadVolume{0.7f};
         float hurtVolume{0.8f};
+        float fleshHitVolume{0.8f};
+        float headshotVolume{1.4f};
         float heartbeatVolume{0.8f};
         float streetVolume{0.6f};
         float humVolume{0.5f};
@@ -116,15 +123,19 @@ namespace game
     };
 
     // A bullet impact combat audio found this frame (the local player's shots), for visual effects.
-    // point, normal: where the ray hit and the surface normal there.
+    // A round that goes through something gives an impact on both faces.
+    // point, normal: where the ray hit and the surface normal there (for an exit face, the
+    //               direction the round left in).
     // body:          the static or dynamic body hit (null for a character controller).
     // isFlesh:       it hit a character.
+    // isExit:        the far face of something the round went through.
     struct CombatImpact
     {
         math::Vec3 point{0.0f, 0.0f, 0.0f};
         math::Vec3 normal{0.0f, 1.0f, 0.0f};
         lockstep::physics::BodyId body{};
         bool isFlesh{false};
+        bool isExit{false};
     };
 
     // A gunshot combat audio heard this frame, for visual effects.
@@ -153,7 +164,12 @@ namespace game
     // localIndex:     this machine's player.
     // localShots:     the local command's shot counter (no network delay for the own weapon).
     // localController: the local pawn's controller, ignored by the impact ray (may be null).
-    // eye, aim:       the local view, for the own shots' impacts.
+    // eye, aim:       the local view, for the own shots' impacts (`aim` only without `command`).
+    // command:        the local player's newest command: the own shots' directions, as the host
+    //                 traces them (shotDirection()), or null.
+    // level:          the loaded level (penetration materials), or null.
+    // spread, penetration: the shot rules, or null (then the shots go along `aim` and stop at
+    //                 the first surface).
     // statuses:       both players' statuses (partner gunshots and reloads, damage, downed).
     // positions:      per player, where its pawn is drawn, if it is.
     // npcs:           the armed NPCs.
@@ -170,6 +186,10 @@ namespace game
         lockstep::physics::ControllerId localController{};
         math::Vec3 eye{0.0f, 0.0f, 0.0f};
         math::Vec3 aim{0.0f, 0.0f, -1.0f};
+        const PlayerCommand* command{nullptr};
+        const SceneLevel* level{nullptr};
+        const SpreadSettings* spread{nullptr};
+        const PenetrationSettings* penetration{nullptr};
         PlayerStatuses statuses{};
         std::array<std::optional<math::Vec3>, k_playerCount> positions{};
         std::span<const NpcShotSource> npcs{};
@@ -179,11 +199,11 @@ namespace game
         float seconds{0.0f};
     };
 
-    // Gunshots, impacts, reloads, hurt and downed sounds, and ambience. Presentation only, never
+    // Gunshots, impacts, hurt and downed sounds, and ambience. Presentation only, never
     // replicated: each machine plays them from the shot counters and statuses it already has.
     // bank, tuning:  the sounds and their levels.
     // lastLocalShots: the local shot counter last seen.
-    // lastShots, lastReloading: per player, the status values last seen.
+    // lastShots:     per player, the shot counter last seen.
     // lastDamage, lastHits: the local player's damage and hit counters last seen.
     // npcShots:      per NPC key, its shot counter last seen.
     // heartbeat, street, hum, rain, rainIndoor: looping voices, if playing.
@@ -200,7 +220,6 @@ namespace game
         CombatAudioTuning tuning{};
         uint8_t lastLocalShots{0};
         std::array<uint8_t, k_playerCount> lastShots{};
-        std::array<bool, k_playerCount> lastReloading{};
         uint8_t lastDamage{0};
         uint8_t lastHits{0};
         std::unordered_map<uint32_t, uint8_t> npcShots{};
@@ -232,6 +251,16 @@ namespace game
     // audio:  the audio system.
     // frame:  what happened this frame.
     void updateCombatAudio(CombatAudio& combat, lockstep::audio::AudioSystem& audio, const CombatAudioFrame& frame);
+
+    // Plays the fleshy impact of a confirmed hit on a character, 3D at the hit point on the World
+    // bus. Call from frame() for gore events the shooter's machine has not already played.
+    // combat:     the combat audio state.
+    // audio:      the audio system.
+    // point:      world point of the hit.
+    // strength:   how hard the hit was (about 0.3 light, 1 a player's shot, up to 2).
+    // isHeadshot: a head hit: louder and lower, with a second layered sound.
+    void playFleshHit(CombatAudio& combat, lockstep::audio::AudioSystem& audio, const math::Vec3& point,
+        float strength, bool isHeadshot);
 
 #if LOCKSTEP_DEV_TOOLS
     // Draws the combat audio section of the Game dev panel: volumes and distances.

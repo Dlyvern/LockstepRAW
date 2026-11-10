@@ -17,6 +17,10 @@ namespace game
             {"balaclava", GearLook::Balaclava}}};
         constexpr std::array<GearLook, 5> k_squadMix{GearLook::Full, GearLook::NoNvg, GearLook::Full,
             GearLook::Balaclava, GearLook::NoNvg};
+        constexpr std::array<std::pair<std::string_view, NpcBody>, 2> k_bodySuffixes{{
+            {"swat", NpcBody::Swat},
+            {"tactical", NpcBody::Tactical}}};
+        constexpr std::array<NpcBody, 2> k_squadBodies{NpcBody::Swat, NpcBody::Tactical};
         constexpr std::array<GearLook, 4> k_mercMix{GearLook::Balaclava, GearLook::Balaclava, GearLook::NoNvg,
             GearLook::Balaclava};
 
@@ -76,6 +80,31 @@ namespace game
             return number;
         }
 
+        template <typename Value, std::size_t Count>
+        std::optional<Value> nameSuffix(std::string_view name,
+            const std::array<std::pair<std::string_view, Value>, Count>& suffixes)
+        {
+            std::string_view rest = withoutBlenderEnding(name);
+
+            while (!rest.empty())
+            {
+                const std::size_t separator = rest.find('_');
+                const std::string part = lowered(rest.substr(0, separator));
+
+                for (const auto& [suffix, value] : suffixes)
+                {
+                    if (part == suffix)
+                    {
+                        return value;
+                    }
+                }
+
+                rest = separator == std::string_view::npos ? std::string_view{} : rest.substr(separator + 1);
+            }
+
+            return std::nullopt;
+        }
+
         anim::PartMask partBit(std::size_t index)
         {
             return index < std::numeric_limits<anim::PartMask>::digits ? anim::PartMask{1} << index : 0;
@@ -113,25 +142,7 @@ namespace game
 
     std::optional<GearLook> gearLookSuffix(std::string_view name)
     {
-        std::string_view rest = withoutBlenderEnding(name);
-
-        while (!rest.empty())
-        {
-            const std::size_t separator = rest.find('_');
-            const std::string part = lowered(rest.substr(0, separator));
-
-            for (const auto& [suffix, look] : k_lookSuffixes)
-            {
-                if (part == suffix)
-                {
-                    return look;
-                }
-            }
-
-            rest = separator == std::string_view::npos ? std::string_view{} : rest.substr(separator + 1);
-        }
-
-        return std::nullopt;
+        return nameSuffix(name, k_lookSuffixes);
     }
 
     GearLook playerGearLook(lockstep::world::EntityOwner owner)
@@ -147,5 +158,15 @@ namespace game
     GearLook mercGearLook(std::string_view name)
     {
         return gearLookSuffix(name).value_or(k_mercMix[markerNumber(name) % k_mercMix.size()]);
+    }
+
+    NpcBody squadBody(std::string_view name)
+    {
+        return nameSuffix(name, k_bodySuffixes).value_or(k_squadBodies[markerNumber(name) % k_squadBodies.size()]);
+    }
+
+    NpcBody mercBody()
+    {
+        return NpcBody::Robber;
     }
 } //namespace game

@@ -1,7 +1,9 @@
 #include "Player/PawnMovement.hpp"
 
+#include "Player/PawnKick.hpp"
 #include "Player/PawnLean.hpp"
 #include "Player/PawnMantle.hpp"
+#include "Player/PawnVault.hpp"
 
 #include <Lockstep/Physics/PhysicsWorld.hpp>
 
@@ -94,7 +96,7 @@ namespace game
             const float sideSpeed = std::min(speedCap, isRunning ? settings.sprintStrafeSpeed : settings.strafeSpeed);
             const math::Vec2 direction = move * (1.0f / moveLength);
             const float speed = std::min(moveLength, 1.0f) * ellipseSpeed(direction, sideSpeed, forwardSpeed)
-                * landingScale(motion, settings, delta);
+                * landingScale(motion, settings, delta) * kickSpeedScale(motion, settings);
 
             return (forwardOf(command.yaw) * direction.y + rightOf(command.yaw) * direction.x) * speed;
         }
@@ -326,6 +328,7 @@ namespace game
         {
             updateSlideTimers(motion, command, settings, delta);
             bufferJump(motion, command, settings, delta);
+            updateKick(motion, command, settings, delta);
 
             if (motion.landingTicks > 0)
             {
@@ -425,14 +428,25 @@ namespace game
             endSlide(motion, settings);
         }
 
-        if (!isMantling(motion))
+        if (!isMantling(motion) && !tryStartVault(motion, controller, physics, command, settings, delta, ignored))
         {
             tryStartMantle(motion, controller, physics, command, settings, delta, ignored);
         }
 
-        const std::optional<physics::ControllerMove> moved = isMantling(motion)
-            ? stepMantle(motion, controller, physics, settings, delta)
-            : moveFreely(motion, controller, physics, command, settings, delta);
+        std::optional<physics::ControllerMove> moved;
+
+        if (isVaulting(motion))
+        {
+            moved = stepVault(motion, controller, physics, settings, delta);
+        }
+        else if (isMantling(motion))
+        {
+            moved = stepMantle(motion, controller, physics, settings, delta);
+        }
+        else
+        {
+            moved = moveFreely(motion, controller, physics, command, settings, delta);
+        }
 
         if (!moved)
         {
@@ -506,6 +520,11 @@ namespace game
     bool isMantling(const PawnMotion& motion)
     {
         return motion.mantleTicks > 0;
+    }
+
+    bool isVaulting(const PawnMotion& motion)
+    {
+        return isMantling(motion) && motion.isVaulting;
     }
 
     bool isSliding(const PawnMotion& motion)

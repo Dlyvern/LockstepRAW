@@ -31,7 +31,7 @@ namespace game
     // enabled:     draw and simulate particles at all.
     // dustMotes:   motes around the camera inside Zone_Interior_* boxes.
     // impacts:     dust, grit, chips and sparks at the local player's bullet impacts.
-    // muzzleSmoke: smoke wisps at every gunshot (players and NPCs).
+    // muzzleSmoke: smoke at every gunshot and from hot barrels (players and NPCs; WeaponFx).
     // markers:     emitters on the level's Fx_* markers.
     // moteDensity: factor on the motes' spawn rate.
     // impactScale: factor on impact particle counts.
@@ -79,17 +79,16 @@ namespace game
         uint32_t random{0x6C8E9CF5u};
     };
 
-    // Spawns this frame's effects (from state.combatAudio's shots and impacts, the camera, the
+    // Spawns this frame's effects (from state.combatAudio's impacts, the camera, the
     // level's Fx_* markers and the weather's rain), simulates them and submits them to the renderer.
     // Call after the combat audio and the weather have run this frame.
     // state:        the game state (effects, level, combat events, interior boxes).
     // engine:       the engine (renderer, time domains).
     // eye:          the camera position.
-    // aim:          the local view direction (the own muzzle).
     // worldSeconds: World time since the previous frame (scaled by bullet-time).
     // frameSeconds: real time since the previous frame.
     void presentEffects(lockstep::app::GameState& state, lockstep::app::EngineContext& engine, const math::Vec3& eye,
-        const math::Vec3& aim, float worldSeconds, float frameSeconds);
+        float worldSeconds, float frameSeconds);
 
 #if LOCKSTEP_DEV_TOOLS
     // Draws the effects section of the Game dev panel: switches, scales, counters and a stress test.

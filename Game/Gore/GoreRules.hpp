@@ -22,6 +22,9 @@ namespace game
     // damage:    hit points it took.
     // killed:    the hit killed the NPC.
     // isNpcShot: fired by another NPC (GoreRules::npcSevers decides if it may sever).
+    // shooter:   the pawn index of the player who fired (k_noShooter for NPC shots); that
+    //            player's machine already played the hit's impact sound.
+    // distance:  metres from the shooter to the hit (0 if unknown); close shots burst heads more.
     struct NpcGoreHit
     {
         std::size_t npc{0};
@@ -30,23 +33,27 @@ namespace game
         int32_t damage{0};
         bool killed{false};
         bool isNpcShot{false};
+        uint8_t shooter{k_noShooter};
+        float distance{0.0f};
     };
 
     // Host: records the blood of a hit on an NPC and decides by GoreRules whether it severs the
     // limb it struck (found from the NPC's drawn pose: the bone nearest the hit point). A sever
-    // replaces the plain hit event. A killing hit remembers the limb (Npc::hitLimb) so both
+    // replaces the plain hit event; a head sever may be a head burst instead (GoreRules). A killing hit remembers the limb (Npc::hitLimb) so both
     // machines push that part of the falling body.
-    // state: the game state (rules, NPC looks, this tick's events).
-    // hit:   the hit.
-    void recordNpcGore(lockstep::app::GameState& state, const NpcGoreHit& hit);
+    // state:   the game state (rules, NPC looks, this tick's events).
+    // hit:     the hit.
+    // Returns: the limb it struck (None if unknown), e.g. for the NPC's flinch.
+    lockstep::anim::Limb recordNpcGore(lockstep::app::GameState& state, const NpcGoreHit& hit);
 
     // Host: records the blood of a hit on a player or any other character (no severing).
     // state:     the game state.
     // target:    the character's entity.
     // point:     world point of the hit.
     // direction: unit direction the shot travelled.
+    // damage:    hit points it took (0 if unknown).
     void recordHitGore(lockstep::app::GameState& state, lockstep::world::EntityId target, const math::Vec3& point,
-        const math::Vec3& direction);
+        const math::Vec3& direction, int32_t damage = 0);
 
     // Host: queues a severed limb directly (dev tools), shown on both machines.
     // state:  the game state.

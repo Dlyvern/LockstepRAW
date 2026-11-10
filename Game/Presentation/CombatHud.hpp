@@ -54,6 +54,8 @@ namespace game
     // isRestarting: the checkpoint restart is coming.
     // canRevive:    the local player stands close enough to the downed partner to revive them.
     // isArmed:      show the ammo counter.
+    // magazine:     rounds to show in the magazine (the local prediction, never above the status).
+    // fireMode:     the fire mode name shown under the ammo counter, or null.
     // eye, direction: the camera, for the marks placed around the aim dot.
     // lookYaw:      the camera's yaw (damage marks turn with the view).
     // hudFade:      the HUD's own fade to black (Hud::fade), kept when stronger.
@@ -65,6 +67,8 @@ namespace game
         bool isRestarting{false};
         bool canRevive{false};
         bool isArmed{false};
+        int32_t magazine{0};
+        const char* fireMode{nullptr};
         math::Vec3 eye{0.0f, 0.0f, 0.0f};
         math::Vec3 direction{0.0f, 0.0f, -1.0f};
         float lookYaw{0.0f};
