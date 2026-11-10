@@ -23,6 +23,9 @@ namespace game
         constexpr std::byte k_flashlightBit{0x04};
         constexpr std::byte k_vaultingBit{0x08};
         constexpr std::byte k_kickingBit{0x10};
+        constexpr std::byte k_switchingBit{0x80};
+        constexpr uint32_t k_weaponShift{5};
+        constexpr std::byte k_weaponBits{0x60};
         constexpr float k_pitchStep{0.06f};
         constexpr std::byte k_combatBit{0x01};
         constexpr std::byte k_restartingBit{0x02};
@@ -30,7 +33,7 @@ namespace game
         constexpr int32_t k_maxEncodedValue{255};
         constexpr float k_reviveSteps{20.0f};
         constexpr std::size_t k_tagBytes{1};
-        constexpr std::size_t k_bytesPerPlayer{13};
+        constexpr std::size_t k_bytesPerPlayer{14};
 
         enum class Field : std::size_t
         {
@@ -46,7 +49,8 @@ namespace game
             HitCount,
             KillCount,
             ShotCount,
-            LookPitch
+            LookPitch,
+            Optic
         };
 
         std::size_t at(std::size_t player, Field field)
@@ -105,7 +109,10 @@ namespace game
             .isFlashlightOn = isAlive && pawn.isArmed && pawn.hasCommand && pawn.command.isFlashlightOn,
             .lookPitch = isAlive && pawn.isArmed && pawn.hasCommand && pawn.command.isFlashlightOn
                 ? static_cast<float>(pitchSteps(pawn.command.pitch)) * k_pitchStep
-                : 0.0f};
+                : 0.0f,
+            .optic = pawn.isArmed && pawn.hasCommand ? pawn.command.optic : OpticKind::None,
+            .weapon = pawn.weapon,
+            .isSwitching = pawn.isArmed && pawn.switchSeconds > 0.0f};
     }
 
     std::array<std::byte, k_playerStatusBytes> encodeStatusMessage(const StatusMessage& message)
@@ -122,10 +129,12 @@ namespace game
             bytes[at(index, Field::Flags)] = bit(status.isJoined, k_joinedBit) | bit(status.isDead, k_deadBit)
                 | bit(status.isArmed, k_armedBit) | bit(status.isAiming, k_aimingBit)
                 | bit(status.isLowered, k_loweredBit) | bit(status.isCrouched, k_crouchedBit)
-                | bit(status.isSliding, k_slidingBit);
+                | bit(status.isSliding, k_slidingBit) | bit(status.isSwitching, k_switchingBit);
             bytes[at(index, Field::MoreFlags)] = bit(status.isDowned, k_downedBit)
                 | bit(status.isReloading, k_reloadingBit) | bit(status.isFlashlightOn, k_flashlightBit)
-                | bit(status.isVaulting, k_vaultingBit) | bit(status.isKicking, k_kickingBit);
+                | bit(status.isVaulting, k_vaultingBit) | bit(status.isKicking, k_kickingBit)
+                | static_cast<std::byte>(static_cast<uint32_t>(status.weapon) << k_weaponShift);
+            bytes[at(index, Field::Optic)] = static_cast<std::byte>(status.optic);
             bytes[at(index, Field::LookPitch)] = std::bit_cast<std::byte>(pitchSteps(status.lookPitch));
             bytes[at(index, Field::Bleed)] = static_cast<std::byte>(status.bleedSeconds);
             bytes[at(index, Field::Revive)] = clampedByte(static_cast<int32_t>(std::lround(status.reviveProgress
@@ -182,7 +191,10 @@ namespace game
                 .killCount = valueAt(Field::KillCount),
                 .shotCount = static_cast<uint8_t>(valueAt(Field::ShotCount)),
                 .isFlashlightOn = has(moreFlags, k_flashlightBit),
-                .lookPitch = static_cast<float>(std::bit_cast<int8_t>(byteAt(Field::LookPitch))) * k_pitchStep};
+                .lookPitch = static_cast<float>(std::bit_cast<int8_t>(byteAt(Field::LookPitch))) * k_pitchStep,
+                .optic = opticFromValue(valueAt(Field::Optic)),
+                .weapon = weaponFromBits(static_cast<uint32_t>(moreFlags & k_weaponBits) >> k_weaponShift),
+                .isSwitching = has(flags, k_switchingBit)};
         }
 
         return message;

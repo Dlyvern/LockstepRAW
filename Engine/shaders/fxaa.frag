@@ -4,7 +4,8 @@
 // The output pass: FXAA 3.11 (quality preset 12) after T. Lottes on the tonemapped image, or
 // sharpening of the TAA result, or a plain copy; then the lens effects (lens_effects.glsl), film
 // grain (grain x intensity, y highlight response, z size in pixels), the screen fade and output
-// dithering.
+// dithering. The sources may be smaller than the window (render scale below 1): they are read
+// bilinearly at the window pixel's uv, which at equal sizes lands on texel centres (a plain copy).
 
 const float k_edgeThreshold = 0.125;
 const float k_edgeThresholdMin = 0.0312;
@@ -52,12 +53,12 @@ float lumaAt(vec2 uv)
 
 float lumaOffset(vec2 uv, vec2 offset)
 {
-    return lumaAt(uv + offset * constants.inverseSize);
+    return lumaAt(uv + offset / vec2(textureSize(source, 0)));
 }
 
 vec3 fxaa(vec2 uv)
 {
-    vec2 rcpFrame = constants.inverseSize;
+    vec2 rcpFrame = 1.0 / vec2(textureSize(source, 0));
     vec3 colorM = textureLod(source, uv, 0.0).rgb;
     float lumaM = luma(colorM);
     float lumaS = lumaOffset(uv, vec2(0, 1));
@@ -247,14 +248,14 @@ float filmGrain(vec2 fragment, vec3 color)
 // Contrast-limited sharpening of the TAA result: a negative-lobe cross filter whose weight
 // shrinks where the neighbourhood is already contrasty, clamped to the neighbourhood so it never
 // rings.
-vec3 sharpenedTemporal(ivec2 pixel)
+vec3 sharpenedTemporal(vec2 uv)
 {
-    ivec2 last = textureSize(temporal, 0) - 1;
-    vec3 center = texelFetch(temporal, pixel, 0).rgb;
-    vec3 north = texelFetch(temporal, clamp(pixel + ivec2(0, -1), ivec2(0), last), 0).rgb;
-    vec3 south = texelFetch(temporal, clamp(pixel + ivec2(0, 1), ivec2(0), last), 0).rgb;
-    vec3 west = texelFetch(temporal, clamp(pixel + ivec2(-1, 0), ivec2(0), last), 0).rgb;
-    vec3 east = texelFetch(temporal, clamp(pixel + ivec2(1, 0), ivec2(0), last), 0).rgb;
+    vec2 texel = 1.0 / vec2(textureSize(temporal, 0));
+    vec3 center = textureLod(temporal, uv, 0.0).rgb;
+    vec3 north = textureLod(temporal, uv + vec2(0.0, -texel.y), 0.0).rgb;
+    vec3 south = textureLod(temporal, uv + vec2(0.0, texel.y), 0.0).rgb;
+    vec3 west = textureLod(temporal, uv + vec2(-texel.x, 0.0), 0.0).rgb;
+    vec3 east = textureLod(temporal, uv + vec2(texel.x, 0.0), 0.0).rgb;
 
     vec3 low = min(center, min(min(north, south), min(west, east)));
     vec3 high = max(center, max(max(north, south), max(west, east)));
@@ -269,12 +270,11 @@ vec3 sharpenedTemporal(ivec2 pixel)
 void main()
 {
     vec2 uv = gl_FragCoord.xy * constants.inverseSize;
-    ivec2 pixel = ivec2(gl_FragCoord.xy);
     vec3 color;
 
     if (constants.filterMode == k_filterTemporalSharpen)
     {
-        color = sharpenedTemporal(pixel);
+        color = sharpenedTemporal(uv);
     }
     else if (constants.filterMode == k_filterFxaa)
     {
@@ -282,7 +282,7 @@ void main()
     }
     else
     {
-        color = texelFetch(source, pixel, 0).rgb;
+        color = textureLod(source, uv, 0.0).rgb;
     }
 
     color = lensEffects(color, uv);

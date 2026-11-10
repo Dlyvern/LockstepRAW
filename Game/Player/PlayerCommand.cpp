@@ -1,6 +1,7 @@
 #include "Player/PlayerCommand.hpp"
 
 #include "Player/WireBytes.hpp"
+#include "Weapons/WeaponCatalog.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -20,11 +21,15 @@ namespace game
         constexpr std::byte k_weaponUpBit{0x10};
         constexpr std::byte k_crouchBit{0x20};
         constexpr std::byte k_jumpBit{0x40};
+        constexpr std::byte k_scopeBit{0x80};
         constexpr std::byte k_leanLeftBit{0x01};
         constexpr std::byte k_leanRightBit{0x02};
         constexpr std::byte k_interactHeldBit{0x04};
         constexpr std::byte k_flashlightBit{0x08};
         constexpr std::byte k_kickBit{0x10};
+        constexpr std::byte k_opticBit{0x80};
+        constexpr uint32_t k_weaponShift{5};
+        constexpr std::byte k_weaponBits{0x60};
         constexpr float k_aimOffsetQuantization{8192.0f};
         constexpr float k_moveQuantization{127.0f};
         constexpr std::size_t k_flagsOffset{0};
@@ -67,6 +72,41 @@ namespace game
             return static_cast<float>(std::bit_cast<int16_t>(bits)) / k_aimOffsetQuantization;
         }
 
+        void pickWeapon(LocalControls& controls, const WeaponStatsTable& weapons, const platform::Input& input)
+        {
+            WeaponKind wanted = controls.weapon;
+            const float wheel = input.scrollDelta().y;
+
+            if (input.wasKeyPressed(platform::Key::Num1))
+            {
+                wanted = WeaponKind::M4;
+            }
+            else if (input.wasKeyPressed(platform::Key::Num2))
+            {
+                wanted = WeaponKind::Glock;
+            }
+            else if (input.wasKeyPressed(platform::Key::Num3))
+            {
+                wanted = WeaponKind::Kriss;
+            }
+            else if (wheel != 0.0f)
+            {
+                const std::size_t step = wheel < 0.0f ? 1 : k_weaponCount - 1;
+                wanted = static_cast<WeaponKind>((weaponIndex(controls.weapon) + step) % k_weaponCount);
+            }
+
+            if (wanted == controls.weapon)
+            {
+                return;
+            }
+
+            controls.switchSeconds = weaponSwitchSeconds(weapons, controls.weapon, wanted);
+            controls.previousWeapon = controls.weapon;
+            controls.weapon = wanted;
+            controls.trigger.queued = 0;
+            controls.trigger.mode = allowedFireMode(weaponStats(weapons, wanted), controls.trigger.mode);
+        }
+
         float dequantizeAxis(std::byte value)
         {
             return math::clamp(static_cast<float>(std::bit_cast<int8_t>(value)) / k_moveQuantization, -1.0f, 1.0f);
@@ -81,13 +121,15 @@ namespace game
         const bool isArmedWeapon = weapon.isArmed && !weapon.isHoldingToy;
         Trigger& trigger = controls.trigger;
         syncTriggerRounds(trigger, weapon.magazine, weapon.isReloading);
+        const WeaponStatsTable& weapons = *weapon.weapons;
+        controls.switchSeconds = std::max(controls.switchSeconds - deltaSeconds, 0.0f);
         bool isAiming = false;
         bool isFirePressed = false;
 
         if (isCursorCaptured)
         {
             const bool isAimHeld = weapon.isArmed && canRaise && input.isMouseButtonDown(platform::MouseButton::Right);
-            const float sensitivity = lookSensitivity(settings, isAimHeld);
+            const float sensitivity = lookSensitivity(settings, isAimHeld, controls.opticSensitivityScale);
             const math::Vec2 delta = input.mouseDelta();
             controls.yaw = std::remainder(controls.yaw - delta.x * sensitivity, 2.0f * math::k_pi);
             controls.pitch = math::clamp(controls.pitch - delta.y * sensitivity, -settings.maxPitch, settings.maxPitch);
@@ -98,9 +140,14 @@ namespace game
                 controls.wantsLowered = !controls.wantsLowered;
             }
 
+            if (weapon.isArmed)
+            {
+                pickWeapon(controls, weapons, input);
+            }
+
             if (weapon.isArmed && input.wasKeyPressed(k_fireModeKey))
             {
-                trigger.mode = nextFireMode(trigger.mode);
+                trigger.mode = nextWeaponFireMode(weaponStats(weapons, controls.weapon), trigger.mode);
                 trigger.queued = 0;
             }
 
@@ -175,9 +222,11 @@ namespace game
         const bool isCrouchHeld = input.isKeyDown(platform::Key::LeftControl)
             || input.isKeyDown(platform::Key::RightControl);
         const bool isCrouching = controls.isCrouchToggled || isCrouchHeld;
+        const WeaponStats& stats = weaponStats(weapons, controls.weapon);
+        trigger.mode = allowedFireMode(stats, trigger.mode);
         const bool canFire = (isCursorCaptured || weapon.scriptedFire) && isArmedWeapon && !wasLowered && weapon.isReady
-            && !weapon.isReloading;
-        const uint8_t shots = stepTrigger(trigger, weapon.fire, TriggerInput{.isPressed = isFirePressed,
+            && !weapon.isReloading && controls.switchSeconds <= 0.0f;
+        const uint8_t shots = stepTrigger(trigger, stats.fire, TriggerInput{.isPressed = isFirePressed,
             .isHeld = isFireHeld,
             .canFire = canFire,
             .deltaSeconds = deltaSeconds});
@@ -185,10 +234,10 @@ namespace game
         for (uint8_t shot = 0; shot < shots; ++shot)
         {
             ++controls.shotCount;
-            kickRecoil(controls.recoil, weapon.recoil, isAiming, isCrouching);
+            kickRecoil(controls.recoil, stats.recoil, isAiming, isCrouching);
         }
 
-        const math::Vec2 settled = stepRecoil(controls.recoil, weapon.recoil, deltaSeconds);
+        const math::Vec2 settled = stepRecoil(controls.recoil, stats.recoil, deltaSeconds);
         controls.yaw = std::remainder(controls.yaw + settled.x, 2.0f * math::k_pi);
         controls.pitch = math::clamp(controls.pitch + settled.y, -settings.maxPitch, settings.maxPitch);
         const math::Vec2 recoil = controls.recoil.offset;
@@ -212,7 +261,8 @@ namespace game
             .isInteractHeld = isCursorCaptured && input.isKeyDown(platform::Key::F),
             .aimOffset = weapon.isArmed ? weapon.aimOffset : math::Vec2{0.0f, 0.0f},
             .isFlashlightOn = weapon.isArmed && controls.isFlashlightOn,
-            .kick = input.isKeyDown(platform::Key::V)};
+            .kick = input.isKeyDown(platform::Key::V),
+            .weapon = controls.weapon};
     }
 
     void restrictDownedCommand(PlayerCommand& command, float crawlScale)
@@ -234,9 +284,9 @@ namespace game
         command.bulletTime = false;
     }
 
-    float lookSensitivity(const ControlSettings& settings, bool isAiming)
+    float lookSensitivity(const ControlSettings& settings, bool isAiming, float opticScale)
     {
-        return settings.mouseSensitivity * (isAiming ? settings.aimSensitivityScale : 1.0f);
+        return settings.mouseSensitivity * (isAiming ? settings.aimSensitivityScale * opticScale : 1.0f);
     }
 
     std::array<std::byte, k_playerCommandBytes> encodeCommand(const PlayerCommand& command)
@@ -245,12 +295,14 @@ namespace game
         bytes[k_flagsOffset] = (command.bulletTime ? k_bulletTimeBit : std::byte{0})
             | (command.sprint ? k_sprintBit : std::byte{0}) | (command.aim ? k_aimBit : std::byte{0})
             | (command.lower ? k_lowerBit : std::byte{0}) | (command.isWeaponUp ? k_weaponUpBit : std::byte{0})
-            | (command.crouch ? k_crouchBit : std::byte{0}) | (command.jump ? k_jumpBit : std::byte{0});
+            | (command.crouch ? k_crouchBit : std::byte{0}) | (command.jump ? k_jumpBit : std::byte{0})
+            | (command.optic == OpticKind::Scope4x ? k_scopeBit : std::byte{0});
         bytes[k_moreFlagsOffset] = (command.lean < 0 ? k_leanLeftBit : std::byte{0})
             | (command.lean > 0 ? k_leanRightBit : std::byte{0})
             | (command.isInteractHeld ? k_interactHeldBit : std::byte{0})
             | (command.isFlashlightOn ? k_flashlightBit : std::byte{0})
-            | (command.kick ? k_kickBit : std::byte{0});
+            | (command.kick ? k_kickBit : std::byte{0}) | (command.optic != OpticKind::None ? k_opticBit : std::byte{0})
+            | static_cast<std::byte>(static_cast<uint32_t>(command.weapon) << k_weaponShift);
         writeAngle(bytes, k_aimOffsetYawOffset, command.aimOffset.x);
         writeAngle(bytes, k_aimOffsetPitchOffset, command.aimOffset.y);
         bytes[k_reloadCountOffset] = static_cast<std::byte>(command.reloadCount);
@@ -300,6 +352,9 @@ namespace game
             .isInteractHeld = (leanFlags & k_interactHeldBit) != std::byte{0},
             .aimOffset = {readAngle(bytes, k_aimOffsetYawOffset), readAngle(bytes, k_aimOffsetPitchOffset)},
             .isFlashlightOn = (leanFlags & k_flashlightBit) != std::byte{0},
-            .kick = (leanFlags & k_kickBit) != std::byte{0}};
+            .kick = (leanFlags & k_kickBit) != std::byte{0},
+            .optic = (leanFlags & k_opticBit) == std::byte{0} ? OpticKind::None
+                : ((bytes[k_flagsOffset] & k_scopeBit) != std::byte{0} ? OpticKind::Scope4x : OpticKind::Holographic),
+            .weapon = weaponFromBits(static_cast<uint32_t>(leanFlags & k_weaponBits) >> k_weaponShift)};
     }
 } //namespace game

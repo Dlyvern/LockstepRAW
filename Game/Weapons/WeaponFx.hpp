@@ -61,7 +61,8 @@ namespace game
     // counters and statuses it already has, and simulates the debris itself (World time).
     // muzzle:    flashes, lights, barrel heat, tracers.
     // viewFlash: the local weapon's flash, drawn with the viewmodel.
-    // casings, magazines: the debris.
+    // casings, magazines: per loadout weapon, its debris (5.56, 9 mm, .45 casings and the
+    //            weapons' magazines; their sizes are set when the looks are made).
     // reloads:   both players' reload timelines.
     // sounds:    the weapon sounds.
     // counters:  shot counters last seen.
@@ -75,18 +76,8 @@ namespace game
     {
         MuzzleFlashes muzzle{};
         ViewModelFlash viewFlash{};
-        DebrisPool casings{};
-        DebrisPool magazines{.kind = DebrisKind{.maxPieces = 12,
-            .lifeSeconds = 120.0f,
-            .halfThickness = 0.015f,
-            .restitution = 0.2f,
-            .friction = 0.5f,
-            .spinKept = 0.4f,
-            .spinKick = 3.0f,
-            .restSpeed = 0.5f,
-            .soundSpeed = 0.6f,
-            .fullSoundSpeed = 4.0f,
-            .maxSoundBounces = 2}};
+        std::array<DebrisPool, k_weaponCount> casings{};
+        std::array<DebrisPool, k_weaponCount> magazines{};
         ReloadCues reloads{};
         WeaponSounds sounds{};
         ShotCounters counters{};

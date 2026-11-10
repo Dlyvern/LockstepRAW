@@ -21,8 +21,8 @@ namespace game
 
     // Which parts of the body the first-person camera sees.
     // TorsoAndLegs: everything but the head and head gear (and the arms while the viewmodel shows
-    //               its own).
-    // LegsOnly:     thighs and shins.
+    //               its own). Looking down shows the cut neck and arms; for testing only.
+    // LegsOnly:     thighs and shins (hips down), kept out of view above the hips.
     // Hidden:       nothing (the old behaviour).
     enum class FirstPersonBodyMode : uint8_t
     {
@@ -31,21 +31,24 @@ namespace game
         Hidden
     };
 
-    // Feel of the first-person body, editable from the dev panel.
+    // Feel of the first-person body, editable from the dev panel. The legs are moved back just as
+    // far as needed to keep the open top of the thighs (the cut at the hips) below the bottom
+    // edge of the view, which depends on the look pitch and how far the hips are below the eye.
     // mode:         which parts are drawn.
-    // backOffset:   how far behind the eye the body is drawn looking straight ahead, metres, so
-    //               the camera never sits inside the chest.
-    // lookDownBack: extra distance back at a full look down, metres (the view then shows the
-    //               legs in front instead of the vest from inside).
-    // crouchBack:   extra distance back while crouched or sliding, metres.
-    // kickForward:  how far the body comes forward with a kick at full extension, metres (so the
-    //               kicking leg shows at the bottom of the view).
+    // minBack:      least distance the body sits behind where the pawn stands, metres.
+    // hipRadius:    how far the thigh tops reach in front of the hip joint, metres.
+    // margin:       extra room kept between the thigh tops and the view's edge, metres.
+    // viewHalfAngle: half the vertical field of view assumed, radians (a little more than the
+    //               camera's, so field of view kicks never reveal the cut).
+    // kickForward:  how far the body may come forward with a kick at full extension, metres (so
+    //               the kicking leg shows at the bottom of the view; never past the cut limit).
     struct FirstPersonBodyTuning
     {
-        FirstPersonBodyMode mode{FirstPersonBodyMode::TorsoAndLegs};
-        float backOffset{0.16f};
-        float lookDownBack{0.14f};
-        float crouchBack{0.08f};
+        FirstPersonBodyMode mode{FirstPersonBodyMode::LegsOnly};
+        float minBack{0.05f};
+        float hipRadius{0.16f};
+        float margin{0.08f};
+        float viewHalfAngle{0.62f};
         float kickForward{0.15f};
     };
 
@@ -70,11 +73,13 @@ namespace game
 
     // What the first-person camera shows of the local body this frame.
     // lookYaw, lookPitch: the camera's look, radians.
+    // eye:                where the camera is, world (the pawn's eye position).
     // hasViewModel:       the viewmodel draws its own arms and weapon (the body's are hidden).
     struct FirstPersonBodyView
     {
         float lookYaw{0.0f};
         float lookPitch{0.0f};
+        math::Vec3 eye{0.0f, 0.0f, 0.0f};
         bool hasViewModel{false};
     };
 
@@ -85,15 +90,16 @@ namespace game
     [[nodiscard]] lockstep::anim::PartMask firstPersonBodyParts(const FirstPersonBodyMasks& masks,
         const FirstPersonBodyTuning& tuning, const FirstPersonBodyView& view);
 
-    // Moves the body's placement back behind the eye for the first-person camera.
+    // Moves the body's placement back behind the eye for the first-person camera, far enough that
+    // the cut at the hips stays below the view (see FirstPersonBodyTuning).
     // placement:  where the body is drawn for everyone else (and in mirrors).
     // tuning:     the first-person body settings.
-    // view:       this frame's look.
-    // crouch:     0 standing to 1 crouched or sliding.
+    // view:       this frame's look and eye.
+    // hips:       the hip joint's world position with `placement`.
     // kick:       how far a kick's leg is out, 0 to 1 (appendKickOffsets()).
     // Returns:    the placement for the first-person camera.
     [[nodiscard]] math::Transform firstPersonBodyPlacement(const math::Transform& placement,
-        const FirstPersonBodyTuning& tuning, const FirstPersonBodyView& view, float crouch, float kick);
+        const FirstPersonBodyTuning& tuning, const FirstPersonBodyView& view, const math::Vec3& hips, float kick);
 
 #if LOCKSTEP_DEV_TOOLS
     // Draws the first-person body controls of the Game dev panel.

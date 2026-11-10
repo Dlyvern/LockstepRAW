@@ -1,5 +1,8 @@
 #include "Characters/PawnCharacters.hpp"
 
+#include "Weapons/DroppedWeapons.hpp"
+#include "Weapons/WeaponSockets.hpp"
+
 #include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Render/Renderer.hpp>
 
@@ -18,6 +21,9 @@ namespace game
 {
     namespace
     {
+        constexpr std::string_view k_m4FirstPersonScene{"characters/swat_fp_m4/scene"};
+        constexpr std::string_view k_glockFirstPersonScene{"characters/swat_fp_glock/scene"};
+
         namespace anim = lockstep::anim;
         namespace assets = lockstep::assets;
         namespace render = lockstep::render;
@@ -28,6 +34,8 @@ namespace game
         constexpr math::Vec3 k_pawnBack{0.0f, 0.0f, 1.0f};
         constexpr math::Vec3 k_modelRight{1.0f, 0.0f, 0.0f};
         constexpr float k_minSquash{0.3f};
+        constexpr float k_fallbackHipHeight{0.9f};
+        constexpr float k_maxFirstPersonVaultBlend{0.05f};
 
         math::Transform posedTransform(PawnCharacter& pawn, const PawnPoseTuning& tuning, const math::Vec3& foot,
             float yaw, float leanRoll, const PawnLook& look, bool hasCrouchClips, float deltaSeconds)
@@ -50,6 +58,22 @@ namespace game
                     * math::angleAxis(yaw + math::k_pi, k_upAxis)
                     * math::angleAxis(-tuning.slideLean * pawn.slideBlend, k_modelRight),
                 .scale = math::Vec3{1.0f, squash, 1.0f}};
+        }
+
+        math::Vec3 hipPosition(const PawnCharacter& pawn, const math::Transform& placement)
+        {
+            const uint32_t hips = pawn.reactionRig.regions[static_cast<std::size_t>(ReactionRegion::Torso)].pivot;
+            const std::span<const math::Mat4> joints = pawn.instance.jointMatrices();
+
+            if (hips >= joints.size())
+            {
+                return placement.position + k_upAxis * (k_fallbackHipHeight * placement.scale.y);
+            }
+
+            const math::Vec4 local = joints[hips].getColumn(3);
+
+            return placement.position + placement.rotation
+                * (math::Vec3{local.x, local.y, local.z} * placement.scale);
         }
 
         void updateKickTimer(PawnCharacter& pawn, const KickPoseTuning& tuning, const PawnLook& look,
@@ -126,22 +150,50 @@ namespace game
                 body->gearMasks);
             logFirstPersonBody("armed", firstPersonBody.has_value());
 
+            std::optional<ArmedCrouch> crouch = findArmedCrouch(body->skinned(), k_armedCrouchNames);
+            const bool hasRealClips = crouch && crouch->rifle && crouch->aiming;
+            std::clog << "Game: armed pawn character crouch: "
+                      << (crouch ? (hasRealClips ? "rifle crouch clips" : "layered") : "none (squashed)") << '\n';
+
             return ArmedCharacter{.body = std::move(*body), .rifle = rifle.value(), .aiming = aiming.value(),
-                .firstPersonBody = firstPersonBody};
+                .firstPersonBody = firstPersonBody, .crouch = std::move(crouch)};
         }
 
-        std::optional<FirstPersonModel> loadFirstPerson(render::Renderer& renderer, const assets::FileSystem& files)
+        std::string_view firstPersonScene(WeaponKind weapon)
         {
-            std::optional<CharacterModel> arms = loadCharacterModel(renderer, files, k_pawnCharacter.firstPersonScene,
+            switch (weapon)
+            {
+                case WeaponKind::M4:
+                {
+                    return k_m4FirstPersonScene;
+                }
+                case WeaponKind::Glock:
+                {
+                    return k_glockFirstPersonScene;
+                }
+                case WeaponKind::Kriss:
+                case WeaponKind::Count:
+                {
+                    break;
+                }
+            }
+
+            return k_pawnCharacter.firstPersonScene;
+        }
+
+        std::optional<FirstPersonModel> loadFirstPerson(render::Renderer& renderer, const assets::FileSystem& files,
+            WeaponKind weapon)
+        {
+            std::optional<CharacterModel> arms = loadCharacterModel(renderer, files, firstPersonScene(weapon),
                 k_pawnCharacter.model);
 
             if (!arms)
             {
-                std::clog << "Game: no first-person viewmodel; armed players see no weapon\n";
+                std::clog << "Game: no first-person viewmodel for the " << weaponName(weapon) << '\n';
                 return std::nullopt;
             }
 
-            auto model = createFirstPersonModel(std::move(*arms), k_pawnCharacter.firstPersonAim);
+            auto model = createFirstPersonModel(std::move(*arms), k_pawnCharacter.firstPersonAim, weapon);
 
             if (!model)
             {
@@ -202,7 +254,17 @@ namespace game
         }
 
         characters.armed = loadArmed(renderer, files);
-        characters.firstPerson = loadFirstPerson(renderer, files);
+        for (std::size_t index = 0; index < k_weaponCount; ++index)
+        {
+            const auto weapon = static_cast<WeaponKind>(index);
+            characters.firstPersons[index] = loadFirstPerson(renderer, files, weapon);
+
+            if (weapon != WeaponKind::Kriss)
+            {
+                characters.heldGuns[index] = loadHeldGun(renderer, files, weapon, firstPersonWeaponPoints(weapon).muzzle);
+            }
+        }
+
         characters.npcBodies = loadNpcBodies(renderer, files, k_pawnCharacter.rifle, k_pawnCharacter.aiming);
 
         return characters;
@@ -221,6 +283,21 @@ namespace game
             .crouch = characters.crouch ? cycle(characters.crouch->walk) : 0.0f,
             .walkSpeed = characters.locomotion.walk.strideSpeed,
             .runSpeed = characters.locomotion.run.strideSpeed};
+    }
+
+    const FirstPersonModel* firstPersonModel(const PawnCharacters& characters, WeaponKind weapon)
+    {
+        const std::optional<FirstPersonModel>& own = characters.firstPersons[weaponIndex(weapon)];
+        const std::optional<FirstPersonModel>& kriss = characters.firstPersons[weaponIndex(WeaponKind::Kriss)];
+
+        return own ? &*own : kriss ? &*kriss : nullptr;
+    }
+
+    const HeldGun* heldGun(const PawnCharacters& characters, WeaponKind weapon)
+    {
+        const std::optional<HeldGun>& gun = characters.heldGuns[weaponIndex(weapon)];
+
+        return gun ? &*gun : nullptr;
     }
 
     void beginPawnCharacters(PawnCharacters& characters)
@@ -245,10 +322,15 @@ namespace game
         PawnCharacter& pawn = characters->pawns[pawnIndex(owner)];
         const ArmedCharacter* armed = look.isArmed && characters->armed ? &*characters->armed : nullptr;
         const anim::SkinnedModel& model = armed != nullptr ? armed->body.skinned() : characters->unarmed.skinned();
-        const bool isCrouchClip = armed == nullptr && characters->crouch && !look.isSliding
-            && look.crouch >= characters->pose.crouchClipThreshold;
-        const LocomotionSet& set = armed != nullptr ? (look.isLowered ? armed->rifle : armed->aiming)
-            : (isCrouchClip ? *characters->crouch : characters->locomotion);
+        const bool isCrouched = !look.isSliding && look.crouch >= characters->pose.crouchClipThreshold;
+        const ArmedCrouch* armedCrouch = armed != nullptr && armed->crouch ? &*armed->crouch : nullptr;
+        const bool hasCrouchClips = armed != nullptr ? armedCrouch != nullptr : characters->crouch.has_value();
+        const bool isCrouchClip = isCrouched && hasCrouchClips;
+        const LocomotionSet& standing = armed != nullptr ? (look.isLowered ? armed->rifle : armed->aiming)
+                                                         : characters->locomotion;
+        const LocomotionSet& crouched = armedCrouch != nullptr ? armedCrouchSet(*armedCrouch, !look.isLowered)
+                                                               : (characters->crouch ? *characters->crouch : standing);
+        const LocomotionSet& set = isCrouchClip ? crouched : standing;
         const math::Vec3 foot = pawnFootPosition(transform);
         const float yaw = yawOf(transform.rotation);
 
@@ -260,6 +342,8 @@ namespace game
         pawn.isDrawn = true;
         pawn.isArmedModel = armed != nullptr;
         updateLocomotion(pawn.locomotion, set, pawn.instance.animator(), foot, yaw, deltaSeconds);
+        updateArmedCrouchLayer(pawn.instance.animator(), armedCrouch, isCrouchClip, !look.isLowered,
+            characters->pose.armedCrouchFade);
         resolveReactionRig(pawn.reactionRig, model);
         updateHitReaction(pawn.reaction, pawn.reactionRig, characters->reactionTuning, deltaSeconds);
 
@@ -274,11 +358,21 @@ namespace game
 
         pawn.instance.update(model, deltaSeconds, pawn.reaction.offsets);
         const math::Transform placement = posedTransform(pawn, characters->pose, foot, yaw, pawnLeanRoll(transform),
-            look, armed == nullptr && characters->crouch.has_value(), deltaSeconds);
+            look, hasCrouchClips, deltaSeconds);
         pawn.placement = placement;
         pawn.yaw = yaw;
+        pawn.weapon = look.weapon;
+        const HeldGun* gun = armed != nullptr ? heldGun(*characters, look.weapon) : nullptr;
+        const std::optional<HeldWeapon> kriss = gun != nullptr ? findHeldWeapon(model) : std::nullopt;
+        const anim::PartMask hidden = kriss ? kriss->parts : 0;
         pawn.instance.submit(renderer, model, placement, layers,
-            gearMask(armed != nullptr ? armed->body.gearMasks : characters->unarmed.gearMasks, playerGearLook(owner)));
+            gearMask(armed != nullptr ? armed->body.gearMasks : characters->unarmed.gearMasks, playerGearLook(owner))
+                & ~hidden);
+
+        if (gun != nullptr && kriss && kriss->hand < pawn.instance.jointMatrices().size())
+        {
+            drawHeldGun(renderer, *gun, math::toMatrix(placement) * pawn.instance.jointMatrices()[kriss->hand], layers);
+        }
 
         const std::optional<FirstPersonBodyMasks>& bodyMasks = armed != nullptr ? armed->firstPersonBody
                                                                                 : characters->unarmedFirstPersonBody;
@@ -288,13 +382,14 @@ namespace game
             return;
         }
 
-        const anim::PartMask parts = firstPersonBodyParts(*bodyMasks, characters->firstPersonBody, *firstPerson);
+        const anim::PartMask parts = firstPersonBodyParts(*bodyMasks, characters->firstPersonBody, *firstPerson)
+            & ~hidden;
 
-        if (parts != 0)
+        if (parts != 0 && !look.isVaulting && pawn.vaultBlend < k_maxFirstPersonVaultBlend)
         {
-            const float crouch = look.isSliding ? 1.0f : look.crouch;
             pawn.instance.submit(renderer, model,
-                firstPersonBodyPlacement(placement, characters->firstPersonBody, *firstPerson, crouch, kickExtension),
+                firstPersonBodyPlacement(placement, characters->firstPersonBody, *firstPerson,
+                    hipPosition(pawn, placement), kickExtension),
                 k_firstPersonBodyLayer, parts);
         }
     }
@@ -337,7 +432,8 @@ namespace game
 
         const LocomotionSet& set = characters->locomotion;
         ImGui::Text("'%s'  armed body %s  viewmodel %s", characters->unarmed.skinned().name.c_str(),
-            characters->armed ? "yes" : "no", characters->firstPerson ? "yes" : "no");
+            characters->armed ? "yes" : "no",
+            firstPersonModel(*characters, WeaponKind::Kriss) != nullptr ? "yes" : "no");
         ImGui::Text("Strides (m/s): walk %.2f  run %.2f  back %.2f  strafe %.2f / %.2f", set.walk.strideSpeed,
             set.run.strideSpeed, set.walkBack.strideSpeed, set.strafeLeft.strideSpeed, set.strafeRight.strideSpeed);
 
@@ -380,7 +476,7 @@ namespace game
         firstPersonBodyDevSection(characters->firstPersonBody);
         kickPoseDevSection(characters->kickPose);
 
-        if (characters->firstPerson)
+        if (firstPersonModel(*characters, WeaponKind::Kriss) != nullptr)
         {
             viewModelDevSection(characters->viewModel);
         }

@@ -16,9 +16,11 @@
 #include "Platform/InputAccess.hpp"
 #include "Render/RendererState.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace lockstep::app
@@ -26,6 +28,10 @@ namespace lockstep::app
     namespace
     {
         using Clock = std::chrono::steady_clock;
+
+        constexpr std::string_view k_gpuTimingsFlag{"--dev-gpu-timings"};
+        constexpr uint64_t k_memoryReportFrame{30};
+        constexpr uint64_t k_bytesPerMebibyte{1024 * 1024};
 
         float toMilliseconds(Clock::duration duration)
         {
@@ -121,6 +127,18 @@ namespace lockstep::app
             return audio::ListenerPose{.position = camera.position, .forward = camera.target - camera.position, .up = camera.up};
         }
 
+        void logGpuMemory(const render::Renderer& renderer, std::string_view moment)
+        {
+            const render::GpuMemoryStats memory = renderer.memoryStats();
+            const render::GraphicsQuality& quality = renderer.graphicsQuality();
+            log(LogLevel::Info, "Render", "GPU memory " + std::string(moment) + " (graphics "
+                + render::toString(quality.preset) + "): " + std::to_string(memory.deviceBytesUsed / k_bytesPerMebibyte)
+                + " MiB used of " + std::to_string(memory.deviceBytesBudget / k_bytesPerMebibyte) + " MiB budget ("
+                + (memory.isBudgetFromDriver ? "driver" : "estimated") + "), "
+                + std::to_string(memory.deviceBytesAllocated / k_bytesPerMebibyte) + " MiB allocated, "
+                + std::to_string(memory.textures) + " textures, " + std::to_string(memory.meshes) + " meshes");
+        }
+
         void updateAudio(EngineContext& engine, float frameSeconds)
         {
             engine.audio.setBusTimeScale(audio::Bus::World, engine.timeDomains.scale(world::TimeDomain::World));
@@ -164,6 +182,7 @@ namespace lockstep::app
         {
             platform::Window& window = loop.engine.window;
             Clock::time_point previousTime = Clock::now();
+            uint64_t framesRendered = 0;
 
             while (window.isOpen())
             {
@@ -201,6 +220,11 @@ namespace lockstep::app
                     return rendered;
                 }
 
+                if (++framesRendered == k_memoryReportFrame)
+                {
+                    logGpuMemory(loop.engine.renderer, "after " + std::to_string(k_memoryReportFrame) + " frames");
+                }
+
                 loop.devTools.recordFrameTiming(debug::FrameTiming{
                     .workMilliseconds = toMilliseconds(renderStart - now),
                     .renderMilliseconds = toMilliseconds(Clock::now() - renderStart)});
@@ -233,12 +257,20 @@ namespace lockstep::app
             return renderer.error();
         }
 
+        logGpuMemory(renderer.value(), "at startup");
+
         auto devTools = debug::DevTools::create(renderer.value(), window.value());
 
         if (!devTools)
         {
             return devTools.error();
         }
+
+        devTools.value().logGpuTimings(std::any_of(description.arguments.begin(), description.arguments.end(),
+            [](const char* argument)
+            {
+                return argument != nullptr && std::string_view(argument) == k_gpuTimingsFlag;
+            }));
 
         auto network = net::Network::create();
 
@@ -301,6 +333,8 @@ namespace lockstep::app
         {
             return Error{ErrorCode::InvalidArgument, "run: GameApi::init returned a null state"};
         }
+
+        logGpuMemory(renderer.value(), "after Game init");
 
         Loop loop{
             .game = game,

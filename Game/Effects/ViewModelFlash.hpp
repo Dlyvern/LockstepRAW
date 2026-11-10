@@ -69,7 +69,8 @@ namespace game
 
     // Starts a flash for a shot of the local weapon (a new star, turn and size).
     // flash: the flash.
-    void fireViewModelFlash(ViewModelFlash& flash);
+    // size:  factor on its size (the weapon's WeaponStats::flashScale).
+    void fireViewModelFlash(ViewModelFlash& flash, float size);
 
     // Draws the current flash, if one shows, at the drawn muzzle, and advances it by one frame.
     // Call once per frame after the viewmodel was drawn.

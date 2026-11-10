@@ -13,10 +13,7 @@ namespace game
     {
         namespace render = lockstep::render;
 
-        constexpr float k_casingRadius{0.00575f};
-        constexpr float k_casingLength{0.0228f};
         constexpr uint32_t k_casingSides{10};
-        constexpr math::Vec3 k_magazineHalf{0.015f, 0.1225f, 0.0225f};
         constexpr math::Vec4 k_brass{0.80f, 0.56f, 0.26f, 1.0f};
         constexpr math::Vec4 k_polymer{0.035f, 0.035f, 0.038f, 1.0f};
 
@@ -138,18 +135,18 @@ namespace game
         }
     } //namespace
 
-    lockstep::Status createCasingLook(render::Renderer& renderer, DebrisPool& pool)
+    lockstep::Status createCasingLook(render::Renderer& renderer, DebrisPool& pool, float radius, float length)
     {
-        return createLook(renderer, pool, cylinder(k_casingRadius, k_casingLength, k_casingSides),
+        return createLook(renderer, pool, cylinder(radius, length, k_casingSides),
             render::PbrMaterialDescription{.baseColorFactor = k_brass,
                 .metallicFactor = 1.0f,
                 .roughnessFactor = 0.32f,
                 .detail = render::SurfaceDetail::Metal});
     }
 
-    lockstep::Status createMagazineLook(render::Renderer& renderer, DebrisPool& pool)
+    lockstep::Status createMagazineLook(render::Renderer& renderer, DebrisPool& pool, const math::Vec3& half)
     {
-        return createLook(renderer, pool, box(k_magazineHalf),
+        return createLook(renderer, pool, box(half),
             render::PbrMaterialDescription{.baseColorFactor = k_polymer,
                 .metallicFactor = 0.0f,
                 .roughnessFactor = 0.55f,

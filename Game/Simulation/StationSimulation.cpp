@@ -1,6 +1,7 @@
 #include "Simulation/StationSimulation.hpp"
 
 #include "GameState.hpp"
+#include "Weapons/Loadout.hpp"
 #include "Simulation/HostSimulation.hpp"
 
 #include <Lockstep/Net/Session.hpp>
@@ -195,7 +196,7 @@ namespace game
         }
         else if (used == StationObject::Ammo)
         {
-            refillReserve(pawn.ammo, state.settings.ammo);
+            refillLoadout(pawn, state.settings.weapons);
         }
     }
 
@@ -279,7 +280,7 @@ namespace game
                         giveArmoryItem(mission, player, ArmoryItem::Weapon);
                         giveArmoryItem(mission, player, ArmoryItem::Ammo);
                         state.simulation.pawns[player].isArmed = true;
-                        refillReserve(state.simulation.pawns[player].ammo, state.settings.ammo);
+                        refillLoadout(state.simulation.pawns[player], state.settings.weapons);
                     }
                 }
 

@@ -6,6 +6,7 @@
 #include "GameState.hpp"
 #include "Npcs/NpcRoster.hpp"
 #include "Player/FireDrill.hpp"
+#include "Player/WeaponDrill.hpp"
 #include "Player/LocalPlayer.hpp"
 #include "Player/MoveDrill.hpp"
 #include "Presentation/Frame.hpp"
@@ -50,7 +51,12 @@ namespace game
         using lockstep::app::TickInfo;
 
         constexpr std::string_view k_armedFlag{"--armed"};
+        constexpr std::string_view k_npcCrouchFlag{"--dev-npc-crouch"};
+        constexpr std::string_view k_ironSightsFlag{"--dev-iron-sights"};
         constexpr float k_drillTargetRange{6.0f};
+        constexpr float k_watchRange{30.0f};
+        constexpr float k_watchEyeHeight{1.6f};
+        constexpr float k_watchTargetHeight{0.2f};
         constexpr std::string_view k_ambienceFolder{"audio/"};
         constexpr std::string_view k_ambienceName{"ambience_morning."};
 
@@ -143,7 +149,14 @@ namespace game
             state->visuals = visuals.value();
             state->weather.forced = weather.value();
             state->settings.startArmed = hasArgument(engine.arguments, k_armedFlag) || !launch.value();
+            state->npcLooks.isCrouchForced = hasArgument(engine.arguments, k_npcCrouchFlag);
             state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
+            state->optics = loadOptics(engine.renderer, engine.files);
+
+            if (hasArgument(engine.arguments, k_ironSightsFlag))
+            {
+                state->optics.loadout.byWeapon.fill(game::OpticKind::None);
+            }
             matchStridesToCharacters(*state);
             loadFootsteps(state->footsteps, engine.audio, engine.files);
             state->combatAudio.bank = loadCombatSounds(engine.audio, engine.files);
@@ -243,9 +256,17 @@ namespace game
         std::optional<FireButtons> scriptedFire(GameState& state, const EngineContext& engine, uint64_t tick)
         {
 #if LOCKSTEP_DEV_TOOLS
+            applyWeaponDrill(state.local.controls, state.settings.weapons, engine.arguments, tick,
+                engine.timeDomains.delta(world::TimeDomain::Player));
+
             if (isFireDrillRequested(engine.arguments))
             {
                 return fireDrillButtons(state.local.controls, tick, engine.timeDomains.delta(world::TimeDomain::Player));
+            }
+
+            if (isScopeDrillRequested(engine.arguments))
+            {
+                return scopeDrillButtons(state.local.controls, tick, engine.timeDomains.delta(world::TimeDomain::Player));
             }
 #else
             static_cast<void>(state);
@@ -256,7 +277,8 @@ namespace game
         }
 
 #if LOCKSTEP_DEV_TOOLS
-        std::optional<math::Vec3> nearestNpc(const GameState& state, const EngineContext& engine, const math::Vec3& foot)
+        std::optional<math::Vec3> nearestNpc(const GameState& state, const EngineContext& engine,
+            const math::Vec3& foot, float range)
         {
             std::optional<math::Vec3> nearest;
 
@@ -272,7 +294,7 @@ namespace game
                 const math::Vec3 position = entity->transform().position;
                 const float distance = math::length(position - foot);
 
-                if (distance < k_drillTargetRange && (!nearest || distance < math::length(*nearest - foot)))
+                if (distance < range && (!nearest || distance < math::length(*nearest - foot)))
                 {
                     nearest = position;
                 }
@@ -300,12 +322,14 @@ namespace game
                     .isReady = isWeaponReady(localPawnMotion(state, engine)),
                     .magazine = own.magazine,
                     .isReloading = own.isReloading,
-                    .fire = state.settings.fire,
-                    .recoil = state.settings.recoil,
+                    .weapons = &state.settings.weapons,
                     .aimOffset = state.local.aimOffset,
                     .canToggleFlashlight = state.hud.prompt.empty() && !partner.isDowned,
                     .scriptedFire = scriptedFire(state, engine, tick.tick)},
                 engine.timeDomains.delta(world::TimeDomain::Player));
+
+            const OpticModel* optic = own.isArmed ? weaponOptic(state.optics, state.local.command.weapon) : nullptr;
+            state.local.command.optic = optic ? optic->kind : OpticKind::None;
 
             if (own.isDowned)
             {
@@ -313,12 +337,24 @@ namespace game
             }
 
 #if LOCKSTEP_DEV_TOOLS
+            if (isWatchNpcRequested(engine.arguments))
+            {
+                if (const auto foot = engine.physics.footPosition(localController(state, engine)))
+                {
+                    if (const std::optional<math::Vec3> npc = nearestNpc(state, engine, *foot, k_watchRange))
+                    {
+                        lookAtPoint(state.local.command, *foot + math::Vec3{0.0f, k_watchEyeHeight, 0.0f},
+                            *npc + math::Vec3{0.0f, k_watchTargetHeight, 0.0f});
+                    }
+                }
+            }
+
             if (isKickDrillRequested(engine.arguments))
             {
                 if (const auto foot = engine.physics.footPosition(localController(state, engine)))
                 {
                     applyKickDrill(state.local.command, tick.tick, engine.timeDomains.delta(world::TimeDomain::Player),
-                        *foot, nearestNpc(state, engine, *foot));
+                        *foot, nearestNpc(state, engine, *foot, k_drillTargetRange));
                 }
             }
 

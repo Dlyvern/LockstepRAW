@@ -1,9 +1,13 @@
 #include "Presentation/FirstPerson.hpp"
 
+#include "Characters/FirstPersonBody.hpp"
+#include "Characters/ViewModelOptic.hpp"
 #include "Characters/ViewModelReload.hpp"
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
 #include "Player/PawnKick.hpp"
+#include "Presentation/Mirrors.hpp"
+#include "Presentation/Visuals.hpp"
 
 #include <Lockstep/Platform/Input.hpp>
 #include <Lockstep/Platform/Window.hpp>
@@ -31,6 +35,35 @@ namespace game
         }
     } //namespace
 
+    ShownWeapon shownWeapon(const GameState& state)
+    {
+        const LocalControls& controls = state.local.controls;
+        const float raise = state.pawnCharacters ? state.pawnCharacters->viewModel.tuning.raiseSeconds : 0.3f;
+        const float left = controls.switchSeconds;
+
+        if (left <= 0.0f)
+        {
+            return ShownWeapon{.weapon = controls.weapon, .raiseSeconds = raise};
+        }
+
+        const float draw = weaponStats(state.settings.weapons, controls.weapon).drawSeconds;
+
+        if (left > draw)
+        {
+            return ShownWeapon{.weapon = controls.previousWeapon,
+                .switching = ViewModelSwitch{.isHolstering = true,
+                    .seconds = weaponStats(state.settings.weapons, controls.previousWeapon).holsterSeconds,
+                    .left = left - draw},
+                .isSwitching = true,
+                .raiseSeconds = raise};
+        }
+
+        return ShownWeapon{.weapon = controls.weapon,
+            .switching = ViewModelSwitch{.isDrawing = true, .seconds = draw, .left = left},
+            .isSwitching = true,
+            .raiseSeconds = raise};
+    }
+
     FirstPersonLook presentedLook(GameState& state, const EngineContext& engine, const FrameInfo& frameInfo)
     {
         GameState::Local& local = state.local;
@@ -47,7 +80,7 @@ namespace game
         }
 
         const ControlSettings& controls = state.settings.controls;
-        const float sensitivity = lookSensitivity(controls, local.command.aim);
+        const float sensitivity = lookSensitivity(controls, local.command.aim, local.controls.opticSensitivityScale);
 
         return FirstPersonLook{.yaw = local.command.yaw - local.pendingLook.x * sensitivity,
             .pitch = math::clamp(local.command.pitch - local.pendingLook.y * sensitivity, -controls.maxPitch,
@@ -102,13 +135,15 @@ namespace game
     void presentViewModel(GameState& state, EngineContext& engine, const std::optional<math::Vec3>& eye,
         const HeadPose& head, const FirstPersonLook& look, float playerSeconds)
     {
-        if (!state.pawnCharacters || !state.pawnCharacters->firstPerson)
+        if (!state.pawnCharacters || firstPersonModel(*state.pawnCharacters, WeaponKind::Kriss) == nullptr)
         {
             return;
         }
 
         PawnCharacters& characters = *state.pawnCharacters;
         const PawnLook pawnLook = localPawnLook(state, engine);
+        const ShownWeapon shown = shownWeapon(state);
+        const FirstPersonModel& model = *firstPersonModel(characters, shown.weapon);
 
         if (!eye || !pawnLook.isArmed || state.flyCamera.isActive)
         {
@@ -122,10 +157,18 @@ namespace game
         const std::size_t index = localPawnIndex(engine);
         const PlayerStatus& status = state.local.statuses[index];
         const bool isReloading = status.isReloading;
-        const PlayerReload& shown = state.weaponFx.reloads.players[index];
-        const bool isEmptyReload = shown.isActive ? shown.kind == ReloadKind::Empty : status.magazine <= 0;
-        const bool isClipReload = isReloading && hasReloadClips(*characters.firstPerson);
-        drawViewModel(engine.renderer, *characters.firstPerson, characters.viewModel,
+        const PlayerReload& reload = state.weaponFx.reloads.players[index];
+        const bool isEmptyReload = reload.isActive ? reload.kind == ReloadKind::Empty : status.magazine <= 0;
+        const bool isClipReload = isReloading && hasReloadClips(model) && !shown.switching.isHolstering
+            && !shown.switching.isDrawing;
+        const bool isSwitchClip = (shown.switching.isHolstering || shown.switching.isDrawing) && hasSwitchClips(model);
+        const bool isSwitchLowered = !hasSwitchClips(model)
+            && (shown.switching.isHolstering || (shown.switching.isDrawing && shown.switching.left > shown.raiseSeconds));
+        const OpticModel* optic = weaponOptic(state.optics, model.weapon);
+        prepareViewModelOptic(characters.viewModel, model, optic, state.optics);
+        state.local.controls.opticSensitivityScale = opticSensitivityScale(state.optics, optic);
+        const WeaponStats& stats = weaponStats(state.settings.weapons, shown.weapon);
+        drawViewModel(engine.renderer, model, characters.viewModel,
             ViewModelInput{.eye = *eye,
                 .yaw = look.yaw,
                 .pitch = look.pitch,
@@ -139,17 +182,23 @@ namespace game
                 .isGrounded = motion.isGrounded || (isMantling(motion) && !isVaulting(motion)),
                 .strafeSpeed = state.settings.pawns.strafeSpeed,
                 .isCrouched = motion.stance != PawnStance::Stand,
-                .isAiming = pawnLook.isAiming && !isReloading,
-                .isLowered = pawnLook.isLowered || (isReloading && !isClipReload),
+                .isAiming = pawnLook.isAiming && !isReloading && !isSwitchClip && !isSwitchLowered,
+                .isLowered = pawnLook.isLowered || (isReloading && !isClipReload && !isSwitchClip) || isSwitchLowered,
                 .isVaulting = isVaulting(motion),
                 .isKicking = isKicking(motion),
-                .isSprinting = isLocalSprinting(state, engine) && !isClipReload,
+                .isSprinting = isLocalSprinting(state, engine) && !isClipReload && !isSwitchClip,
                 .wantsHoldBreath = state.local.command.sprint,
-                .canFire = !isHoldingToy(state, engine) && !isReloading,
+                .canFire = !isHoldingToy(state, engine) && !isReloading && !shown.isSwitching,
                 .shotCount = state.local.command.shotCount,
                 .reload = ViewModelReload{.isActive = isClipReload,
                     .isEmpty = isEmptyReload,
-                    .seconds = isEmptyReload ? state.settings.ammo.emptyReloadSeconds : state.settings.ammo.reloadSeconds},
+                    .seconds = isEmptyReload ? stats.ammo.emptyReloadSeconds : stats.ammo.reloadSeconds},
+                .switching = shown.switching,
                 .deltaSeconds = playerSeconds});
+        const float worldFov = firstPersonCamera(*eye, forward, viewModelZoom(characters.viewModel),
+            math::Vec3{0.0f, 1.0f, 0.0f}, head.fovOffset).verticalFov;
+        presentViewModelOptic(engine.renderer, model, characters.viewModel, optic,
+            state.optics, worldFov,
+            lockstep::render::k_allRenderLayers & ~(k_mirrorOnlyLayer | k_firstPersonBodyLayer));
     }
 } //namespace game

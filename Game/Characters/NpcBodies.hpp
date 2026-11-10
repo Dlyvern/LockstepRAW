@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_CHARACTERS_NPC_BODIES_HPP
 #define LOCKSTEP_GAME_CHARACTERS_NPC_BODIES_HPP
 
+#include "Characters/ArmedCrouch.hpp"
 #include "Characters/CharacterModel.hpp"
 #include "Characters/GearLooks.hpp"
 #include "Characters/Locomotion.hpp"
@@ -40,12 +41,13 @@ namespace game
         {.unarmed = "characters/tactical/scene", .armed = "characters/tactical_armed/scene"},
         {.unarmed = "", .armed = "characters/robber_armed/scene"}}};
 
-    // An armed NPC body and its two locomotion sets.
+    // An armed NPC body, its two locomotion sets and its crouch (nothing without the clips).
     struct NpcArmedBody
     {
         CharacterModel body;
         LocomotionSet rifle{};
         LocomotionSet aiming{};
+        std::optional<ArmedCrouch> crouch{};
     };
 
     // One NPC body's loaded models; either may be missing (not mounted, or never used).
@@ -66,11 +68,13 @@ namespace game
     // body:   the model and its gear masks.
     // rifle:  relaxed rifle locomotion.
     // aiming: weapon-up locomotion.
+    // crouch: its crouch, or null.
     struct NpcArmedView
     {
         const CharacterModel* body{nullptr};
         const LocomotionSet* rifle{nullptr};
         const LocomotionSet* aiming{nullptr};
+        const ArmedCrouch* crouch{nullptr};
     };
 
     // Loads the k_npcBodyScenes models that are mounted; missing ones are logged and left out

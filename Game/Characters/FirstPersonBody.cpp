@@ -15,7 +15,8 @@ namespace game
     {
         namespace anim = lockstep::anim;
 
-        constexpr float k_fullLookDown{1.2f};
+        constexpr float k_minEdgeAngle{0.05f};
+        constexpr float k_maxEdgeAngle{3.0f};
     } //namespace
 
     std::optional<FirstPersonBodyMasks> findFirstPersonBodyMasks(const anim::SkinnedModel& model,
@@ -56,14 +57,17 @@ namespace game
     }
 
     math::Transform firstPersonBodyPlacement(const math::Transform& placement, const FirstPersonBodyTuning& tuning,
-        const FirstPersonBodyView& view, float crouch, float kick)
+        const FirstPersonBodyView& view, const math::Vec3& hips, float kick)
     {
-        const float lookDown = std::clamp(-view.lookPitch / k_fullLookDown, 0.0f, 1.0f);
-        const float back = tuning.backOffset + tuning.lookDownBack * lookDown
-            + tuning.crouchBack * std::clamp(crouch, 0.0f, 1.0f) - tuning.kickForward * std::clamp(kick, 0.0f, 1.0f);
         const math::Vec3 forward{-std::sin(view.lookYaw), 0.0f, -std::cos(view.lookYaw)};
+        const float below = std::max(view.eye.y - hips.y, 0.0f);
+        const float hipsAhead = math::dot(hips - view.eye, forward);
+        const float edge = std::clamp(tuning.viewHalfAngle - view.lookPitch, k_minEdgeAngle, k_maxEdgeAngle);
+        const float visibleFrom = below * std::cos(edge) / std::sin(edge);
+        const float needed = hipsAhead + tuning.hipRadius + tuning.margin - visibleFrom;
+        const float preferred = tuning.minBack - tuning.kickForward * std::clamp(kick, 0.0f, 1.0f);
         math::Transform moved = placement;
-        moved.position = placement.position - forward * back;
+        moved.position = placement.position - forward * std::max(needed, preferred);
 
         return moved;
     }
@@ -84,11 +88,11 @@ namespace game
             tuning.mode = static_cast<FirstPersonBodyMode>(mode);
         }
 
-        ImGui::SliderFloat("Behind the eye (m)", &tuning.backOffset, -0.2f, 0.5f);
-        ImGui::SliderFloat("Extra back looking down (m)", &tuning.lookDownBack, 0.0f, 0.5f);
-        ImGui::SliderFloat("Extra back crouched (m)", &tuning.crouchBack, 0.0f, 0.5f);
+        ImGui::SliderFloat("Least distance back (m)", &tuning.minBack, -0.3f, 0.5f);
+        ImGui::SliderFloat("Thigh tops ahead of hips (m)", &tuning.hipRadius, 0.0f, 0.4f);
+        ImGui::SliderFloat("Margin to view edge (m)", &tuning.margin, 0.0f, 0.4f);
+        ImGui::SliderFloat("View half angle (rad)", &tuning.viewHalfAngle, 0.3f, 1.0f);
         ImGui::SliderFloat("Forward with a kick (m)", &tuning.kickForward, 0.0f, 0.6f);
-        ImGui::TextDisabled("Casts a shadow without head (the Engine has no per-draw shadow switch yet)");
         ImGui::TreePop();
     }
 #endif

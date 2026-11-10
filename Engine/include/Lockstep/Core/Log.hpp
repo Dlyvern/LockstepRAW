@@ -18,7 +18,8 @@ namespace lockstep
     };
 
     // Writes one line "[channel] message": Info to stdout, Warning and Error to stderr. Safe to
-    // call from any thread; lines from different threads never interleave.
+    // call from any thread; lines from different threads never interleave. Every line is flushed
+    // at once, so it survives the process being killed (e.g. by `timeout`).
     // level:   severity of the message.
     // channel: the module or library the message comes from ("Render", "Vela", ...).
     // message: the text, without a trailing newline.

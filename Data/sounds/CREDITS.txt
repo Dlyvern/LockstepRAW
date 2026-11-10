@@ -11,3 +11,4 @@ Reload parts (weapons/v45_mag_out, v45_mag_in, v45_charge): cut from the rubberd
 Casings (casings/*), dropped magazines (magazines/*), gunshot tails (tails/*): synthesised (Content/source/scripts/make_weapon_fx_sounds.py; tails convolve the firearms library transient with generated room/echo responses).
 Vault (player/vault_*): synthesised (Content/source/scripts/make_vault_sounds.py: hand slap, cloth scuff, gear rattle).
 Kick (player/kick_swing_*, player/kick_hit_*): synthesised (Content/source/scripts/make_kick_sounds.py: air and cloth whoosh, boot thud).
+M4 and Glock gunshots (weapons/m4_shot_*, weapons/glock_shot_*): pitch and filter variants of the V-45 gunshots above (Content/source/scripts/make_loadout_shots.py).

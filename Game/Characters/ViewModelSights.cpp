@@ -8,9 +8,6 @@ namespace game
 {
     namespace
     {
-        constexpr math::Vec3 k_rearSight{-0.0833f, 1.3428f, 0.2903f};
-        constexpr math::Vec3 k_frontSight{-0.2536f, 1.4507f, 0.5030f};
-        constexpr math::Vec3 k_muzzle{-0.3023f, 1.4032f, 0.5760f};
         constexpr math::Vec3 k_modelUp{0.0f, 1.0f, 0.0f};
         constexpr float k_railBack{0.07f};
         constexpr float k_railDrop{0.045f};
@@ -57,11 +54,11 @@ namespace game
         }
 
         const Projection projection = projectionOf(state, worldFov);
-        const math::Vec3 rear = projection.toWorld(k_rearSight);
-        const math::Vec3 front = projection.toWorld(k_frontSight);
-        const math::Vec3 muzzle = projection.toWorld(k_muzzle);
+        const math::Vec3 rear = projection.toWorld(state.rig.rearSight);
+        const math::Vec3 front = projection.toWorld(state.rig.frontSight);
+        const math::Vec3 muzzle = projection.toWorld(state.rig.muzzle);
         const math::Vec3 forward = math::normalize(front - rear);
-        const math::Vec3 top = math::normalize(projection.toWorld(k_muzzle + k_modelUp * 0.1f) - muzzle);
+        const math::Vec3 top = math::normalize(projection.toWorld(state.rig.muzzle + k_modelUp * 0.1f) - muzzle);
 
         return ViewModelSockets{.muzzle = math::Transform{.position = muzzle, .rotation = facing(muzzle, forward, top)},
             .forward = forward,
@@ -79,7 +76,8 @@ namespace game
 
         const math::Quat look = math::angleAxis(state.lastYaw, k_up) * math::angleAxis(state.lastPitch, k_right);
         const math::Vec3 centre = look * k_viewForward;
-        const math::Vec3 post = math::normalize(projectionOf(state, worldFov).toWorld(k_frontSight) - state.eye);
+        const math::Vec3 post = state.opticAim && state.opticAim->axis ? *state.opticAim->axis
+            : math::normalize(projectionOf(state, worldFov).toWorld(state.rig.frontSight) - state.eye);
 
         return math::normalize(math::lerp(centre, post, viewModelZoom(state)));
     }

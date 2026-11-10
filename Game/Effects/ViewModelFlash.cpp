@@ -158,12 +158,12 @@ namespace game
         }
     }
 
-    void fireViewModelFlash(ViewModelFlash& flash)
+    void fireViewModelFlash(ViewModelFlash& flash, float size)
     {
         flash.frame = 0;
         flash.variant = nextRandom(flash) % static_cast<uint32_t>(flash.meshes.size());
         flash.roll = randomRange(flash, 0.0f, 2.0f * math::k_pi);
-        flash.scale = randomRange(flash, 0.8f, 1.2f);
+        flash.scale = randomRange(flash, 0.8f, 1.2f) * size;
     }
 
     void drawViewModelFlash(ViewModelFlash& flash, render::Renderer& renderer, const std::optional<WeaponSocket>& socket,

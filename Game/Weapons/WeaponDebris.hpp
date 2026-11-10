@@ -128,18 +128,25 @@ namespace game
     // pool: the pool.
     void clearDebris(DebrisPool& pool);
 
-    // Creates a .45 ACP casing: a brass cylinder (11.5 mm across, 22.8 mm long) along local y.
+    // Creates a casing: a brass cylinder along local y (.45 ACP: radius 5.75 mm, 22.8 mm long;
+    // 9 mm: 4.9 / 19; 5.56: 4.8 / 45). The pool's halfThickness should be the radius.
     // renderer: the renderer.
     // pool:     receives the mesh and material.
+    // radius:   the casing's radius, metres.
+    // length:   its length, metres.
     // Returns:  an error if the mesh or material could not be created.
-    [[nodiscard]] lockstep::Status createCasingLook(lockstep::render::Renderer& renderer, DebrisPool& pool);
+    [[nodiscard]] lockstep::Status createCasingLook(lockstep::render::Renderer& renderer, DebrisPool& pool,
+        float radius, float length);
 
-    // Creates a KRISS magazine: a dark polymer box (30 x 245 x 45 mm, long along local y, thin
-    // along local x).
+    // Creates a magazine: a dark polymer box, long along local y, thin along local x (KRISS: 30 x
+    // 245 x 45 mm; M4: 24 x 180 x 60; Glock: 22 x 130 x 32). The pool's halfThickness should be
+    // half its x size.
     // renderer: the renderer.
     // pool:     receives the mesh and material.
+    // half:     half its size along local x, y and z, metres.
     // Returns:  an error if the mesh or material could not be created.
-    [[nodiscard]] lockstep::Status createMagazineLook(lockstep::render::Renderer& renderer, DebrisPool& pool);
+    [[nodiscard]] lockstep::Status createMagazineLook(lockstep::render::Renderer& renderer, DebrisPool& pool,
+        const math::Vec3& half);
 } //namespace game
 
 #endif //LOCKSTEP_GAME_WEAPONS_WEAPON_DEBRIS_HPP

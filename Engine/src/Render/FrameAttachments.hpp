@@ -29,6 +29,9 @@ namespace lockstep::render
     // reflection*:   the planar reflection view: colour (lit, ambient included) and the
     //                ambient, velocity and depth targets it needs to share the lit pass's
     //                pipelines; reduced resolution.
+    // scope*:        the scope view (Renderer::submitScope()): colour (lit, ambient included,
+    //                alpha 0 where only sky is seen) and the ambient, velocity, G-buffer and depth
+    //                targets it needs to share the lit pass's pipelines; square, fixed size.
     // *Msaa:         multisampled colour, ambient, velocity and depth of the lit scene pass when MSAA is on,
     //                resolved into color, ambient and depth (depth takes sample zero).
     // fogScatter:    volumetric fog of this frame, reduced resolution: rgb light scattered towards
@@ -77,6 +80,12 @@ namespace lockstep::render
     inline constexpr std::string_view k_reflectionAmbientAttachment{"reflectionAmbient"};
     inline constexpr std::string_view k_reflectionVelocityAttachment{"reflectionVelocity"};
     inline constexpr std::string_view k_reflectionDepthAttachment{"reflectionDepth"};
+    inline constexpr std::string_view k_scopeColorAttachment{"scopeColor"};
+    inline constexpr std::string_view k_scopeAmbientAttachment{"scopeAmbient"};
+    inline constexpr std::string_view k_scopeVelocityAttachment{"scopeVelocity"};
+    inline constexpr std::string_view k_scopeSurfaceNormalAttachment{"scopeSurfaceNormal"};
+    inline constexpr std::string_view k_scopeSurfaceSpecularAttachment{"scopeSurfaceSpecular"};
+    inline constexpr std::string_view k_scopeDepthAttachment{"scopeDepth"};
     inline constexpr std::string_view k_taaHistoryAttachment{"taaHistory"};
     inline constexpr std::string_view k_sceneColorMsaaAttachment{"colorMsaa"};
     inline constexpr std::string_view k_sceneAmbientMsaaAttachment{"ambientMsaa"};
@@ -108,8 +117,10 @@ namespace lockstep::render
     inline constexpr vela::graphics::TextureFormat k_occlusionFormat{vela::graphics::TextureFormat::RGBA8Unorm};
     inline constexpr vela::graphics::TextureFormat k_displayFormat{vela::graphics::TextureFormat::RGBA16Float};
 
-    // Shadow atlas layout: the sun's 2x2 cascade tiles of k_shadowTileSize texels fill the left
-    // half, local light tiles of k_localShadowTileSize texels (a 4x4 grid) the right half.
+    // Shadow atlas layout at its default size (k_shadowAtlasWidth): the sun's 2x2 cascade tiles of
+    // k_shadowTileSize texels fill the left half, local light tiles of k_localShadowTileSize texels
+    // (a 4x4 grid) the right half. GraphicsQuality::shadowAtlasSize scales all of it
+    // (RendererState::shadowAtlasWidth, shadowTileTexels()).
     inline constexpr uint32_t k_shadowTileSize{1024};
     inline constexpr uint32_t k_localShadowTileSize{512};
     inline constexpr uint32_t k_shadowAtlasWidth{k_shadowTileSize * 4};

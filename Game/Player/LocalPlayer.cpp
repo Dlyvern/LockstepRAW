@@ -46,7 +46,8 @@ namespace game
             .crouch = pawnCrouchAmount(transform, state.settings.pawns),
             .isSliding = status.isSliding,
             .isVaulting = status.isVaulting,
-            .isKicking = status.isKicking};
+            .isKicking = status.isKicking,
+            .weapon = status.weapon};
     }
 
     PawnLook localPawnLook(const GameState& state, const EngineContext& engine,
@@ -62,7 +63,8 @@ namespace game
             .crouch = transform ? pawnCrouchAmount(*transform, state.settings.pawns) : 0.0f,
             .isSliding = isSliding(localPawnMotion(state, engine)),
             .isVaulting = isVaulting(localPawnMotion(state, engine)),
-            .isKicking = isKicking(localPawnMotion(state, engine))};
+            .isKicking = isKicking(localPawnMotion(state, engine)),
+            .weapon = state.local.command.weapon};
     }
 
     const PawnMotion& localPawnMotion(const GameState& state, const EngineContext& engine)

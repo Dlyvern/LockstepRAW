@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -216,6 +217,8 @@ namespace game
                 }
             }
 
+            const std::string weaponLine = std::string(weaponName(shownWeapon(state).weapon)) + "   "
+                + fireModeName(state.local.controls.trigger.mode);
             presentCombatHud(engine.renderer, state.visuals, state.local.combatHud,
                 CombatHudFrame{.own = own,
                     .partner = other,
@@ -223,7 +226,7 @@ namespace game
                     .canRevive = canRevive,
                     .isArmed = own.isArmed && localPawn.has_value(),
                     .magazine = state.local.controls.trigger.rounds,
-                    .fireMode = fireModeName(state.local.controls.trigger.mode),
+                    .fireMode = weaponLine.c_str(),
                     .eye = eye,
                     .direction = direction,
                     .lookYaw = lookYaw,
@@ -371,8 +374,8 @@ namespace game
                 .aim = aim,
                 .command = &state.local.command,
                 .level = state.level ? &*state.level : nullptr,
-                .spread = &state.settings.spread,
-                .penetration = &state.settings.penetration,
+                .spread = &weaponStats(state.settings.weapons, state.local.command.weapon).spread,
+                .penetration = &weaponStats(state.settings.weapons, state.local.command.weapon).penetration,
                 .statuses = state.local.statuses,
                 .listener = eye,
                 .rain = rainSoundAmount(state.weather),
@@ -396,7 +399,9 @@ namespace game
     void presentFrame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
     {
         updateCursorCapture(engine.window, frameInfo.input);
-        updateDevCapture(state.devCapture, engine.renderer);
+        updateDevCapture(state.devCapture, engine.renderer,
+            DevCaptureEvents{.isReloading = state.local.statuses[localPawnIndex(engine)].isReloading,
+                .isSwitching = shownWeapon(state).isSwitching});
         drawArena(engine.renderer, state.visuals, state.arena);
 
         if (state.level)
@@ -447,7 +452,6 @@ namespace game
         endNpcLooks(state.npcLooks, engine.physics, engine.renderer, frameInfo.alpha, worldSeconds);
         presentKicks(state, engine, worldSeconds);
 
-        const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
         presentMirrors(engine.renderer, state.level ? &state.level->scene : nullptr);
 
         const FirstPersonLook look = presentedLook(state, engine, frameInfo);
@@ -457,7 +461,9 @@ namespace game
             const PawnLook ownPawnLook = localPawnLook(state, engine, localPawn);
             const FirstPersonBodyView bodyView{.lookYaw = look.yaw,
                 .lookPitch = look.pitch,
-                .hasViewModel = ownPawnLook.isArmed && state.pawnCharacters && state.pawnCharacters->firstPerson};
+                .eye = eyePosition(*localPawn),
+                .hasViewModel = ownPawnLook.isArmed && state.pawnCharacters
+                    && firstPersonModel(*state.pawnCharacters, WeaponKind::Kriss) != nullptr};
             drawPawn(engine.renderer, state.visuals, pawnCharacters(state), localOwner(engine), *localPawn,
                 ownPawnLook, playerSeconds, k_mirrorOnlyLayer, &bodyView);
         }
@@ -548,16 +554,6 @@ namespace game
             {
                 drawInteractPrompt(engine.renderer, state.visuals, view.eye, view.direction);
             }
-        }
-
-        const bool isHurt = status.isDead || status.health < state.settings.pawns.maxHealth;
-
-        const bool isStoryLevel = state.room || state.station;
-
-        if (status.isJoined && (!isStoryLevel || isHurt))
-        {
-            drawHealth(engine.renderer, state.visuals, view.eye, view.direction, status,
-                state.settings.pawns.maxHealth);
         }
     }
 } //namespace game

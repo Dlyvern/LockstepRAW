@@ -5,6 +5,7 @@
 #include "Lockstep/Core/Transform.hpp"
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Render/Camera.hpp"
+#include "Lockstep/Render/GraphicsQuality.hpp"
 #include "Lockstep/Render/Lighting.hpp"
 #include "Lockstep/Render/PbrMaterial.hpp"
 #include "Lockstep/Render/PresentMode.hpp"
@@ -14,6 +15,7 @@
 #include "Lockstep/Render/Views.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <string>
@@ -32,10 +34,16 @@ namespace lockstep::render
     // applicationName: name reported to the Vulkan driver.
     // presentMode:     how frames reach the screen; falls back towards VSync when unsupported
     //                  (see PresentMode).
+    // quality:         graphics quality from the start (see GraphicsQuality), so textures loaded
+    //                  before the first frame already use its texture resolution.
+    // settingsFile:    the settings file the dev tools save the quality to (see GraphicsConfig);
+    //                  empty for none.
     struct RendererDescription
     {
         std::string applicationName{"Lockstep"};
         PresentMode presentMode{k_defaultPresentMode};
+        GraphicsQuality quality{};
+        std::filesystem::path settingsFile{};
     };
 
     // Most planar reflectors kept per frame (see Renderer::submitReflector()).
@@ -253,6 +261,18 @@ namespace lockstep::render
         // reflector: the mirror's mesh instance and what its reflection shows.
         void submitReflector(const PlanarReflector& reflector);
 
+        // Queues a magnified optic for the next render() (see ScopeView). One per frame; a later
+        // call replaces an earlier one. Without a call (or with RenderSettings::scope off) no scope
+        // view is rendered and the lens draw shows its own material.
+        // scope: the optic, its lens draw and its view.
+        void submitScope(const ScopeView& scope);
+
+        // Queues a holographic sight's reticle for the next render() (see HolographicSight). One per
+        // frame; a later call replaces an earlier one. Without a call (or with
+        // RenderSettings::scope::holographic off) the window is plain glass.
+        // sight: the sight's window draw and reticle.
+        void submitSight(const HolographicSight& sight);
+
         // Sets the directional light for the next render(). Without a call there is none that frame.
         // light: the light.
         void submitLight(const DirectionalLight& light);
@@ -291,8 +311,19 @@ namespace lockstep::render
         // Returns: the present mode last asked for, at creation or with setPresentMode().
         [[nodiscard]] PresentMode presentMode() const;
 
+        // Changes the graphics quality. Render resolution, shadow atlas size and effect limits apply
+        // from the next render() (attachments are rebuilt once); the texture resolution applies to
+        // textures created afterwards, so reload the level to see it.
+        // quality: the new quality; fields are clamped to their ranges.
+        void setGraphicsQuality(const GraphicsQuality& quality);
+
+        // Returns: the graphics quality in effect.
+        [[nodiscard]] const GraphicsQuality& graphicsQuality() const;
+
         // Returns: the feature switches and tunables (lighting, shadows, fog, tonemapping). Changes
-        //          apply from the next render(). The dev tools edit the same settings.
+        //          apply from the next render(), limited by graphicsQuality() (a feature it switches
+        //          off stays off; sample counts and resolutions are scaled). The dev tools edit the
+        //          same settings.
         [[nodiscard]] RenderSettings& settings();
 
         // Returns: the feature switches and tunables, read-only.

@@ -4,6 +4,7 @@
 #include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Core/Result.hpp>
 #include <Lockstep/Net/SessionLaunch.hpp>
+#include <Lockstep/Render/GraphicsConfig.hpp>
 #include <Lockstep/Render/PresentMode.hpp>
 
 #include <cstddef>
@@ -79,6 +80,18 @@ int main(int argc, char** argv)
 
     mountGameData(content.value(), options);
 
+    auto graphics = lockstep::render::loadGraphicsConfig(options);
+
+    if (!graphics)
+    {
+        return reportError(graphics.error());
+    }
+
+    const lockstep::render::GraphicsConfig& config = graphics.value();
+    std::clog << "Game: graphics " << lockstep::render::toString(config.quality.preset) << " (from " << config.origin
+        << "), window " << config.windowWidth << 'x' << config.windowHeight << ", settings file '"
+        << config.file.string() << "'\n";
+
     const char* title = "Lockstep";
 
     if (session.value().role == lockstep::net::Role::Host)
@@ -91,8 +104,9 @@ int main(int argc, char** argv)
     }
 
     const lockstep::Status status = lockstep::app::run({
-            .window = {.title = title, .width = 1280, .height = 720},
-            .renderer = {.presentMode = presentMode.value()},
+            .window = {.title = title, .width = static_cast<int>(config.windowWidth),
+                .height = static_cast<int>(config.windowHeight)},
+            .renderer = {.presentMode = presentMode.value(), .quality = config.quality, .settingsFile = config.file},
             .session = std::move(session).value(),
             .arguments = options,
             .content = std::move(content).value()},

@@ -19,10 +19,6 @@ namespace lockstep
         const std::scoped_lock lock(logMutex());
         std::ostream& stream = level == LogLevel::Info ? std::cout : std::cerr;
         stream << '[' << channel << "] " << message << '\n';
-
-        if (level != LogLevel::Info)
-        {
-            stream.flush();
-        }
+        stream.flush();
     }
 } //namespace lockstep

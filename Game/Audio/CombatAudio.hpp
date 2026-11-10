@@ -37,8 +37,8 @@ namespace game
 {
     // The combat and ambience sounds, loaded from `sounds/` (Data/sounds by default). A missing
     // file leaves its list empty and that sound silent.
-    // v45Shots, v45FarShots:   the players' weapon, close and distant (`weapons/v45_shot_<n>`,
-    //                          `weapons/v45_shot_far_<n>`).
+    // playerShots, playerFarShots: per loadout weapon, its gunshot close and distant
+    //                          (`weapons/<m4|glock|v45>_shot_<n>`, `weapons/<...>_shot_far_<n>`).
     // npcShots, npcFarShots:   NPC rifles, close and distant (`weapons/merc_shot_<n>`,
     //                          `weapons/merc_shot_far_<n>`).
     // concreteHits, metalHits, fleshHits: bullet impacts (`impacts/<kind>_<n>`).
@@ -53,8 +53,8 @@ namespace game
     // thunder:                 distant thunder rolls while it rains (`ambience/thunder_<n>`).
     struct CombatSoundBank
     {
-        std::vector<lockstep::audio::SoundHandle> v45Shots;
-        std::vector<lockstep::audio::SoundHandle> v45FarShots;
+        std::array<std::vector<lockstep::audio::SoundHandle>, k_weaponCount> playerShots{};
+        std::array<std::vector<lockstep::audio::SoundHandle>, k_weaponCount> playerFarShots{};
         std::vector<lockstep::audio::SoundHandle> npcShots;
         std::vector<lockstep::audio::SoundHandle> npcFarShots;
         std::vector<lockstep::audio::SoundHandle> concreteHits;

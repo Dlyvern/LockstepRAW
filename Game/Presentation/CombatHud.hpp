@@ -55,7 +55,7 @@ namespace game
     // canRevive:    the local player stands close enough to the downed partner to revive them.
     // isArmed:      show the ammo counter.
     // magazine:     rounds to show in the magazine (the local prediction, never above the status).
-    // fireMode:     the fire mode name shown under the ammo counter, or null.
+    // fireMode:     the weapon and fire mode shown under the ammo counter ("M4   AUTO"), or null.
     // eye, direction: the camera, for the marks placed around the aim dot.
     // lookYaw:      the camera's yaw (damage marks turn with the view).
     // hudFade:      the HUD's own fade to black (Hud::fade), kept when stronger.

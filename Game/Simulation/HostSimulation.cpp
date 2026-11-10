@@ -125,7 +125,7 @@ namespace game
         }
 
         ShotPath traceFiredShot(GameState& state, EngineContext& engine, const math::Vec3& origin,
-            const math::Vec3& direction, lockstep::physics::ControllerId shooter)
+            const math::Vec3& direction, lockstep::physics::ControllerId shooter, const PenetrationSettings& penetration)
         {
             const ShotBreaker breaker = [&state, &engine](lockstep::physics::BodyId body, const math::Vec3& point,
                                             const math::Vec3& travel)
@@ -134,8 +134,7 @@ namespace game
             };
 
             return traceShotPath(engine.physics, state.level ? &*state.level : nullptr, origin, direction,
-                state.settings.hitscan.range, shooter, state.simulation.enemy.controller, state.settings.penetration,
-                breaker);
+                state.settings.hitscan.range, shooter, state.simulation.enemy.controller, penetration, breaker);
         }
 
         bool shootNpcsAlong(GameState& state, EngineContext& engine, std::size_t shooterIndex, const ShotPath& path)
@@ -149,8 +148,9 @@ namespace game
                 const lockstep::physics::ControllerId struck = isLast && path.result.outcome == ShotOutcome::Player
                     ? path.result.controller
                     : lockstep::physics::ControllerId{};
+                const float damage = weaponStats(state.settings.weapons, state.simulation.pawns[shooterIndex].weapon).damage;
                 isNpcHit = shootNpcs(state, engine, shooterIndex, segment.origin, segment.end, struck,
-                    segment.damageScale) || isNpcHit;
+                    segment.damageScale * damage) || isNpcHit;
             }
 
             return isNpcHit;
@@ -174,10 +174,12 @@ namespace game
                 rewind = rewindTo(simulation.lagHistory, engine.physics, *viewTick - k_viewToShotTicks, shooter.controller);
             }
 
+            const WeaponStats& weapon = weaponStats(state.settings.weapons, shooter.weapon);
             const math::Vec3 direction = shotDirection(shooter.command, shooterIndex, shooter.processedShots,
-                state.settings.spread);
+                weapon.spread);
             const math::Vec3 origin = eyePosition(shooterEntity->transform());
-            const ShotPath path = traceFiredShot(state, engine, origin, direction, shooter.controller);
+            const ShotPath path = traceFiredShot(state, engine, origin, direction, shooter.controller,
+                weapon.penetration);
             simulation.lastShot = path.result;
             const bool isNpcHit = shootNpcsAlong(state, engine, shooterIndex, path);
             restoreRewind(engine.physics, rewind);
@@ -237,12 +239,12 @@ namespace game
                 ++pawn.processedShots;
 
                 if (throwHeldToy(state, engine, shooterIndex) || !pawn.isArmed || pawn.isLowered || !isReady
-                    || pawn.isDowned || pawn.entity.isNull())
+                    || pawn.isDowned || pawn.entity.isNull() || pawn.switchSeconds > 0.0f)
                 {
                     continue;
                 }
 
-                if (!acceptShotCadence(pawn.shotCooldown, state.settings.fire))
+                if (!acceptShotCadence(pawn.shotCooldown, weaponStats(state.settings.weapons, pawn.weapon).fire))
                 {
                     std::clog << "Game: " << playerName(shooterIndex) << " shot refused (faster than the fire rate)\n";
                     continue;

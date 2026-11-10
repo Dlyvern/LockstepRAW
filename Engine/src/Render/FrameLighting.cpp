@@ -166,8 +166,8 @@ namespace lockstep::render
                 for (uint32_t face = 0; face < needed; ++face)
                 {
                     prepared.tiles[tile + face] = candidate.point != nullptr
-                        ? fitPointShadowFace(*candidate.point, face, tile + face)
-                        : fitSpotShadow(*candidate.spot, tile + face);
+                        ? fitPointShadowFace(*candidate.point, face, tile + face, view.shadowAtlasWidth)
+                        : fitSpotShadow(*candidate.spot, tile + face, view.shadowAtlasWidth);
                     prepared.casterSpheres[tile + face - k_sunShadowTiles] = {position.x, position.y, position.z, range};
                 }
 
@@ -212,7 +212,7 @@ namespace lockstep::render
             {
                 const uint32_t count = std::clamp(shadows.cascadeCount, 1u, k_sunShadowTiles);
                 fitSunCascades(view.camera, view.aspectRatio, math::normalize(sun->direction), shadows, count,
-                    prepared.tiles);
+                    view.shadowAtlasWidth, prepared.tiles);
                 prepared.cascadeCount = count;
                 gpu.shadowParams[0] = static_cast<float>(count);
 

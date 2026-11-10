@@ -31,8 +31,7 @@ namespace game
     // player2:      the client player's colour.
     // enemy:        the enemy's colour.
     // crosshair:    the aim dot.
-    // healthFull:  a health pip that is still filled.
-    // healthEmpty: a health pip that was lost.
+    // healthFull:  red HUD marks (damage direction, kill confirmation).
     // prompt:      the marks around the aim dot while something usable is in reach.
     // ghost:       Echo ghost pawns.
     struct Visuals
@@ -45,7 +44,6 @@ namespace game
         lockstep::render::MaterialHandle enemy{};
         lockstep::render::MaterialHandle crosshair{};
         lockstep::render::MaterialHandle healthFull{};
-        lockstep::render::MaterialHandle healthEmpty{};
         lockstep::render::MaterialHandle prompt{};
         lockstep::render::MaterialHandle ghost{};
     };
@@ -85,16 +83,6 @@ namespace game
     // direction: unit look direction.
     void drawInteractPrompt(lockstep::render::Renderer& renderer, const Visuals& visuals, const math::Vec3& eye,
         const math::Vec3& direction);
-
-    // Queues the local player's health as a row of pips at the bottom of the view.
-    // renderer:  the renderer.
-    // visuals:   the game's meshes and materials.
-    // eye:       the camera position.
-    // direction: unit look direction.
-    // status:    the local player's status; a dead player shows only empty pips.
-    // maxHealth: health of a full row.
-    void drawHealth(lockstep::render::Renderer& renderer, const Visuals& visuals, const math::Vec3& eye,
-        const math::Vec3& direction, const PlayerStatus& status, int32_t maxHealth);
 
     // Builds a first-person camera.
     // eye:       the camera position.

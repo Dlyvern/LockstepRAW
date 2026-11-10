@@ -16,6 +16,9 @@ const vec3 k_cascadeTints[4] = vec3[](vec3(1.0, 0.3, 0.3), vec3(0.3, 1.0, 0.3), 
 const float k_reflectionView = 1.0;
 const float k_reflectorSurface = 2.0;
 const float k_viewModelView = 3.0;
+const float k_scopeView = 4.0;
+const float k_scopeLensView = 5.0;
+const float k_sightWindowView = 6.0;
 const float k_reflectorAlignment = 0.995;
 const vec3 k_zoneDebugTint = vec3(1.0, 0.1, 0.9);
 const float k_decalBlend = 2.0;
@@ -338,10 +341,26 @@ vec4 motionVector(bool isViewModel)
     return vec4((current - previous) * 0.5, previousDepth, 0.0);
 }
 
+#include "scope_lens.glsl"
+
 void main()
 {
-    bool isReflectionView = draw.flags.z == k_reflectionView;
-    vec3 cameraPosition = isReflectionView ? frame.reflectionCamera.xyz : camera.position.xyz;
+    if (draw.flags.z == k_scopeLensView)
+    {
+        shadeScopeLens();
+        return;
+    }
+
+    bool isScopeView = draw.flags.z == k_scopeView;
+
+    if (isScopeView && outsideScopeField(inWorldPosition))
+    {
+        discard;
+    }
+
+    bool isReflectionView = draw.flags.z == k_reflectionView || isScopeView;
+    vec3 cameraPosition = isScopeView ? frame.scopeCamera.xyz
+        : (draw.flags.z == k_reflectionView ? frame.reflectionCamera.xyz : camera.position.xyz);
     vec3 surfaceOffset = cameraPosition - inWorldPosition;
     float surfaceDistance = length(surfaceOffset);
     vec3 parallaxNormal = normalize(inNormal) * (draw.flags.x > 0.5 && !gl_FrontFacing ? -1.0 : 1.0);
@@ -377,7 +396,7 @@ void main()
     float wet = 0.0;
     float puddle = 0.0;
 
-    if (frame.wetness.x > 0.0 && draw.flags.z != k_viewModelView && !isGlass)
+    if (frame.wetness.x > 0.0 && draw.flags.z != k_viewModelView && draw.flags.z != k_sightWindowView && !isGlass)
     {
         applyWetness(inWorldPosition, geometryNormal, 1.0 - interior, cameraDistance, baseColor.rgb, roughness,
             metallic, shadingNormal, wet, puddle);
@@ -533,7 +552,7 @@ void main()
         specularWeight *= 1.0 - fog;
     }
 
-    bool isViewModel = draw.flags.z == k_viewModelView;
+    bool isViewModel = draw.flags.z == k_viewModelView || draw.flags.z == k_sightWindowView;
     outVelocity = motionVector(isViewModel);
     float colorLuminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
     float sunShare = colorLuminance > 1e-5 ? dot(sunLight, vec3(0.2126, 0.7152, 0.0722)) / colorLuminance : 0.0;
@@ -558,10 +577,20 @@ void main()
         vec3 diffuse = max(color + ambient - reflections, vec3(0.0));
         float fresnel = clamp(dot(specularColor, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
         float coverage = max(1.0 - (1.0 - baseColor.a) * (1.0 - fresnel), k_minGlassCoverage);
-        outColor = vec4((diffuse * baseColor.a + reflections) / coverage, coverage);
+        vec3 reticle = draw.flags.z == k_sightWindowView ? holographicReticle() : vec3(0.0);
+        outColor = vec4((diffuse * baseColor.a + reflections + reticle) / coverage, coverage);
         outAmbient = vec4(0.0, 0.0, 0.0, coverage);
         outSurfaceNormal = vec4(0.0);
         outSurfaceSpecular = vec4(0.0, 0.0, 0.0, coverage);
+        return;
+    }
+
+    if (isScopeView)
+    {
+        outColor = vec4(applyScopeFog(color + ambient, -toCamera.y, cameraDistance), 1.0);
+        outAmbient = vec4(0.0, 0.0, 0.0, 1.0);
+        outSurfaceNormal = k_neutralSurfaceNormal;
+        outSurfaceSpecular = k_neutralSurfaceSpecular;
         return;
     }
 

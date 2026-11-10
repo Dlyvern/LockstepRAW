@@ -5,6 +5,7 @@
 #include "Lockstep/Core/Math.hpp"
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Render/Camera.hpp"
+#include "Lockstep/Render/GraphicsQuality.hpp"
 #include "Lockstep/Render/PbrMaterial.hpp"
 #include "Lockstep/Render/PresentMode.hpp"
 #include "Lockstep/Render/Renderer.hpp"
@@ -15,6 +16,7 @@
 #include "FrameLighting.hpp"
 #include "FrameParticles.hpp"
 #include "PlanarReflections.hpp"
+#include "ScopeView.hpp"
 #include "TemporalAntiAliasing.hpp"
 #include "RenderPass.hpp"
 #include "RenderPassAdapter.hpp"
@@ -32,6 +34,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -126,6 +129,8 @@ namespace lockstep::render
     // cameraDistance: distance from the camera to the bounds' centre, for sorting.
     // layers:         the render layers it is on.
     // isReflector:    it is the surface of this frame's rendered planar reflection.
+    // isScopeLens:    it is the eyepiece lens of this frame's rendered scope view.
+    // isSightWindow:  it is the window of this frame's holographic sight.
     // isDecal:        submitted with submitDecal().
     // jointBase:      skinned draws: index in RendererState::jointData of the palette's first
     //                 matrix (current and previous matrices interleaved per joint).
@@ -140,6 +145,8 @@ namespace lockstep::render
         float cameraDistance{0.0f};
         RenderLayers layers{k_defaultRenderLayer};
         bool isReflector{false};
+        bool isScopeLens{false};
+        bool isSightWindow{false};
         bool isDecal{false};
         uint32_t jointBase{0};
         float emissiveScale{1.0f};
@@ -206,6 +213,12 @@ namespace lockstep::render
     // GPU resources (materials before the light buffer and textures they bind), then the context.
     // The window is not owned and outlives all of it. The destructor waits for the GPU to go idle
     // before any of that happens.
+    //
+    // `requestedSettings` is what Renderer::settings() hands to Game and the dev tools; `settings`
+    // is it limited by `quality` (limitedByQuality(), redone at the start of every render()), and
+    // is what the passes read. `renderScale` and `shadowAtlasWidth` are the values the graph's
+    // attachments were last described with; `scaledPassNames` are the passes whose screen-sized
+    // outputs follow `renderScale` (see addScaledPass()).
     struct RendererState
     {
         // Takes ownership of an initialized context. The graph is attached afterwards, once the
@@ -261,7 +274,11 @@ namespace lockstep::render
         float shadowMaterialBias{0.0f};
         uint32_t sceneSamples{1};
         float reflectionScale{0.5f};
+        uint32_t scopeResolution{512};
         float volumetricFogScale{0.5f};
+        float renderScale{1.0f};
+        uint32_t shadowAtlasWidth{4096};
+        std::vector<std::string> scaledPassNames;
 
         std::vector<RegisteredPass> passes;
         uint32_t passNameCounter{0};
@@ -275,9 +292,15 @@ namespace lockstep::render
         std::vector<AmbientZone> ambientZones;
         PreparedLighting prepared;
         PreparedReflection reflection;
+        std::optional<ScopeView> scopeView;
+        std::optional<HolographicSight> sight;
+        PreparedScope scope;
         FrameParticles particles;
         TemporalState temporal;
+        RenderSettings requestedSettings{};
         RenderSettings settings{};
+        GraphicsQuality quality{};
+        std::filesystem::path settingsFile;
         math::Vec4 screenFade{0.0f, 0.0f, 0.0f, 0.0f};
         FrameStats lastFrame{};
         uint32_t frameIndex{0};
@@ -289,6 +312,7 @@ namespace lockstep::render
 
         Camera camera{};
         float aspectRatio{1.0f};
+        uint32_t frameHeight{0};
         math::Mat4 view{1.0f};
         math::Mat4 projection{1.0f};
         math::Mat4 unjitteredProjection{1.0f};

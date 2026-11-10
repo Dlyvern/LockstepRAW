@@ -25,13 +25,28 @@ namespace game
         namespace anim = lockstep::anim;
         namespace render = lockstep::render;
 
-        constexpr ViewModelPlacement k_fpSightsPlacement{
-            .rotation = math::Quat{0.0001f, -0.9289f, 0.1983f, 0.3128f},
-            .origin = {0.2685f, -1.1199f, 0.5497f}};
-        constexpr ViewModelPlacement k_fpReadyPlacement{
+        constexpr ViewModelPlacement k_krissSightsPlacement{
+            .rotation = math::Quat{0.0073f, -0.9324f, 0.1781f, 0.3144f},
+            .origin = {0.2723f, -1.1642f, 0.4987f}};
+        constexpr ViewModelPlacement k_krissReadyPlacement{
             .rotation = math::Quat{0.0553f, -0.9045f, 0.2084f, 0.3679f},
             .origin = {0.6485f, -1.1450f, 0.2895f}};
-        constexpr math::Vec3 k_weaponAnchor{-0.13f, 1.31f, 0.37f};
+        constexpr ViewModelRig k_krissRig{.ready = k_krissReadyPlacement,
+            .sights = k_krissSightsPlacement,
+            .anchor = {-0.13f, 1.31f, 0.37f},
+            .rearSight = {-0.0808f, 1.3546f, 0.2862f},
+            .frontSight = {-0.2536f, 1.4507f, 0.5030f},
+            .muzzle = {-0.3023f, 1.4032f, 0.5760f}};
+        constexpr math::Vec3 k_m4Anchor{0.0712f, -0.1202f, -0.3000f};
+        constexpr math::Vec3 k_m4RearSight{0.0690f, -0.0069f, -0.1543f};
+        constexpr math::Vec3 k_m4FrontSight{0.0681f, -0.0070f, -0.5595f};
+        constexpr math::Vec3 k_m4Muzzle{0.0677f, -0.0752f, -0.7326f};
+        constexpr float k_m4EyeRelief{0.11f};
+        constexpr math::Vec3 k_glockAnchor{0.0612f, -0.0927f, -0.3245f};
+        constexpr math::Vec3 k_glockRearSight{0.0622f, -0.0201f, -0.2515f};
+        constexpr math::Vec3 k_glockFrontSight{0.0613f, -0.0209f, -0.4215f};
+        constexpr math::Vec3 k_glockMuzzle{0.0613f, -0.0462f, -0.4271f};
+        constexpr float k_glockEyeRelief{0.3f};
         constexpr float k_maxPush{0.04f};
         constexpr float k_maxVelocityChange{10.0f};
 
@@ -195,6 +210,7 @@ namespace game
             state.lastPitch = input.pitch;
             state.instance.animator().play(model.aimClip, 0.0f);
             state.isReloadPlaying = false;
+            state.switchClip = 0;
         }
 
         void updateMotion(ViewModelState& state, const ViewModelInput& input, float seconds)
@@ -231,6 +247,11 @@ namespace game
                 .isSprinting = input.isSprinting,
                 .wantsHold = input.wantsHoldBreath && input.isAiming,
                 .seconds = seconds});
+
+            if (state.opticAim)
+            {
+                state.breathSway = state.breathSway * (1.0f + (state.opticAim->swayScale - 1.0f) * smoothstep(state.aimBlend));
+            }
             updateMovementReaction(state, input, seconds);
             if (input.isKicking && !state.wasKicking)
             {
@@ -247,10 +268,37 @@ namespace game
             math::Vec3 anchor{0.0f, 0.0f, 0.0f};
         };
 
-        AnchoredPose anchored(const ViewModelPlacement& placement)
+        AnchoredPose anchored(const ViewModelPlacement& placement, const ViewModelRig& rig)
         {
             return AnchoredPose{.rotation = placement.rotation,
-                .anchor = placement.origin + placement.rotation * k_weaponAnchor};
+                .anchor = placement.origin + placement.rotation * rig.anchor};
+        }
+
+        ViewModelPlacement sightsPlacement(const math::Vec3& rear, const math::Vec3& front, float eyeRelief)
+        {
+            const math::Vec3 forward = math::normalize(front - rear);
+            const math::Vec3 modelUp{0.0f, 1.0f, 0.0f};
+            const math::Vec3 up = math::normalize(modelUp - forward * math::dot(modelUp, forward));
+            const math::Vec3 right = math::cross(forward, up);
+            math::Mat4 basis{1.0f};
+            basis.setColumn(0, math::Vec4{right.x, up.x, -forward.x, 0.0f});
+            basis.setColumn(1, math::Vec4{right.y, up.y, -forward.y, 0.0f});
+            basis.setColumn(2, math::Vec4{right.z, up.z, -forward.z, 0.0f});
+            const math::Quat rotation = math::fromRotationMatrix(basis);
+
+            return ViewModelPlacement{.rotation = rotation,
+                .origin = math::Vec3{0.0f, 0.0f, -eyeRelief} - rotation * rear};
+        }
+
+        ViewModelRig cameraRig(const math::Vec3& anchor, const math::Vec3& rear, const math::Vec3& front,
+            const math::Vec3& muzzle, float eyeRelief)
+        {
+            return ViewModelRig{.ready = ViewModelPlacement{},
+                .sights = sightsPlacement(rear, front, eyeRelief),
+                .anchor = anchor,
+                .rearSight = rear,
+                .frontSight = front,
+                .muzzle = muzzle};
         }
 
         AnchoredPose blendPoses(const AnchoredPose& from, const AnchoredPose& to, float amount)
@@ -259,10 +307,10 @@ namespace game
                 .anchor = math::lerp(from.anchor, to.anchor, amount)};
         }
 
-        AnchoredPose turnedReadyPose(const ViewModelTuning& tuning, float pitch, float yaw, float roll,
-            const math::Vec3& offset)
+        AnchoredPose turnedReadyPose(const ViewModelTuning& tuning, const ViewModelRig& rig, float pitch, float yaw,
+            float roll, const math::Vec3& offset)
         {
-            const AnchoredPose ready = anchored(k_fpReadyPlacement);
+            const AnchoredPose ready = anchored(rig.ready, rig);
             const math::Quat tilt = math::angleAxis(yaw, k_viewUp) * math::angleAxis(-pitch, k_viewRight)
                 * math::angleAxis(roll, k_viewBack);
 
@@ -270,15 +318,15 @@ namespace game
                 .anchor = tuning.loweredPivot + tilt * (ready.anchor - tuning.loweredPivot) + offset};
         }
 
-        AnchoredPose loweredPose(const ViewModelTuning& tuning)
+        AnchoredPose loweredPose(const ViewModelTuning& tuning, const ViewModelRig& rig)
         {
-            return turnedReadyPose(tuning, tuning.loweredPitch, tuning.loweredYaw, tuning.loweredRoll,
+            return turnedReadyPose(tuning, rig, tuning.loweredPitch, tuning.loweredYaw, tuning.loweredRoll,
                 tuning.loweredOffset);
         }
 
-        AnchoredPose sprintPose(const ViewModelTuning& tuning)
+        AnchoredPose sprintPose(const ViewModelTuning& tuning, const ViewModelRig& rig)
         {
-            return turnedReadyPose(tuning, tuning.sprintPitch, tuning.sprintYaw, tuning.sprintRoll, tuning.sprintOffset);
+            return turnedReadyPose(tuning, rig, tuning.sprintPitch, tuning.sprintYaw, tuning.sprintRoll, tuning.sprintOffset);
         }
 
         math::Transform viewSpacePose(const ViewModelState& state, const ViewModelInput& input)
@@ -288,13 +336,15 @@ namespace game
             const float motion = 1.0f + (tuning.aimDamping - 1.0f) * aimed;
 
             const float raised = smoothstep(state.raiseBlend);
-            const AnchoredPose up = blendPoses(anchored(k_fpReadyPlacement), anchored(k_fpSightsPlacement), aimed);
+            const ViewModelRig& rig = state.rig;
+            const ViewModelPlacement& sights = state.opticAim ? state.opticAim->sights : rig.sights;
+            const AnchoredPose up = blendPoses(anchored(rig.ready, rig), anchored(sights, rig), aimed);
             const float sprinting = smoothstep(state.sprintBlend);
-            const AnchoredPose pose = blendPoses(blendPoses(loweredPose(tuning), up, raised), sprintPose(tuning),
-                sprinting);
+            const AnchoredPose pose = blendPoses(blendPoses(loweredPose(tuning, rig), up, raised),
+                sprintPose(tuning, rig), sprinting);
             const math::Vec3 anchor = pose.anchor;
             math::Quat rotation = pose.rotation;
-            math::Vec3 origin = anchor - rotation * k_weaponAnchor;
+            math::Vec3 origin = anchor - rotation * rig.anchor;
 
             const float bob = tuning.bobAmount * input.bobStrength * motion;
             const float roll = std::sin(input.bobPhase) * (tuning.bobRoll * input.bobStrength
@@ -329,7 +379,30 @@ namespace game
         }
     } //namespace
 
-    lockstep::Result<FirstPersonModel> createFirstPersonModel(CharacterModel&& character, std::string_view aimClip)
+    ViewModelRig viewModelRig(WeaponKind weapon)
+    {
+        switch (weapon)
+        {
+            case WeaponKind::M4:
+            {
+                return cameraRig(k_m4Anchor, k_m4RearSight, k_m4FrontSight, k_m4Muzzle, k_m4EyeRelief);
+            }
+            case WeaponKind::Glock:
+            {
+                return cameraRig(k_glockAnchor, k_glockRearSight, k_glockFrontSight, k_glockMuzzle, k_glockEyeRelief);
+            }
+            case WeaponKind::Kriss:
+            case WeaponKind::Count:
+            {
+                break;
+            }
+        }
+
+        return k_krissRig;
+    }
+
+    lockstep::Result<FirstPersonModel> createFirstPersonModel(CharacterModel&& character, std::string_view aimClip,
+        WeaponKind weapon)
     {
         const anim::SkinnedModel& skinned = character.skinned();
         const std::optional<uint32_t> aim = anim::findClip(skinned.clips, aimClip);
@@ -340,7 +413,8 @@ namespace game
                 + std::string(aimClip) + "'"};
         }
 
-        FirstPersonModel model{.character = std::move(character), .aimClip = *aim};
+        FirstPersonModel model{.character = std::move(character), .aimClip = *aim, .weapon = weapon,
+            .rig = viewModelRig(weapon)};
         findReloadClips(model);
         logAimHead(model);
 
@@ -352,8 +426,15 @@ namespace game
     {
         const float seconds = std::clamp(input.deltaSeconds, 0.0f, k_maxFrameSeconds);
 
-        if (!state.isDrawn)
+        if (!state.isDrawn || state.weapon != model.weapon)
         {
+            if (state.weapon != model.weapon)
+            {
+                state.instance = anim::SkinnedInstance{};
+            }
+
+            state.weapon = model.weapon;
+            state.rig = model.rig;
             restart(state, model, input);
         }
 
@@ -361,7 +442,7 @@ namespace game
         updateMotion(state, input, seconds);
 
         const anim::SkinnedModel& skinned = model.character.skinned();
-        playReload(state, model, input.reload);
+        playReload(state, model, input.reload, input.switching);
         state.instance.update(skinned, seconds);
         state.view = viewSpacePose(state, input);
         state.camera = cameraRotation(input);

@@ -4,6 +4,7 @@
 #include "Level/RoomState.hpp"
 #include "Simulation/HostSimulation.hpp"
 #include "Simulation/NpcSimulation.hpp"
+#include "Weapons/Loadout.hpp"
 
 #include <Lockstep/Physics/PhysicsWorld.hpp>
 #include <Lockstep/World/Entities.hpp>
@@ -69,7 +70,7 @@ namespace game
 
                 if (pawn.isArmed)
                 {
-                    issueAmmo(pawn.ammo, state.settings.ammo);
+                    issueLoadout(pawn, state.settings.weapons);
                 }
             }
 
@@ -113,33 +114,43 @@ namespace game
     void updatePawnAmmo(GameState& state, EngineContext& engine, std::size_t pawnIndex)
     {
         Pawn& pawn = state.simulation.pawns[pawnIndex];
-        Ammo& ammo = pawn.ammo;
-        const AmmoSettings& settings = state.settings.ammo;
+        const float delta = engine.timeDomains.delta(world::TimeDomain::Player);
 
         if (!pawn.isArmed)
         {
-            ammo.isIssued = false;
-            ammo.reloadSeconds = 0.0f;
+            pawn.ammo.isIssued = false;
+            pawn.ammo.reloadSeconds = 0.0f;
+            pawn.switchSeconds = 0.0f;
             return;
         }
 
-        if (!ammo.isIssued)
+        if (!pawn.ammo.isIssued)
         {
-            issueAmmo(ammo, settings);
-            ammo.isIssued = true;
+            issueLoadout(pawn, state.settings.weapons);
         }
+
+        pawn.switchSeconds = std::max(pawn.switchSeconds - delta, 0.0f);
+
+        if (pawn.hasCommand && pawn.command.weapon != pawn.weapon && !pawn.isDowned && !pawn.entity.isNull())
+        {
+            switchWeapon(pawn, state.settings.weapons, pawn.command.weapon);
+            std::clog << "Game: " << playerName(pawnIndex) << " switches to the " << weaponName(pawn.weapon) << '\n';
+        }
+
+        Ammo& ammo = pawn.ammo;
+        const AmmoSettings& settings = weaponStats(state.settings.weapons, pawn.weapon).ammo;
 
         while (pawn.hasCommand && ammo.processedReloads != pawn.command.reloadCount)
         {
             ++ammo.processedReloads;
 
-            if (!pawn.isDowned && !pawn.entity.isNull() && startReload(ammo, settings))
+            if (!pawn.isDowned && !pawn.entity.isNull() && pawn.switchSeconds <= 0.0f && startReload(ammo, settings))
             {
                 std::clog << "Game: " << playerName(pawnIndex) << " reloads\n";
             }
         }
 
-        if (stepReload(ammo, settings, engine.timeDomains.delta(world::TimeDomain::Player)))
+        if (stepReload(ammo, settings, delta))
         {
             std::clog << "Game: " << playerName(pawnIndex) << " reloaded (" << ammo.magazine << " / " << ammo.reserve
                       << ")\n";
@@ -150,7 +161,7 @@ namespace game
     {
         Pawn& pawn = state.simulation.pawns[pawnIndex];
         const bool hadRounds = pawn.ammo.magazine > 0;
-        const bool fired = takeRound(pawn.ammo, state.settings.ammo);
+        const bool fired = takeRound(pawn.ammo, weaponStats(state.settings.weapons, pawn.weapon).ammo);
 
         if (!fired && !hadRounds && isReloading(pawn.ammo))
         {

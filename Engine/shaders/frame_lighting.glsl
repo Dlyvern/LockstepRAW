@@ -30,6 +30,7 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     mat4 viewModelViewProjection;
     mat4 viewModelMotionViewProjection;
     mat4 previousViewModelMotionViewProjection;
+    mat4 scopeViewProjection;
     vec4 reflectionCamera;
     vec4 reflectionPlane;
     vec4 reflectionTint;
@@ -58,6 +59,20 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     vec4 surfaceDetail;
     vec4 wetness;
     vec4 wetnessShading;
+    vec4 scopeCamera;
+    vec4 scopeCameraForward;
+    vec4 scopeCameraUp;
+    vec4 scopeEyepiece;
+    vec4 scopeAxis;
+    vec4 scopeAxisUp;
+    vec4 scopeReticle;
+    vec4 scopeReticleShape;
+    vec4 scopeIllumination;
+    vec4 scopeFog;
+    vec4 scopeFogColor;
+    vec4 sightDirection;
+    vec4 sightReticle;
+    vec4 sightShape;
     uvec4 counts;
     LocalLight lights[k_maxLocalLights];
     vec4 zoneParams;

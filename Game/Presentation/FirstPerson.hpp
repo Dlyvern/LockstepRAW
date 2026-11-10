@@ -1,7 +1,9 @@
 #ifndef LOCKSTEP_GAME_PRESENTATION_FIRST_PERSON_HPP
 #define LOCKSTEP_GAME_PRESENTATION_FIRST_PERSON_HPP
 
+#include "Characters/ViewModel.hpp"
 #include "Presentation/HeadMotion.hpp"
+#include "Weapons/WeaponKind.hpp"
 
 #include <Lockstep/App/GameApi.hpp>
 #include <Lockstep/Core/Math.hpp>
@@ -21,6 +23,24 @@ namespace game
         float yaw{0.0f};
         float pitch{0.0f};
     };
+
+    // The weapon the local viewmodel shows this frame, from the local controls' predicted switch
+    // (the same holster and draw times the host uses).
+    // weapon:       the weapon shown (the old one while it is put away).
+    // switching:    the switch phase (none outside a switch).
+    // isSwitching:  a switch runs (no shots).
+    // raiseSeconds: the viewmodel's raise time (a model without switch clips raises at the end).
+    struct ShownWeapon
+    {
+        WeaponKind weapon{WeaponKind::M4};
+        ViewModelSwitch switching{};
+        bool isSwitching{false};
+        float raiseSeconds{0.3f};
+    };
+
+    // state:   the game state.
+    // Returns: the weapon the local viewmodel shows this frame and the switch phase.
+    [[nodiscard]] ShownWeapon shownWeapon(const lockstep::app::GameState& state);
 
     // Accumulates this frame's mouse movement (dropped once a tick has taken it into a command)
     // and returns the look to show.

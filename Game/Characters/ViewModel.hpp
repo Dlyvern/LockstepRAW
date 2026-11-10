@@ -3,6 +3,7 @@
 
 #include "Characters/CharacterModel.hpp"
 #include "Characters/WeaponSway.hpp"
+#include "Weapons/WeaponKind.hpp"
 
 #include <Lockstep/Anim/SkinnedModel.hpp>
 #include <Lockstep/Core/Math.hpp>
@@ -22,20 +23,6 @@ namespace game
 {
     namespace math = lockstep::math;
 
-    // The first-person arms-and-weapon model and its static pose. The lowered stance turns this
-    // pose (ViewModelTuning::lowered*), so the hands keep the same grip.
-    // character: the arms model.
-    // aimClip:   the raised pose (ready stance and aiming down sights).
-    // tacticalReloadClip, emptyReloadClip: the reload clips (ReloadTactical, ReloadEmpty), if the
-    //            model has them; without them a reload lowers the weapon instead.
-    struct FirstPersonModel
-    {
-        CharacterModel character;
-        uint32_t aimClip{0};
-        std::optional<uint32_t> tacticalReloadClip{};
-        std::optional<uint32_t> emptyReloadClip{};
-    };
-
     // A reload the viewmodel plays.
     // isActive: a reload runs.
     // isEmpty:  from an empty magazine (the clip with the charging handle).
@@ -45,6 +32,20 @@ namespace game
         bool isActive{false};
         bool isEmpty{false};
         float seconds{2.0f};
+    };
+
+    // A weapon switch the viewmodel plays: the old weapon is put away (Holster clip, or lowered
+    // without one), then the new one is brought up (Draw clip, or raised without one).
+    // isHolstering: the weapon shown is being put away.
+    // isDrawing:    the weapon shown is being brought up.
+    // seconds:      Player seconds the current phase takes (its clip is stretched to it).
+    // left:         Player seconds left of the current phase.
+    struct ViewModelSwitch
+    {
+        bool isHolstering{false};
+        bool isDrawing{false};
+        float seconds{0.5f};
+        float left{0.0f};
     };
 
     // Where the viewmodel sits in one pose, in view space (x right, y up, -z forward, metres):
@@ -61,6 +62,42 @@ namespace game
     {
         math::Quat rotation{};
         math::Vec3 origin{0.0f, 0.0f, 0.0f};
+    };
+
+    // The per-weapon placement data of a first-person model, in model space (FPAim pose).
+    // ready:      where the model sits with the weapon up.
+    // sights:     where it sits aiming down the iron sights (rear and front sight on the view axis).
+    // anchor:     the point the lowered and running poses and the motion turn about (the weapon).
+    // rearSight, frontSight, muzzle: points on the weapon (ViewModelSights).
+    struct ViewModelRig
+    {
+        ViewModelPlacement ready{};
+        ViewModelPlacement sights{};
+        math::Vec3 anchor{0.0f, 0.0f, 0.0f};
+        math::Vec3 rearSight{0.0f, 0.0f, 0.0f};
+        math::Vec3 frontSight{0.0f, 0.0f, -0.1f};
+        math::Vec3 muzzle{0.0f, 0.0f, -0.2f};
+    };
+
+    // The first-person arms-and-weapon model and its static pose. The lowered stance turns this
+    // pose (ViewModelTuning::lowered*), so the hands keep the same grip.
+    // character: the arms model.
+    // aimClip:   the raised pose (ready stance and aiming down sights).
+    // tacticalReloadClip, emptyReloadClip: the reload clips (ReloadTactical, ReloadEmpty), if the
+    //            model has them; without them a reload lowers the weapon instead.
+    // drawClip, holsterClip: the weapon switch clips (Draw, Holster), if the model has them.
+    // weapon:    the loadout weapon it shows.
+    // rig:       its placements and sight points (viewModelRig()).
+    struct FirstPersonModel
+    {
+        CharacterModel character;
+        uint32_t aimClip{0};
+        std::optional<uint32_t> tacticalReloadClip{};
+        std::optional<uint32_t> emptyReloadClip{};
+        std::optional<uint32_t> drawClip{};
+        std::optional<uint32_t> holsterClip{};
+        WeaponKind weapon{WeaponKind::Kriss};
+        ViewModelRig rig{};
     };
 
     // Feel of the viewmodel's procedural motion, editable from the dev panel.
@@ -169,6 +206,21 @@ namespace game
         float sprintRollSwing{0.06f};
     };
 
+    // Aiming through an optic mounted on the viewmodel's rail (Characters/ViewModelOptic.hpp).
+    // sights:      the aiming placement that puts the eye on the optic's axis at its eye relief;
+    //              replaces the iron sights placement.
+    // swayScale:   multiplier on the breathing sway while aiming (a magnified optic shows more of it).
+    // isMagnified: the optic magnifies (the view around it may soften while aiming).
+    // axis:        where the optic points this frame, unit world direction as the world camera
+    //              shows it (set after drawViewModel()); shots aimed down sights follow it.
+    struct ViewModelOpticAim
+    {
+        ViewModelPlacement sights{};
+        float swayScale{1.0f};
+        bool isMagnified{false};
+        std::optional<math::Vec3> axis{};
+    };
+
     // The local player's viewmodel: its animated instance and the state of its procedural motion.
     // Presentation only, never replicated.
     // instance:   the arms' pose and animator.
@@ -193,9 +245,13 @@ namespace game
     // wasVaulting: the vault swing is still returning (raises at vaultSeconds).
     // wasKicking: kicking last frame.
     // isReloadPlaying: a reload clip plays.
+    // switchClip: the switch clip playing: 0 none, 1 Holster, 2 Draw.
+    // weapon:     the weapon of the model drawn last frame (a change restarts the motion state).
+    // rig:        that model's placements and sight points.
     // view:       where the model was placed last frame, in view space (before the camera turn).
     // camera:     the camera rotation it was placed with (look, head motion and roll).
     // eye:        the camera position it was placed with.
+    // opticAim:   aiming through the mounted optic, or nothing for iron sights.
     // tuning:     feel settings.
     struct ViewModelState
     {
@@ -226,9 +282,13 @@ namespace game
         bool wasVaulting{false};
         bool wasKicking{false};
         bool isReloadPlaying{false};
+        uint8_t switchClip{0};
+        WeaponKind weapon{WeaponKind::Kriss};
+        ViewModelRig rig{};
         math::Transform view{};
         math::Quat camera{};
         math::Vec3 eye{0.0f, 0.0f, 0.0f};
+        std::optional<ViewModelOpticAim> opticAim{};
         ViewModelTuning tuning{};
     };
 
@@ -255,6 +315,7 @@ namespace game
     //               lowered no shot kicks either.
     // shotCount:    the local shot counter; each increase kicks when the weapon fires.
     // reload:       the running reload, played as a clip.
+    // switching:    the running weapon switch, played as clips (it wins over a reload).
     // deltaSeconds: Player time since the previous frame.
     struct ViewModelInput
     {
@@ -280,16 +341,25 @@ namespace game
         bool canFire{true};
         uint8_t shotCount{0};
         ViewModelReload reload{};
+        ViewModelSwitch switching{};
         float deltaSeconds{0.0f};
     };
+
+    // weapon:  a loadout weapon.
+    // Returns: its first-person model's placements and sight points: the KRISS' computed offline
+    //          from swat_fp_kriss.glb (see ViewModelPlacement); the M4's and Glock's models put the
+    //          eye at the origin looking along -z (their ready placement is identity), and their
+    //          sights placement puts the rear and front sight on the view axis at an eye relief.
+    [[nodiscard]] ViewModelRig viewModelRig(WeaponKind weapon);
 
     // Finds the first-person pose of an arms model and logs where its head sits in the aiming
     // pose (a check of the placement constants).
     // character: the loaded arms model.
     // aimClip:   name of the aiming pose.
+    // weapon:    the loadout weapon it shows.
     // Returns:   the model, or InvalidArgument if the clip is missing.
     [[nodiscard]] lockstep::Result<FirstPersonModel> createFirstPersonModel(CharacterModel&& character,
-        std::string_view aimClip);
+        std::string_view aimClip, WeaponKind weapon);
 
     // Animates the viewmodel (raise/lower crossfade, look sway with overshoot and cant,
     // breathing (stamina, held breath), walk bob, strafe tilt, lag and muzzle dip when starting and

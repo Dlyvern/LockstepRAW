@@ -3,7 +3,9 @@
 #include "FrameCulling.hpp"
 #include "FrameGraph.hpp"
 #include "PlanarReflections.hpp"
+#include "RenderScale.hpp"
 #include "RendererState.hpp"
+#include "ScopeView.hpp"
 #include "ShaderLoader.hpp"
 #include "ShadowMaterials.hpp"
 #include "Skinning.hpp"
@@ -88,6 +90,17 @@ namespace lockstep::render
             }
 
             return {};
+        }
+
+        vela::graphics::Extent2D scaledExtent(const vela::graphics::Extent2D& extent, float scale)
+        {
+            if (extent.width == 0 || extent.height == 0)
+            {
+                return extent;
+            }
+
+            return {std::max(1u, static_cast<uint32_t>(static_cast<float>(extent.width) * scale)),
+                std::max(1u, static_cast<uint32_t>(static_cast<float>(extent.height) * scale))};
         }
 
         void updateFrameSeconds(RendererState& state)
@@ -195,6 +208,11 @@ namespace lockstep::render
             std::move(environment).value());
 
         state->presentMode = description.presentMode;
+        state->quality = clampedQuality(description.quality);
+        state->renderScale = state->quality.renderScale;
+        state->shadowAtlasWidth = state->quality.shadowAtlasSize;
+        state->settingsFile = description.settingsFile;
+        state->settings = limitedByQuality(state->requestedSettings, state->quality);
 
         if (auto shadowMaterials = updateShadowMaterials(*state); !shadowMaterials)
         {
@@ -306,6 +324,16 @@ namespace lockstep::render
         }
     }
 
+    void Renderer::submitScope(const ScopeView& scope)
+    {
+        m_state->scopeView = scope;
+    }
+
+    void Renderer::submitSight(const HolographicSight& sight)
+    {
+        m_state->sight = sight;
+    }
+
     void Renderer::submitLight(const DirectionalLight& light)
     {
         m_state->lights.directional = light;
@@ -353,21 +381,40 @@ namespace lockstep::render
         m_state->ambientZones.assign(zones.begin(), zones.end());
     }
 
+    void Renderer::setGraphicsQuality(const GraphicsQuality& quality)
+    {
+        m_state->quality = clampedQuality(quality);
+    }
+
+    const GraphicsQuality& Renderer::graphicsQuality() const
+    {
+        return m_state->quality;
+    }
+
     RenderSettings& Renderer::settings()
     {
-        return m_state->settings;
+        return m_state->requestedSettings;
     }
 
     const RenderSettings& Renderer::settings() const
     {
-        return m_state->settings;
+        return m_state->requestedSettings;
     }
 
     Status Renderer::render()
     {
         RendererState& state = *m_state;
         updateFrameSeconds(state);
-        const vela::graphics::Extent2D extent = updateAspectRatio(state);
+        state.settings = limitedByQuality(state.requestedSettings, state.quality);
+        Status resized = updateRenderScale(state);
+
+        if (resized)
+        {
+            resized = updateShadowAtlas(state);
+        }
+
+        const vela::graphics::Extent2D extent = scaledExtent(updateAspectRatio(state), state.renderScale);
+        state.frameHeight = extent.height;
 
         for (RegisteredPass& registered : state.passes)
         {
@@ -380,15 +427,23 @@ namespace lockstep::render
         state.projection = beginTemporalFrame(state, extent.width, extent.height);
         state.prepared = prepareLighting(state.lights, state.settings,
             LightingView{.camera = state.camera, .aspectRatio = state.aspectRatio,
-                .viewProjection = state.temporal.viewProjection, .zones = state.ambientZones});
+                .viewProjection = state.temporal.viewProjection, .zones = state.ambientZones,
+                .shadowAtlasWidth = state.shadowAtlasWidth});
         writeCameraMotion(state);
         prepareViewModel(state);
         assignPreviousModels(state);
         buildDrawLists(state, state.temporal.viewProjection, state.temporal.viewModelViewProjection);
         prepareReflection(state);
+        prepareScope(state);
+        prepareSight(state);
         state.graph->setView(state.view, state.projection);
 
-        Status frame = updateShadowMaterials(state);
+        Status frame = resized;
+
+        if (frame)
+        {
+            frame = updateShadowMaterials(state);
+        }
 
         if (frame)
         {
@@ -408,6 +463,11 @@ namespace lockstep::render
         if (frame)
         {
             frame = updateVolumetricFogScale(state);
+        }
+
+        if (frame)
+        {
+            frame = updateScopeResolution(state);
         }
 
         if (frame)
@@ -442,6 +502,8 @@ namespace lockstep::render
         state.drawLists.clear();
         state.lights.clear();
         state.reflectors.clear();
+        state.scopeView.reset();
+        state.sight.reset();
         releaseRetiredResources(state);
         ++state.frameIndex;
 

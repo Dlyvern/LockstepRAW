@@ -26,7 +26,6 @@ namespace game
 
         constexpr int k_maxHealth{500};
         constexpr int k_maxDamage{100};
-        constexpr int k_maxRounds{255};
         constexpr int32_t k_lethalDamage{std::numeric_limits<int16_t>::max()};
 
         void mercControls(GameState& state, EngineContext& engine)
@@ -161,23 +160,18 @@ namespace game
 
         void playerTuning(GameState& state)
         {
-            if (!ImGui::TreeNode("Downed and ammo tuning"))
+            if (!ImGui::TreeNode("Downed tuning"))
             {
                 return;
             }
 
             DownedSettings& downed = state.settings.downed;
-            AmmoSettings& ammo = state.settings.ammo;
             ImGui::SliderFloat("Bleed out (s)", &downed.bleedOutSeconds, 1.0f, 120.0f);
             ImGui::SliderFloat("Revive time (s)", &downed.reviveSeconds, 0.2f, 10.0f);
             ImGui::SliderFloat("Revive reach (m)", &downed.reviveRange, 0.5f, 5.0f);
             ImGui::SliderInt("Revive health", &downed.reviveHealth, 1, k_maxHealth);
             ImGui::SliderFloat("Restart delay (s)", &downed.restartDelay, 0.5f, 10.0f);
-            ImGui::SliderInt("Magazine", &ammo.magazineSize, 1, k_maxRounds);
-            ImGui::SliderInt("Max reserve", &ammo.maxReserve, 0, k_maxRounds);
-            ImGui::SliderInt("Issued reserve", &ammo.issuedReserve, 0, k_maxRounds);
-            ImGui::SliderFloat("Reload time (s)", &ammo.reloadSeconds, 0.1f, 5.0f);
-            ImGui::SliderFloat("Empty reload time (s)", &ammo.emptyReloadSeconds, 0.1f, 5.0f);
+            ImGui::TextDisabled("Ammo and reload times are per weapon (Weapons section).");
             ImGui::TextDisabled("Crawl scale is shared with the client's prediction: change it offline.");
             ImGui::TreePop();
         }

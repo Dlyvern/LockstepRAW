@@ -26,12 +26,20 @@ namespace lockstep::render
     //                   reflection texture.
     // ViewModel:        the camera view of a viewmodel draw (viewmodel projection, squeezed depth,
     //                   ambient light written to the colour target so SSAO leaves it alone).
+    // Scope:            the scope view (Renderer::submitScope(); lit colour and the scope's fog).
+    // ScopeLens:        the camera view of the scope's eyepiece lens (a viewmodel draw), which
+    //                   shows the scope view magnified, the reticle and the scope shadow.
+    // SightWindow:      the camera view of a holographic sight's window (a blended viewmodel
+    //                   draw), which adds the reticle projected at infinity.
     enum class PbrView : uint32_t
     {
         Camera = 0,
         Reflection,
         ReflectorSurface,
-        ViewModel
+        ViewModel,
+        Scope,
+        ScopeLens,
+        SightWindow
     };
 
     // Records one scene draw: unlit draws push their model matrix, lit draws the full PBR

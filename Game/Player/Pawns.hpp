@@ -4,6 +4,7 @@
 #include "Player/PawnMovement.hpp"
 #include "Player/PlayerCommand.hpp"
 #include "Weapons/Ammo.hpp"
+#include "Weapons/WeaponKind.hpp"
 
 #include <Lockstep/Core/Math.hpp>
 #include <Lockstep/Core/Result.hpp>
@@ -11,6 +12,7 @@
 #include <Lockstep/Physics/PhysicsTypes.hpp>
 #include <Lockstep/World/Entities.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -59,8 +61,11 @@ namespace game
     // damageYaw:      world yaw towards the newest hit's source (quantizeYaw()).
     // hitCount:       hits this player landed on hostile NPCs, wrapping (hit markers).
     // killCount:      hostile NPCs this player killed, wrapping (kill markers).
-    // ammo:           magazine, reserve and reload.
+    // ammo:           magazine, reserve and reload of the weapon in hand.
     // shotCooldown:   Player seconds until the next shot may fire (the cadence check).
+    // weapon:         the loadout weapon in hand (or being switched to).
+    // stowedAmmo:     per weapon, its rounds while it is put away (the one in hand is `ammo`).
+    // switchSeconds:  Player seconds left of a weapon switch (no shots, no reload meanwhile).
     struct Pawn
     {
         lockstep::world::EntityId entity{};
@@ -88,6 +93,9 @@ namespace game
         uint8_t killCount{0};
         Ammo ammo{};
         float shotCooldown{0.0f};
+        WeaponKind weapon{WeaponKind::M4};
+        std::array<Ammo, k_weaponCount> stowedAmmo{};
+        float switchSeconds{0.0f};
     };
 
     // Settings of a pawn's capsule controller.

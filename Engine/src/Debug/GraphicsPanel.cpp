@@ -3,6 +3,7 @@
 #include "DetailLensPanel.hpp"
 #include "GraphicsLookPanel.hpp"
 #include "IndirectLightingPanel.hpp"
+#include "QualityPanel.hpp"
 
 #include <imgui.h>
 
@@ -33,7 +34,6 @@ namespace lockstep::debug
         constexpr float k_maxGlowSpread{16.0f};
         constexpr float k_maxBloomStrength{0.3f};
         constexpr int k_maxCascades{static_cast<int>(render::k_maxShadowCascades)};
-        constexpr int k_maxShadowedLights{static_cast<int>(render::k_maxShadowedLocalLights)};
 
         bool header(const char* label)
         {
@@ -133,14 +133,8 @@ namespace lockstep::debug
                 return;
             }
 
-            int cascades = static_cast<int>(shadows.cascadeCount);
-
             ImGui::Checkbox("Shadow maps", &shadows.enabled);
-
-            if (ImGui::SliderInt("Cascades", &cascades, 1, k_maxCascades))
-            {
-                shadows.cascadeCount = static_cast<uint32_t>(cascades);
-            }
+            ImGui::TextDisabled("Atlas size, cascades and shadowed lights: Quality.");
 
             ImGui::SliderFloat("Distance (m)", &shadows.distance, k_minShadowDistance, k_maxShadowDistance, "%.0f");
             ImGui::SliderFloat("Split lambda", &shadows.splitLambda, 0.0f, 1.0f, "%.2f");
@@ -157,13 +151,6 @@ namespace lockstep::debug
 
             ImGui::Separator();
             ImGui::Checkbox("Point / spot light shadows", &shadows.localLights);
-
-            int localLights = static_cast<int>(shadows.maxLocalLights);
-
-            if (ImGui::SliderInt("Shadowed lights", &localLights, 0, k_maxShadowedLights))
-            {
-                shadows.maxLocalLights = static_cast<uint32_t>(localLights);
-            }
 
             ImGui::SliderFloat("Local normal bias (texels)", &shadows.localNormalBias, 0.0f, k_maxShadowBias, "%.2f");
             ImGui::SliderFloat("Local filter radius (texels)", &shadows.localFilterRadius, 0.5f, 3.0f, "%.2f");
@@ -184,21 +171,16 @@ namespace lockstep::debug
             ImGui::SliderFloat("Sky colour (aerial)", &fog.skyBlend, 0.0f, 1.0f, "%.2f");
         }
 
-        void drawAntiAliasing(render::AntiAliasingSettings& antiAliasing)
+        void drawAntiAliasing(render::AntiAliasingSettings& antiAliasing, render::AntiAliasingMode mode)
         {
             if (!header("Anti-aliasing"))
             {
                 return;
             }
 
-            int mode = static_cast<int>(antiAliasing.mode);
+            ImGui::TextDisabled("The mode is chosen in Quality.");
 
-            if (ImGui::Combo("Mode", &mode, "Off\0" "FXAA\0" "MSAA 2x\0" "MSAA 4x\0" "TAA\0"))
-            {
-                antiAliasing.mode = static_cast<render::AntiAliasingMode>(mode);
-            }
-
-            if (antiAliasing.mode != render::AntiAliasingMode::Taa)
+            if (mode != render::AntiAliasingMode::Taa)
             {
                 return;
             }
@@ -220,6 +202,29 @@ namespace lockstep::debug
             ImGui::Checkbox("Mirrors", &reflections.enabled);
             ImGui::SliderFloat("Resolution scale", &reflections.resolutionScale, 0.25f, 1.0f, "%.2f");
             ImGui::SliderFloat("Max distance (m)", &reflections.maxDistance, 1.0f, 30.0f, "%.1f");
+        }
+
+        void drawScope(render::ScopeSettings& scope)
+        {
+            if (!header("Scope view"))
+            {
+                return;
+            }
+
+            int resolution = static_cast<int>(scope.resolution);
+            ImGui::Checkbox("Magnified optics", &scope.enabled);
+
+            if (ImGui::SliderInt("Resolution (texels)", &resolution, 256, 1024))
+            {
+                scope.resolution = static_cast<uint32_t>(resolution);
+            }
+
+            ImGui::SliderFloat("Texels per screen pixel", &scope.texelsPerPixel, 0.25f, 2.0f, "%.2f");
+            ImGui::Checkbox("Fog in scope view", &scope.fog);
+            ImGui::Checkbox("Scope shadow", &scope.shadow);
+            ImGui::SliderFloat("Eye box scale", &scope.eyeBoxScale, 0.25f, 4.0f, "%.2f");
+            ImGui::Checkbox("Holographic reticles", &scope.holographic);
+            ImGui::SliderFloat("Reticle brightness", &scope.reticleBrightness, 0.0f, 4.0f, "%.2f");
         }
 
         void drawPostProcessing(render::RenderSettings& settings)
@@ -289,17 +294,23 @@ namespace lockstep::debug
                 frame.localShadowTiles);
             ImGui::Text("Mirror: %s, %u draws", renderer.reflection.active ? "rendered" : "none",
                 static_cast<uint32_t>(renderer.reflection.opaque.size() + renderer.reflection.blended.size()));
+            ImGui::Text("Scope: %s, %u draws", renderer.scope.active ? "rendered" : "none",
+                static_cast<uint32_t>(renderer.scope.opaque.size() + renderer.scope.blended.size()));
             drawPassTimings(panel, passTimings);
             ImGui::Separator();
 
-            render::RenderSettings& settings = renderer.settings;
+            drawQualitySection(renderer);
+            ImGui::Separator();
+
+            render::RenderSettings& settings = renderer.requestedSettings;
             drawLighting(settings.lighting);
             drawSky(settings.sky, settings.ibl);
             drawShadows(settings.shadows);
             drawIndirectLightingSections(settings);
             drawPostProcessing(settings);
-            drawAntiAliasing(settings.antiAliasing);
+            drawAntiAliasing(settings.antiAliasing, renderer.quality.antiAliasing);
             drawReflections(settings.reflections);
+            drawScope(settings.scope);
             drawTonemap(settings.tonemap);
             drawLookSections(settings, renderer.ambientZones.size());
             drawDetailLensSections(settings);

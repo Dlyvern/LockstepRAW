@@ -40,7 +40,8 @@ namespace game
     // delta:   seconds per tick.
     void applyVaultDrill(PlayerCommand& command, const math::Vec3& foot, uint64_t tick, float delta);
 
-    // Dev (`--dev-kick-drill`): presses kick every 1.2 s and looks a little down; with a target
+    // Dev (`--dev-kick-drill`): presses kick every 1.2 s and sweeps the look from a little down to
+    // nearly straight down every 7 s (the legs in first person); with a target
     // (e.g. the nearest NPC) it faces it and walks up to it first. So the kick can be watched and
     // captured without a person; combines with the other drills.
     // arguments: the command line.
@@ -55,6 +56,18 @@ namespace game
     // target:  a point to face (yaw only), or nothing to keep the look's yaw.
     void applyKickDrill(PlayerCommand& command, uint64_t tick, float delta, const math::Vec3& foot,
         const std::optional<math::Vec3>& target);
+
+    // Dev (`--dev-watch-npc`): turns the look to the nearest living NPC every tick (to capture how
+    // NPCs move and crouch); combines with the other drills.
+    // arguments: the command line.
+    // Returns:   true when it is on.
+    [[nodiscard]] bool isWatchNpcRequested(std::span<const char* const> arguments);
+
+    // Turns a command's look at a point.
+    // command: the command, changed in place.
+    // eye:     the local pawn's eye position.
+    // target:  the point to look at.
+    void lookAtPoint(PlayerCommand& command, const math::Vec3& eye, const math::Vec3& target);
 
     // Logs the client's prediction counters once per drill round.
     // prediction: the client's prediction.

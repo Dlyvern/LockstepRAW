@@ -131,8 +131,9 @@ namespace game
     // isOwn:     the local first-person weapon: no flash particles (its flash is drawn with the
     //            viewmodel, ViewModelFlash) and the dimmer own light further ahead.
     // strength:  factor on the light (less while aiming down sights).
+    // size:      factor on the flash particles' size (the weapon's WeaponStats::flashScale).
     void flashMuzzle(MuzzleFlashes& muzzle, lockstep::render::ParticleSystem* particles, const WeaponSocket& socket,
-        uint32_t shooter, lockstep::render::ParticleEffectId smoke, bool isOwn, float strength);
+        uint32_t shooter, lockstep::render::ParticleEffectId smoke, bool isOwn, float strength, float size);
 
     // Spawns a tracer streak flying from the muzzle to where the round hits.
     // muzzle:    the muzzle effects.

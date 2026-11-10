@@ -44,6 +44,10 @@ namespace lockstep::debug
     {
     }
 
+    void DevTools::logGpuTimings(bool)
+    {
+    }
+
     bool DevTools::isVisible() const
     {
         return false;

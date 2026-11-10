@@ -118,9 +118,11 @@ namespace lockstep::render
     // Shadows: cascaded shadow maps for the sun and perspective maps for shadow-casting point and
     // spot lights, in one atlas. The sun's cascades take the atlas's left half (1024 texel tiles);
     // local lights share the right half, cut into k_maxLocalShadowTiles tiles of 512 texels: a spot
-    // light takes one tile, a point light six (cube faces).
+    // light takes one tile, a point light six (cube faces). Those sizes are for the default 4096
+    // atlas; GraphicsQuality::shadowAtlasSize scales them.
     // enabled:       render and sample shadow maps.
-    // cascadeCount:  sun cascades, 1 to k_maxShadowCascades.
+    // cascadeCount:  sun cascades, 1 to k_maxShadowCascades. Replaced by
+    //                GraphicsQuality::shadowCascades when rendering.
     // distance:      view distance the cascades cover, in metres. Beyond it the sun casts none.
     // splitLambda:   cascade split distribution, 0 uniform to 1 logarithmic.
     // depthBias:     slope-scaled depth bias rendered into the shadow map against acne, roughly in
@@ -134,6 +136,7 @@ namespace lockstep::render
     //                most expensive part of the shadow pass on foliage-heavy levels.
     // localLights:   let point and spot lights with castsShadows cast shadows.
     // maxLocalLights: most shadow-casting local lights per frame, 0 to k_maxShadowedLocalLights.
+    //                Replaced by GraphicsQuality::shadowedLocalLights when rendering.
     //                Lights whose range reaches into the view are chosen nearest first; one that does
     //                not fit (over this count, or out of atlas tiles) lights without a shadow.
     // localNormalBias: normal offset of local light shadow lookups against acne, in shadow texels.
@@ -377,7 +380,7 @@ namespace lockstep::render
 
     // Anti-aliasing of the final image.
     // mode:            the technique; changing to or from an MSAA mode rebuilds the frame's
-    //                  attachments.
+    //                  attachments. Replaced by GraphicsQuality::antiAliasing when rendering.
     // historyWeight:   TAA: share of the accumulated history kept each frame while the image is
     //                  still, 0 to 1; higher is smoother and slower to react.
     // motionWeight:    TAA: history share at fast motion (see motionPixels); lower reduces blur and
@@ -410,6 +413,32 @@ namespace lockstep::render
         float maxDistance{8.0f};
     };
 
+    // Magnified optics (Renderer::submitScope()): the second view rendered for the scope's
+    // eyepiece.
+    // enabled:     render scope views; off, the lens draw shows its plain glass material.
+    // resolution:  side of the square scope view texture in texels, 256 to 1024: the most the view
+    //              is drawn with. A change rebuilds its attachments.
+    // texelsPerPixel: scope view texels per screen pixel across the magnified field; the view is
+    //              drawn into a corner of the texture just big enough for that (capped by
+    //              `resolution`), so a small lens on a small window costs less.
+    // fog:         approximate the volumetric fog in the scope view (height fog transmittance and
+    //              its ambient glow; no light shafts).
+    // shadow:      draw the scope shadow (exit pupil and field stop); off shows the whole image.
+    // eyeBoxScale: multiplier on ScopeView::exitPupil (larger is more forgiving).
+    // holographic: draw holographic sight reticles (Renderer::submitSight()).
+    // reticleBrightness: multiplier on HolographicSight::radiance.
+    struct ScopeSettings
+    {
+        bool enabled{true};
+        uint32_t resolution{512};
+        float texelsPerPixel{1.0f};
+        bool fog{true};
+        bool shadow{true};
+        float eyeBoxScale{1.0f};
+        bool holographic{true};
+        float reticleBrightness{1.0f};
+    };
+
     // CPU-side visibility.
     // frustumCulling: skip draws whose bounds are outside the camera frustum (and, for shadows,
     //                 outside each cascade).
@@ -439,6 +468,7 @@ namespace lockstep::render
         FilmGrainSettings filmGrain{};
         AntiAliasingSettings antiAliasing{};
         PlanarReflectionSettings reflections{};
+        ScopeSettings scope{};
         CullingSettings culling{};
         SurfaceDetailSettings surfaceDetail{};
         MotionBlurSettings motionBlur{};

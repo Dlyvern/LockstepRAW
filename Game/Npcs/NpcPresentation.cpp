@@ -29,6 +29,7 @@ namespace game
         constexpr float k_lyingSeconds{100.0f};
         constexpr float k_crouchedHeight{1.5f};
         constexpr float k_crouchSquash{0.72f};
+        constexpr float k_crouchLayerFade{0.25f};
 
         float yawOf(const math::Quat& rotation)
         {
@@ -250,11 +251,16 @@ namespace game
         look.deathSeconds = 0.0f;
         look.isWeaponDropped = false;
         const anim::PartMask parts = npcBodyParts(looks, look);
-        const LocomotionSet& set = view.isAlert ? *armed->aiming : *armed->rifle;
+        const bool isCrouched = transform.scale.y < k_crouchedHeight || looks.isCrouchForced;
+        const bool isCrouchClip = isCrouched && armed->crouch != nullptr;
+        const LocomotionSet& set = isCrouchClip ? armedCrouchSet(*armed->crouch, view.isAlert)
+                                                : (view.isAlert ? *armed->aiming : *armed->rifle);
         updateLocomotion(look.locomotion, set, look.instance.animator(), foot, yaw, seconds);
+        updateArmedCrouchLayer(look.instance.animator(), armed->crouch, isCrouchClip, view.isAlert,
+            k_crouchLayerFade);
         updateHitReaction(look.reaction, reactionRigFor(looks, *model), looks.reactionTuning, seconds);
         look.instance.update(*model, seconds, look.reaction.offsets);
-        const float squash = transform.scale.y < k_crouchedHeight ? k_crouchSquash : 1.0f;
+        const float squash = isCrouched && !isCrouchClip ? k_crouchSquash : 1.0f;
         look.modelTransform = math::Transform{.position = foot,
             .rotation = facing,
             .scale = math::Vec3{1.0f, squash, 1.0f}};
@@ -377,6 +383,7 @@ namespace game
         }
 
         npcRagdollsDevSection(looks.ragdolls, simulating, asleep, frozen, physics);
+        ImGui::Checkbox("Draw every NPC crouched", &looks.isCrouchForced);
 
         if (ImGui::TreeNode("Dropped weapons"))
         {

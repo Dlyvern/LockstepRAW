@@ -199,7 +199,17 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   (muzzle, sights, light rail; viewmodel FOV accounted for) come from `Characters/ViewModelSights`.
   F toggles the weapon flashlight when nothing can be interacted with; its state (and a coarse
   pitch) reaches the partner in `PlayerStatus`. Shift while aiming holds the breath. Dev:
-  `--dev-fire-drill`.
+  `--dev-fire-drill`. Loadout (`Weapons/WeaponCatalog`, `WeaponKind`): 1 M4, 2 Glock 17, 3 KRISS,
+  mouse wheel cycles; per-weapon stats (ammo, reload times matching the clips, fire rate and
+  modes, recoil, spread, penetration, damage, holster/draw times) in `Settings::weapons`; the
+  wanted weapon rides in `PlayerCommand::weapon`, the host switches (`Weapons/Loadout`, no shots
+  during holster + draw) and reports `PlayerStatus::weapon`. First-person models
+  `characters/swat_fp_<m4|glock|kriss>` (the M4/Glock ones put the eye at the origin; clips
+  FPAim, ReloadTactical, ReloadEmpty, Draw, Holster, retargeted by
+  `Content/source/scripts/fp_weapon.py`); socket points per weapon in `Weapons/WeaponSockets`
+  (W_Main joint space; M4 has an `Optic` rail socket); the partner holds `weapons/<m4|glock>`
+  static guns at its right hand (`Characters/HeldGuns`). Dev: `--dev-weapon <m4|glock|kriss>`,
+  `--dev-switch-drill <seconds>`, `--dev-capture-on <reload|switch> <step>:<count> <prefix>`.
 - **Level lighting and surfaces (authoring):** `Zone_Interior_*` cube empties (display size 1,
   scaled so the cube covers the interior including its outer walls and roof; boxes are made
   axis-aligned) dim the sky's image-based light inside and add a fill light (per pixel; blends in
@@ -248,6 +258,19 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   command line in dev builds. Captures need ~3 frames between them (later ones wait). Use the
   `release` build for captures: the debug build shows the dev overlay by default. Combine with
   `--dev-fire-drill` to look at weapon effects.
+- **Graphics quality:** `GraphicsQuality` (`Lockstep/Render/GraphicsQuality.hpp`) is separate from
+  `RenderSettings`: Game/LevelLook set the look in `RenderSettings`, and the Renderer renders it
+  limited by the quality (`limitedByQuality()` each frame: features off, step counts and
+  resolutions scaled; AA mode, cascades and shadowed light count come from the quality). Presets
+  Low / Medium / High (default, the full look) / Ultra; Low = 960x540 window, 0.75 render scale
+  (bilinear upscale in the output pass), FXAA, 2048 shadow atlas, top 2 texture mips dropped at
+  `createTexture` (Medium 1; never below 128 px; applies to textures created later, so a level
+  reload). Chosen by `--graphics low|medium|high|ultra` (wins, ignores file overrides), else the
+  settings file (`--settings <file>`, default `~/.config/LockstepRAW/settings.ini`: `preset = ...`
+  plus per-field overrides and `window_width`/`window_height`), else High. Dev Graphics panel >
+  Quality: preset dropdown (live), every field, "Save to settings file". Engine logs GPU memory at
+  startup, after Game init and after 30 frames. Scene passes go through `addScaledPass()`
+  (`RenderScale.cpp`) so their outputs follow the render scale.
 
 ## Code style
 
@@ -306,6 +329,12 @@ cmake --build --preset debug --parallel
 timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout, which is fine
 ```
 
+- **Test runs on the user's laptop (RTX 3050 Laptop, 4 GB VRAM) must stay light; GPU memory
+  exhaustion has crashed the machine.** Every agent test run uses `--graphics low` (smallest
+  window, lowest preset, reduced texture resolution), no exceptions: never `ultra` or `high`,
+  graphics agents included (judge looks from `low` captures or ask the coordinator). Several
+  instances at once are fine as long as every one of them is `--graphics low`; always run them
+  under `timeout` and don't leave instances running.
 - Debug builds enable the Vulkan validation layers. Validation messages count as bugs.
 - Work is not done until it builds without warnings in our code and runs without validation errors.
 - Presets: `debug`, `release`, `shipping` (`shipping` turns `LOCKSTEP_DEV_TOOLS` off).
@@ -336,3 +365,5 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
   13. One blend mode and write mask per material for all colour outputs (the G-buffer stores data
       in alpha as "one minus" values so glass/decal blending stays consistent). With gap 4 this
       also rules out a hierarchical-depth SSR trace (no depth mip chain).
+  14. No graph-wide resolution scale: attachment scale is relative to the swapchain only, so Engine
+      wraps every scene pass (`addScaledPass`) and redescribes them all when the render scale changes.

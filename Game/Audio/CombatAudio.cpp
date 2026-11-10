@@ -296,7 +296,9 @@ namespace game
 
             for (uint8_t shot = 0; shot < shots; ++shot)
             {
-                playAt(combat, audioSystem, combat.bank.v45Shots, frame.eye, combat.tuning.shotVolume, audio::Bus::World);
+                const WeaponKind weapon = frame.command != nullptr ? frame.command->weapon : own.weapon;
+                playAt(combat, audioSystem, combat.bank.playerShots[weaponIndex(weapon)], frame.eye,
+                    combat.tuning.shotVolume, audio::Bus::World);
                 combat.shots.push_back(CombatShot{.position = frame.eye, .isLocal = true});
 
                 if (frame.physics == nullptr)
@@ -358,8 +360,14 @@ namespace game
         const audio::SoundDescription loop2d{.is3d = false, .isLooping = true, .isStreamed = true};
 
         CombatSoundBank bank{};
-        bank.v45Shots = loadMany(audioSystem, files, "weapons/v45_shot_", shot);
-        bank.v45FarShots = loadMany(audioSystem, files, "weapons/v45_shot_far_", shot);
+        const std::array<std::string, k_weaponCount> prefixes{{"weapons/m4_shot_", "weapons/glock_shot_",
+            "weapons/v45_shot_"}};
+
+        for (std::size_t index = 0; index < k_weaponCount; ++index)
+        {
+            bank.playerShots[index] = loadMany(audioSystem, files, prefixes[index], shot);
+            bank.playerFarShots[index] = loadMany(audioSystem, files, prefixes[index] + "far_", shot);
+        }
         bank.npcShots = loadMany(audioSystem, files, "weapons/merc_shot_", shot);
         bank.npcFarShots = loadMany(audioSystem, files, "weapons/merc_shot_far_", shot);
         bank.concreteHits = loadMany(audioSystem, files, "impacts/concrete_", impact);
@@ -423,7 +431,8 @@ namespace game
 
                 for (uint8_t shot = 0; shot < shots; ++shot)
                 {
-                    playGunshot(combat, audioSystem, combat.bank.v45Shots, combat.bank.v45FarShots, where, frame.listener,
+                    playGunshot(combat, audioSystem, combat.bank.playerShots[weaponIndex(status.weapon)],
+                        combat.bank.playerFarShots[weaponIndex(status.weapon)], where, frame.listener,
                         combat.tuning.shotVolume);
                     combat.shots.push_back(CombatShot{.position = where});
                 }

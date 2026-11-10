@@ -3,6 +3,8 @@
 
 #include "Player/PawnHealth.hpp"
 #include "Player/Pawns.hpp"
+#include "Weapons/OpticKind.hpp"
+#include "Weapons/WeaponKind.hpp"
 
 #include <array>
 #include <cstddef>
@@ -13,7 +15,7 @@
 namespace game
 {
     // Bytes an encoded StatusMessage takes.
-    inline constexpr std::size_t k_playerStatusBytes{2 + 13 * k_playerCount};
+    inline constexpr std::size_t k_playerStatusBytes{2 + 14 * k_playerCount};
 
     // What a player sees of a pawn's health and weapon. The host sends both players' statuses to
     // the client in a reliable Game message whenever one changes.
@@ -38,6 +40,9 @@ namespace game
     // isFlashlightOn: the weapon flashlight is on (the partner's machine draws its beam).
     // lookPitch: the look pitch in radians while the flashlight is on (coarse steps, so the beam
     //           tilts on the partner's machine without a message every tick), else 0.
+    // optic:    the optic on the armed player's weapon (the partner's machine draws it).
+    // weapon:   the loadout weapon in hand (or being switched to).
+    // isSwitching: a weapon switch runs (no shots).
     struct PlayerStatus
     {
         int32_t health{0};
@@ -63,6 +68,9 @@ namespace game
         uint8_t shotCount{0};
         bool isFlashlightOn{false};
         float lookPitch{0.0f};
+        OpticKind optic{OpticKind::None};
+        WeaponKind weapon{WeaponKind::M4};
+        bool isSwitching{false};
 
         friend bool operator==(const PlayerStatus&, const PlayerStatus&) = default;
     };

@@ -41,7 +41,8 @@ namespace game
 
     // Where a shot leaves towards: from the hip the look direction (where the crosshair is
     // drawn), aiming down sights the ray from the eye through the front post as drawn (sway,
-    // breathing, weapon kick, the camera's head motion), blended by the aim-in.
+    // breathing, weapon kick, the camera's head motion), or the axis of the mounted optic
+    // (ViewModelOpticAim::axis, where its reticle points), blended by the aim-in.
     // state:    the viewmodel state.
     // worldFov: the world camera's vertical field of view this frame, radians.
     // Returns:  unit world direction, or nothing while the viewmodel is hidden.

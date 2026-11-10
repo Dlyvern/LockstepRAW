@@ -2,7 +2,8 @@
 #define LOCKSTEP_GAME_WEAPONS_RELOAD_CUES_HPP
 
 #include "Player/PlayerStatus.hpp"
-#include "Weapons/Ammo.hpp"
+#include "Weapons/WeaponCatalog.hpp"
+#include "Weapons/WeaponKind.hpp"
 
 #include <array>
 #include <cstdint>
@@ -19,12 +20,13 @@ namespace game
     };
 
     // The moments of a reload, in seconds of its first-person clip (ReloadTactical/ReloadEmpty of
-    // characters/swat_fp_kriss, authored by Content/source/scripts/fp_reload.py). The clip and
-    // these cues are stretched to the host's reload time (AmmoSettings).
+    // characters/swat_fp_<weapon>: the KRISS' authored by Content/source/scripts/fp_reload.py, the
+    // M4's and Glock's retargeted by fp_weapon.py). The clip and these cues are stretched to the
+    // host's reload time (AmmoSettings).
     // length:         the clip's length.
     // magazineOut:    the old magazine leaves the well (it is dropped here).
     // magazineIn:     the new magazine is seated.
-    // charge:         the charging handle is pulled; negative for none.
+    // charge:         the charging handle is pulled, the slide or bolt released; negative for none.
     struct ReloadTimeline
     {
         float length{2.0f};
@@ -37,9 +39,10 @@ namespace game
     inline constexpr ReloadTimeline k_emptyReloadTimeline{.length = 2.6f, .magazineOut = 0.30f, .magazineIn = 1.20f,
         .charge = 1.75f};
 
+    // weapon:  a loadout weapon.
     // kind:    a reload kind.
     // Returns: its timeline.
-    [[nodiscard]] const ReloadTimeline& reloadTimeline(ReloadKind kind);
+    [[nodiscard]] const ReloadTimeline& reloadTimeline(WeaponKind weapon, ReloadKind kind);
 
     // A moment of a reload this frame reached.
     enum class ReloadCue : uint8_t
@@ -60,6 +63,7 @@ namespace game
 
     // A player's running reload as this machine shows it (from the replicated status).
     // isActive: a reload runs.
+    // weapon:   the weapon reloaded.
     // kind:     which one (the magazine was empty when it started).
     // seconds:  Player seconds since it started.
     // length:   Player seconds it takes on the host.
@@ -67,6 +71,7 @@ namespace game
     struct PlayerReload
     {
         bool isActive{false};
+        WeaponKind weapon{WeaponKind::M4};
         ReloadKind kind{ReloadKind::Tactical};
         float seconds{0.0f};
         float length{2.0f};
@@ -86,9 +91,10 @@ namespace game
     // collects the cues reached this frame.
     // cues:     the reload state, updated.
     // statuses: both players' statuses.
-    // ammo:     the reload times.
+    // weapons:  every weapon's reload times.
     // seconds:  Player time since the previous frame.
-    void updateReloadCues(ReloadCues& cues, const PlayerStatuses& statuses, const AmmoSettings& ammo, float seconds);
+    void updateReloadCues(ReloadCues& cues, const PlayerStatuses& statuses, const WeaponStatsTable& weapons,
+        float seconds);
 
     // reload:  a running reload.
     // Returns: how far its clip is, in clip seconds (the reload's time stretched to the timeline).

@@ -1,8 +1,10 @@
 #ifndef LOCKSTEP_GAME_CHARACTERS_PAWN_CHARACTERS_HPP
 #define LOCKSTEP_GAME_CHARACTERS_PAWN_CHARACTERS_HPP
 
+#include "Characters/ArmedCrouch.hpp"
 #include "Characters/CharacterModel.hpp"
 #include "Characters/FirstPersonBody.hpp"
+#include "Characters/HeldGuns.hpp"
 #include "Characters/KickPose.hpp"
 #include "Characters/Locomotion.hpp"
 #include "Characters/NpcBodies.hpp"
@@ -84,6 +86,7 @@ namespace game
     // isSliding: the pawn slides.
     // isVaulting: the pawn vaults over an obstacle (a procedural side vault: no clip exists).
     // isKicking: the pawn kicks (a procedural front kick, see KickPose.hpp; starts when it turns on).
+    // weapon:   the loadout weapon in its hands (the M4 and Glock are drawn as held guns).
     struct PawnLook
     {
         bool isArmed{false};
@@ -93,6 +96,7 @@ namespace game
         bool isSliding{false};
         bool isVaulting{false};
         bool isKicking{false};
+        WeaponKind weapon{WeaponKind::M4};
     };
 
     // Stand-in for the crouch and slide clips that are missing (armed crouch, slide): the
@@ -103,6 +107,7 @@ namespace game
     // slideSquash:   extra fraction taken off while sliding.
     // slideLean:     backward lean while sliding, radians.
     // slideBlendRate: how fast the slide pose blends in and out, 1/s.
+    // armedCrouchFade: how long the armed crouch's upper body layer takes to come in or go, s.
     // vaultRoll:     sideways tilt of the procedural vault (legs swing over to the side), radians.
     // vaultLean:     forward lean of the vault, radians.
     // vaultSquash:   fraction of height taken off while vaulting (legs tucked).
@@ -115,6 +120,7 @@ namespace game
         float slideSquash{0.1f};
         float slideLean{0.35f};
         float slideBlendRate{10.0f};
+        float armedCrouchFade{0.25f};
         float vaultRoll{0.55f};
         float vaultLean{0.3f};
         float vaultSquash{0.22f};
@@ -136,6 +142,7 @@ namespace game
     // yaw:           the pawn's yaw this frame.
     // reaction:      procedural hit reaction on top of its animation (other players only).
     // reactionRig:   the joints it turns on the model last drawn.
+    // weapon:        the loadout weapon it was last drawn holding.
     struct PawnCharacter
     {
         lockstep::anim::SkinnedInstance instance{};
@@ -151,16 +158,19 @@ namespace game
         float yaw{0.0f};
         HitReaction reaction{};
         ReactionRig reactionRig{};
+        WeaponKind weapon{WeaponKind::M4};
     };
 
-    // The armed body, its two locomotion sets and the parts the first-person camera may show
-    // (nothing for a model cooked without limbs).
+    // The armed body, its two locomotion sets, its crouch (nothing when the model lacks the
+    // clips) and the parts the first-person camera may show (nothing for a model cooked without
+    // limbs).
     struct ArmedCharacter
     {
         CharacterModel body;
         LocomotionSet rifle{};
         LocomotionSet aiming{};
         std::optional<FirstPersonBodyMasks> firstPersonBody{};
+        std::optional<ArmedCrouch> crouch{};
     };
 
     // The character models loaded for the pawns and one animated character per player.
@@ -169,7 +179,10 @@ namespace game
     // crouch:      its crouched locomotion, or nothing when the clips are missing (the squash
     //              stand-in is used then).
     // armed:       the armed body, or nothing (armed pawns then use the unarmed body).
-    // firstPerson: the viewmodel, or nothing (armed players then see no weapon).
+    // firstPersons: per loadout weapon, its viewmodel, or nothing (that weapon then shows the
+    //              KRISS', or none at all without it).
+    // heldGuns:    per loadout weapon, the gun a third-person body holds instead of the armed
+    //              model's KRISS (none for the KRISS itself, or when not mounted).
     // pawns:       Player1's and Player2's characters.
     // viewModel:   the local player's viewmodel state.
     // pose:        the crouch and slide stand-in pose.
@@ -185,7 +198,8 @@ namespace game
         LocomotionSet locomotion{};
         std::optional<LocomotionSet> crouch{};
         std::optional<ArmedCharacter> armed{};
-        std::optional<FirstPersonModel> firstPerson{};
+        std::array<std::optional<FirstPersonModel>, k_weaponCount> firstPersons{};
+        std::array<std::optional<HeldGun>, k_weaponCount> heldGuns{};
         std::array<PawnCharacter, k_playerCount> pawns{};
         ViewModelState viewModel{};
         PawnPoseTuning pose{};
@@ -195,6 +209,18 @@ namespace game
         KickPoseTuning kickPose{};
         NpcBodies npcBodies{};
     };
+
+    // The viewmodel of a loadout weapon: its own, else the KRISS' as a stand-in.
+    // characters: the pawn characters.
+    // weapon:     the weapon.
+    // Returns:    the model, or null when none is loaded.
+    [[nodiscard]] const FirstPersonModel* firstPersonModel(const PawnCharacters& characters, WeaponKind weapon);
+
+    // The held gun of a loadout weapon.
+    // characters: the pawn characters.
+    // weapon:     the weapon.
+    // Returns:    the gun, or null for the KRISS (part of the armed body) or when not loaded.
+    [[nodiscard]] const HeldGun* heldGun(const PawnCharacters& characters, WeaponKind weapon);
 
     // Loads the k_pawnCharacter models and the NPC bodies from the mounted content and logs their
     // stride speeds.

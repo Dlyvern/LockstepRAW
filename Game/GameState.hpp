@@ -10,6 +10,7 @@
 #include "Echo/EchoRecording.hpp"
 #include "Effects/Effects.hpp"
 #include "Presentation/DevCapture.hpp"
+#include "Weapons/WeaponCatalog.hpp"
 #include "Weapons/WeaponFx.hpp"
 #include "Effects/GlassShatter.hpp"
 #include "Enemies/Enemy.hpp"
@@ -45,6 +46,7 @@
 #include "Weapons/WeaponFeedback.hpp"
 #include "Weapons/Hitscan.hpp"
 #include "Weapons/LagCompensation.hpp"
+#include "Weapons/Optics.hpp"
 #include "Weapons/WeaponStance.hpp"
 #include "Weather/Weather.hpp"
 
@@ -66,8 +68,8 @@ namespace lockstep::app
         // startArmed:      players join carrying the weapon (--armed, or the arena without a level);
         //                  otherwise they are armed later by the story (or the dev panel).
         // gore:            when a hit severs a limb.
-        // fire, recoil, spread, penetration: the weapon's fire rate and modes, camera recoil, shot
-        //                  cone and sight offset limit, and how rounds go through thin things.
+        // weapons:         per loadout weapon: ammo and reload times, fire rate and modes, camera
+        //                  recoil, shot cone and sight offset limit, penetration, damage, switch times.
         struct Settings
         {
             float worldScale{1.0f};
@@ -80,13 +82,9 @@ namespace lockstep::app
             game::EnemySettings enemy{};
             game::HitscanSettings hitscan{};
             game::DownedSettings downed{};
-            game::AmmoSettings ammo{};
             game::NpcSettings npcs{};
             game::GoreRules gore{};
-            game::FireModeSettings fire{};
-            game::RecoilSettings recoil{};
-            game::SpreadSettings spread{};
-            game::PenetrationSettings penetration{};
+            game::WeaponStatsTable weapons{game::defaultWeaponStats()};
         };
 
         // This machine's player.
@@ -174,6 +172,7 @@ namespace lockstep::app
         std::vector<game::WeaponZoneBox> weaponZones{};
         game::SceneCharacters characters{};
         std::optional<game::PawnCharacters> pawnCharacters{};
+        game::Optics optics{};
         std::optional<game::ApartmentRoom> room{};
         std::optional<game::StationMission> station{};
         std::optional<game::HospitalMission> hospital{};

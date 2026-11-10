@@ -9,16 +9,19 @@ add_executable(LockstepGame
     Breakables/BreakableGlass.cpp
     Breakables/GlassDevTools.cpp
     Breakables/GlassReplication.cpp
+    Characters/ArmedCrouch.cpp
     Characters/CharacterModel.cpp
     Characters/FirstPersonBody.cpp
     Characters/KickPose.cpp
     Characters/GearLooks.cpp
+    Characters/HeldGuns.cpp
     Characters/Locomotion.cpp
     Characters/NpcBodies.cpp
     Characters/NpcPlaceholders.cpp
     Characters/PawnCharacters.cpp
     Characters/ViewModel.cpp
     Characters/ViewModelReload.cpp
+    Characters/ViewModelOptic.cpp
     Characters/ViewModelSights.cpp
     Characters/WeaponSway.cpp
     Dialogue/Dialogue.cpp
@@ -77,6 +80,7 @@ add_executable(LockstepGame
     Npcs/NpcSenses.cpp
     Npcs/NpcTactics.cpp
     Player/FireDrill.cpp
+    Player/WeaponDrill.cpp
     Player/LocalPlayer.cpp
     Player/MoveDrill.cpp
     Player/PawnHealth.cpp
@@ -124,13 +128,16 @@ add_executable(LockstepGame
     Weapons/Flashlight.cpp
     Weapons/Hitscan.cpp
     Weapons/LagCompensation.cpp
+    Weapons/Loadout.cpp
     Weapons/Penetration.cpp
     Weapons/Recoil.cpp
     Weapons/ReloadCues.cpp
     Weapons/ShotAim.cpp
+    Weapons/WeaponCatalog.cpp
     Weapons/WeaponDebris.cpp
     Weapons/WeaponDebrisLooks.cpp
     Weapons/WeaponFx.cpp
+    Weapons/Optics.cpp
     Weapons/WeaponSockets.cpp
     Weapons/WeaponStance.cpp
     Weapons/WeaponFeedback.cpp

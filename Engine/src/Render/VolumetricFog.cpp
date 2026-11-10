@@ -2,6 +2,7 @@
 
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
+#include "RenderScale.hpp"
 #include "RendererState.hpp"
 #include "VelaConversions.hpp"
 
@@ -199,8 +200,7 @@ namespace lockstep::render
         {
             const VolumetricFogSettings& fog = state.settings.volumetricFog;
             const math::Vec3& camera = state.camera.position;
-            const float interior = cameraInteriorWeight(state);
-            const float density = fog.density * (1.0f + (std::max(fog.interiorDensityScale, 0.0f) - 1.0f) * interior);
+            const float density = volumetricFogCameraDensity(state);
             const uint32_t steps = std::clamp(fog.steps, k_minSteps, k_maxSteps);
             const float noise = fog.temporal
                 ? std::fmod(static_cast<float>(state.frameIndex % 1024u) * k_goldenRatio, 1.0f) : 0.0f;
@@ -228,15 +228,10 @@ namespace lockstep::render
             return TemporalConstants{.reprojection = reprojection, .params = {weight, 0.0f, 0.0f, 0.0f}};
         }
 
-        Status addFogPass(vela::graphics::RenderGraph& graph, std::string_view name,
+        Status addFogPass(vela::graphics::RenderGraph& graph, RendererState& state, std::string_view name,
             std::unique_ptr<FogPass> pass)
         {
-            if (auto added = graph.addPass(std::string(name), std::move(pass)); !added)
-            {
-                return toError(added.error());
-            }
-
-            return {};
+            return addScaledPass(graph, state, name, std::move(pass));
         }
 
         Status addScatterPass(vela::graphics::RenderGraph& graph, RendererState& state)
@@ -273,7 +268,7 @@ namespace lockstep::render
                     return true;
                 });
 
-            return addFogPass(graph, k_scatterPassName, std::move(pass));
+            return addFogPass(graph, state, k_scatterPassName, std::move(pass));
         }
 
         Status addFogResolvePass(vela::graphics::RenderGraph& graph, RendererState& state)
@@ -304,7 +299,7 @@ namespace lockstep::render
                     return true;
                 });
 
-            return addFogPass(graph, k_temporalPassName, std::move(pass));
+            return addFogPass(graph, state, k_temporalPassName, std::move(pass));
         }
 
         Status addCompositePass(vela::graphics::RenderGraph& graph, RendererState& state)
@@ -337,7 +332,7 @@ namespace lockstep::render
                     return true;
                 });
 
-            return addFogPass(graph, k_compositePassName, std::move(pass));
+            return addFogPass(graph, state, k_compositePassName, std::move(pass));
         }
     } //namespace
 
@@ -356,6 +351,20 @@ namespace lockstep::render
         }
 
         return addCompositePass(graph, state);
+    }
+
+    float volumetricFogCameraDensity(const RendererState& state)
+    {
+        const VolumetricFogSettings& fog = state.settings.volumetricFog;
+
+        if (!isFogOn(state))
+        {
+            return 0.0f;
+        }
+
+        const float interior = cameraInteriorWeight(state);
+
+        return fog.density * (1.0f + (std::max(fog.interiorDensityScale, 0.0f) - 1.0f) * interior);
     }
 
     Status updateVolumetricFogScale(RendererState& state)

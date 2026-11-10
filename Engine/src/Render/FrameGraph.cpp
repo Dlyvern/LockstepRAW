@@ -6,7 +6,9 @@
 #include "ParticlePass.hpp"
 #include "PlanarReflections.hpp"
 #include "PostPasses.hpp"
+#include "RenderScale.hpp"
 #include "RendererState.hpp"
+#include "ScopeView.hpp"
 #include "TextPass.hpp"
 #include "VelaConversions.hpp"
 #include "VolumetricFog.hpp"
@@ -64,17 +66,6 @@ namespace lockstep::render
 
             return 1;
         }
-
-        Status addFramePass(vela::graphics::RenderGraph& graph, std::string_view name,
-            std::unique_ptr<vela::graphics::Pass> pass)
-        {
-            if (auto added = graph.addPass(std::string(name), std::move(pass)); !added)
-            {
-                return toError(added.error());
-            }
-
-            return {};
-        }
     } //namespace
 
     Status updateSceneSamples(RendererState& state)
@@ -93,6 +84,7 @@ namespace lockstep::render
         {
             state.sceneSamples = previous;
             state.settings.antiAliasing.mode = AntiAliasingMode::Off;
+            state.quality.antiAliasing = AntiAliasingMode::Off;
             return toError(redescribed.error());
         }
 
@@ -152,6 +144,13 @@ namespace lockstep::render
             return reflectionPass.error();
         }
 
+        auto scopePass = ScopePass::create(state);
+
+        if (!scopePass)
+        {
+            return scopePass.error();
+        }
+
         auto scenePass = LitScenePass::create(state);
 
         if (!scenePass)
@@ -159,24 +158,29 @@ namespace lockstep::render
             return scenePass.error();
         }
 
-        if (auto added = addFramePass(graph.value(), k_environmentPassName, std::move(environmentPass).value());
+        if (auto added = addScaledPass(graph.value(), state, k_environmentPassName, std::move(environmentPass).value());
             !added)
         {
             return added;
         }
 
-        if (auto added = addFramePass(graph.value(), k_shadowPassName, std::move(shadowPass).value()); !added)
+        if (auto added = addScaledPass(graph.value(), state, k_shadowPassName, std::move(shadowPass).value()); !added)
         {
             return added;
         }
 
-        if (auto added = addFramePass(graph.value(), k_reflectionPassName, std::move(reflectionPass).value());
+        if (auto added = addScaledPass(graph.value(), state, k_reflectionPassName, std::move(reflectionPass).value());
             !added)
         {
             return added;
         }
 
-        if (auto added = addFramePass(graph.value(), k_scenePassName, std::move(scenePass).value()); !added)
+        if (auto added = addScaledPass(graph.value(), state, k_scopePassName, std::move(scopePass).value()); !added)
+        {
+            return added;
+        }
+
+        if (auto added = addScaledPass(graph.value(), state, k_scenePassName, std::move(scenePass).value()); !added)
         {
             return added;
         }
@@ -198,7 +202,8 @@ namespace lockstep::render
             return particlePass.error();
         }
 
-        if (auto added = addFramePass(graph.value(), k_particlePassName, std::move(particlePass).value()); !added)
+        if (auto added = addScaledPass(graph.value(), state, k_particlePassName, std::move(particlePass).value());
+            !added)
         {
             return added;
         }

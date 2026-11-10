@@ -17,8 +17,9 @@ namespace game
     // The weapon handling of one presented frame, after presentViewModel(): takes the sight
     // offset the next command sends (GameState::Local::aimOffset; the drawn front post aiming
     // down sights, the look from the hip), submits both players' flashlights (the local one from
-    // the drawn weapon's rail, the partner's from its right hand along its replicated pitch) and
-    // plays the flashlight, fire mode and held-breath sounds. Call before the level's lights.
+    // the drawn weapon's rail, the partner's from its right hand along its replicated pitch), draws
+    // the optics the pawns' third-person weapons carry (PlayerStatus::optic; the local one only
+    // in mirrors) and plays the flashlight, fire mode and held-breath sounds. Call before the level's lights.
     // state:         the game state.
     // engine:        Engine services.
     // localPawn:     the local pawn's drawn transform, or nothing.
@@ -37,7 +38,8 @@ namespace game
         const lockstep::app::EngineContext& engine, uint8_t shotNumber);
 
     // state:   the game state.
-    // Returns: depth of field strength the held breath asks for (presentLensEffects()).
+    // Returns: depth of field strength the held breath, or aiming through a scope (the world around
+    //          the scope softens, Optics::scopeTuning outerBlur), asks for (presentLensEffects()).
     [[nodiscard]] float heldBreathFocus(const lockstep::app::GameState& state);
 
 #if LOCKSTEP_DEV_TOOLS

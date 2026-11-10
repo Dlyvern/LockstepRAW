@@ -21,7 +21,7 @@ namespace lockstep::render
     [[nodiscard]] Status addTextPass(RendererState& state);
 
     // Matches the scene pass's sample count to the anti-aliasing mode (clamped to what the device
-    // supports), redescribing the pass when it changes. On failure anti-aliasing is switched off.
+    // supports), redescribing the pass when it changes. On failure anti-aliasing is switched off (in the quality too).
     // state:   the renderer state.
     // Returns: success, or an error if the graph rejected the new description.
     [[nodiscard]] Status updateSceneSamples(RendererState& state);

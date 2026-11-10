@@ -23,6 +23,13 @@ namespace lockstep::render
     // Returns: success, or an error if a shader is missing or the graph rejected a pass.
     [[nodiscard]] Status addVolumetricFogPasses(vela::graphics::RenderGraph& graph, RendererState& state);
 
+    // The fog density at the camera's position (VolumetricFogSettings::density, scaled by
+    // interiorDensityScale as far as the camera is inside an interior ambient zone), what the
+    // raymarch starts from. 0 when the fog is off.
+    // state:   the renderer state with this frame's camera.
+    // Returns: extinction per metre at the camera's height profile base.
+    [[nodiscard]] float volumetricFogCameraDensity(const RendererState& state);
+
     // Clamps the fog resolution scale setting and redescribes the fog passes when it changed. On
     // failure the previous scale is restored.
     // state:   the renderer state.

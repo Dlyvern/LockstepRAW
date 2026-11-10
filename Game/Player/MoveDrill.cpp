@@ -30,10 +30,13 @@ namespace game
         constexpr float k_stagingX{28.0f};
         constexpr float k_laneTolerance{0.6f};
         constexpr std::string_view k_kickDrillFlag{"--dev-kick-drill"};
+        constexpr std::string_view k_watchNpcFlag{"--dev-watch-npc"};
         constexpr float k_kickInterval{1.2f};
         constexpr float k_kickPressSeconds{0.05f};
         constexpr float k_kickDrillPitch{-0.15f};
         constexpr float k_kickApproach{0.9f};
+        constexpr float k_pitchSweep{1.25f};
+        constexpr float k_pitchSweepSeconds{7.0f};
 
         bool isBetween(float seconds, float from, float to)
         {
@@ -177,7 +180,25 @@ namespace game
         const double elapsed = static_cast<double>(tick) * static_cast<double>(delta);
         const double phase = std::fmod(elapsed, static_cast<double>(k_kickInterval));
         command.kick = phase < static_cast<double>(k_kickPressSeconds);
-        command.pitch = k_kickDrillPitch;
+        const double sweep = 0.5 - 0.5 * std::cos(2.0 * static_cast<double>(lockstep::math::k_pi) * elapsed
+            / static_cast<double>(k_pitchSweepSeconds));
+        command.pitch = k_kickDrillPitch - k_pitchSweep * static_cast<float>(sweep);
+    }
+
+    bool isWatchNpcRequested(std::span<const char* const> arguments)
+    {
+        return std::any_of(arguments.begin(), arguments.end(), [](const char* argument)
+        {
+            return argument != nullptr && std::string_view(argument) == k_watchNpcFlag;
+        });
+    }
+
+    void lookAtPoint(PlayerCommand& command, const math::Vec3& eye, const math::Vec3& target)
+    {
+        const math::Vec3 offset = target - eye;
+        const float planar = std::sqrt(offset.x * offset.x + offset.z * offset.z);
+        command.yaw = std::atan2(-offset.x, -offset.z);
+        command.pitch = std::atan2(offset.y, std::max(planar, 0.01f));
     }
 
     void logMoveDrill(const Prediction& prediction, uint64_t tick, float delta)

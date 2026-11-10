@@ -37,6 +37,21 @@ namespace game
         constexpr float k_muzzleReach{0.55f};
         constexpr float k_muzzleRight{0.12f};
         constexpr float k_muzzleDrop{0.1f};
+        constexpr std::array<math::Vec2, k_weaponCount> k_casingSizes{{{0.0048f, 0.045f}, {0.0049f, 0.019f},
+            {0.00575f, 0.0228f}}};
+        constexpr std::array<math::Vec3, k_weaponCount> k_magazineSizes{{{0.012f, 0.09f, 0.03f},
+            {0.011f, 0.065f, 0.016f}, {0.015f, 0.1225f, 0.0225f}}};
+        constexpr uint32_t k_casingsPerWeapon{100};
+        constexpr DebrisKind k_magazineKind{.maxPieces = 8,
+            .lifeSeconds = 120.0f,
+            .restitution = 0.2f,
+            .friction = 0.5f,
+            .spinKept = 0.4f,
+            .spinKick = 3.0f,
+            .restSpeed = 0.5f,
+            .soundSpeed = 0.6f,
+            .fullSoundSpeed = 4.0f,
+            .maxSoundBounces = 2};
 
         struct Shot
         {
@@ -45,6 +60,7 @@ namespace game
             math::Vec3 position{0.0f, 0.0f, 0.0f};
             uint8_t ordinal{0};
             bool isLocal{false};
+            WeaponKind weapon{WeaponKind::Kriss};
         };
 
         uint32_t nextRandom(WeaponFx& fx)
@@ -81,12 +97,12 @@ namespace game
 
         std::optional<WeaponSocket> localSocket(const GameState& state, const WeaponFx& fx)
         {
-            if (!state.pawnCharacters || !state.pawnCharacters->firstPerson)
-            {
-                return std::nullopt;
-            }
+            const FirstPersonModel* model = state.pawnCharacters
+                ? firstPersonModel(*state.pawnCharacters, state.pawnCharacters->viewModel.weapon)
+                : nullptr;
 
-            return viewModelWeaponSocket(*state.pawnCharacters->firstPerson, state.pawnCharacters->viewModel, fx.worldFov);
+            return model != nullptr ? viewModelWeaponSocket(*model, state.pawnCharacters->viewModel, fx.worldFov)
+                                    : std::nullopt;
         }
 
         std::optional<WeaponSocket> npcSocket(const GameState& state, uint32_t index)
@@ -165,7 +181,8 @@ namespace game
                     .socket = socket,
                     .position = socket ? socket->muzzle
                                        : frame.eye + forward * k_muzzleReach + right * k_muzzleRight - k_up * k_muzzleDrop,
-                    .isLocal = true});
+                    .isLocal = true,
+                    .weapon = state.pawnCharacters ? state.pawnCharacters->viewModel.weapon : state.local.command.weapon});
             }
             else
             {
@@ -187,7 +204,8 @@ namespace game
 
                 addShots(shots, now, counters.players[index], Shot{.key = static_cast<uint32_t>(index),
                     .socket = socket,
-                    .position = socket->muzzle});
+                    .position = socket->muzzle,
+                    .weapon = state.local.statuses[index].weapon});
             }
 
             for (const NpcLook& look : state.npcLooks.looks)
@@ -213,14 +231,14 @@ namespace game
             return shots;
         }
 
-        void ejectCasing(WeaponFx& fx, const WeaponSocket& socket, physics::ControllerId ignore)
+        void ejectCasing(WeaponFx& fx, WeaponKind weapon, const WeaponSocket& socket, physics::ControllerId ignore)
         {
             const WeaponFxTuning& tuning = fx.tuning;
             const math::Vec3 velocity = socket.right * randomRange(fx, tuning.ejectSpeed.x, tuning.ejectSpeed.y)
                 + socket.up * randomRange(fx, tuning.ejectLift.x, tuning.ejectLift.y)
                 - socket.forward * randomRange(fx, 0.0f, 0.6f) + randomUnit(fx) * 0.25f;
             const math::Vec3 spinAxis = math::normalize(socket.up + randomUnit(fx) * 0.4f);
-            spawnDebris(fx.casings, DebrisPiece{.position = socket.port,
+            spawnDebris(fx.casings[weaponIndex(weapon)], DebrisPiece{.position = socket.port,
                 .velocity = velocity,
                 .rotation = basisRotation(socket.up, socket.forward),
                 .spin = spinAxis * randomRange(fx, 18.0f, 40.0f),
@@ -270,12 +288,13 @@ namespace game
 
                 const float aimed = shot.isLocal && state.pawnCharacters ? viewModelZoom(state.pawnCharacters->viewModel)
                                                                           : 0.0f;
+                const float flashSize = weaponStats(state.settings.weapons, shot.weapon).flashScale;
                 flashMuzzle(fx.muzzle, particles, *shot.socket, shot.key, smoke, shot.isLocal,
-                    1.0f + (fx.viewFlash.tuning.aimScale - 1.0f) * aimed);
+                    1.0f + (fx.viewFlash.tuning.aimScale - 1.0f) * aimed, flashSize);
 
                 if (shot.isLocal)
                 {
-                    fireViewModelFlash(fx.viewFlash);
+                    fireViewModelFlash(fx.viewFlash, flashSize);
                 }
 
                 const int every = std::max(fx.muzzle.tuning.tracerEvery, 1);
@@ -287,14 +306,14 @@ namespace game
 
                 if (fx.tuning.casings)
                 {
-                    ejectCasing(fx, *shot.socket, shot.isLocal ? local : physics::ControllerId{});
+                    ejectCasing(fx, shot.weapon, *shot.socket, shot.isLocal ? local : physics::ControllerId{});
                 }
             }
         }
 
-        void dropMagazine(WeaponFx& fx, const WeaponSocket& socket, physics::ControllerId ignore)
+        void dropMagazine(WeaponFx& fx, WeaponKind weapon, const WeaponSocket& socket, physics::ControllerId ignore)
         {
-            spawnDebris(fx.magazines, DebrisPiece{.position = socket.magazine.position,
+            spawnDebris(fx.magazines[weaponIndex(weapon)], DebrisPiece{.position = socket.magazine.position,
                 .velocity = -(socket.magazine.rotation * k_up) * randomRange(fx, 0.6f, 1.1f) + socket.right * 0.2f
                     + randomUnit(fx) * 0.15f,
                 .rotation = socket.magazine.rotation,
@@ -304,7 +323,7 @@ namespace game
 
         void showReloads(GameState& state, EngineContext& engine, WeaponFx& fx, const WeaponFxFrame& frame)
         {
-            updateReloadCues(fx.reloads, state.local.statuses, state.settings.ammo, frame.playerSeconds);
+            updateReloadCues(fx.reloads, state.local.statuses, state.settings.weapons, frame.playerSeconds);
             const std::size_t localIndex = localPawnIndex(engine);
             const WeaponSoundBank& bank = fx.sounds.bank;
 
@@ -340,7 +359,8 @@ namespace game
 
                 if (event.cue == ReloadCue::MagazineOut && fx.tuning.magazines && socket)
                 {
-                    dropMagazine(fx, *socket, isLocal ? localController(state, engine) : physics::ControllerId{});
+                    dropMagazine(fx, fx.reloads.players[event.player].weapon, *socket,
+                        isLocal ? localController(state, engine) : physics::ControllerId{});
                 }
             }
         }
@@ -367,14 +387,24 @@ namespace game
             {
                 fx.isLookTried = true;
 
-                if (auto casing = createCasingLook(engine.renderer, fx.casings); !casing)
+                for (std::size_t index = 0; index < k_weaponCount; ++index)
                 {
-                    std::clog << "Game: casing mesh not created: " << casing.error().message << '\n';
-                }
+                    fx.casings[index].kind = DebrisKind{.maxPieces = k_casingsPerWeapon,
+                        .halfThickness = k_casingSizes[index].x};
+                    fx.magazines[index].kind = k_magazineKind;
+                    fx.magazines[index].kind.halfThickness = k_magazineSizes[index].x;
 
-                if (auto magazine = createMagazineLook(engine.renderer, fx.magazines); !magazine)
-                {
-                    std::clog << "Game: magazine mesh not created: " << magazine.error().message << '\n';
+                    if (auto casing = createCasingLook(engine.renderer, fx.casings[index], k_casingSizes[index].x,
+                            k_casingSizes[index].y); !casing)
+                    {
+                        std::clog << "Game: casing mesh not created: " << casing.error().message << '\n';
+                    }
+
+                    if (auto magazine = createMagazineLook(engine.renderer, fx.magazines[index], k_magazineSizes[index]);
+                        !magazine)
+                    {
+                        std::clog << "Game: magazine mesh not created: " << magazine.error().message << '\n';
+                    }
                 }
             }
 
@@ -390,8 +420,11 @@ namespace game
             if (scene != fx.scene)
             {
                 fx.scene = scene;
-                clearDebris(fx.casings);
-                clearDebris(fx.magazines);
+                for (std::size_t index = 0; index < k_weaponCount; ++index)
+                {
+                    clearDebris(fx.casings[index]);
+                    clearDebris(fx.magazines[index]);
+                }
                 fx.muzzle.lights.clear();
                 fx.muzzle.barrels.clear();
             }
@@ -413,20 +446,27 @@ namespace game
         showShots(state, engine, fx, frame, collectShots(state, engine, fx, frame));
         showReloads(state, engine, fx, frame);
 
-        if (state.pawnCharacters && state.pawnCharacters->firstPerson && frame.hasLocalPawn)
+        const FirstPersonModel* model = state.pawnCharacters
+            ? firstPersonModel(*state.pawnCharacters, state.pawnCharacters->viewModel.weapon)
+            : nullptr;
+
+        if (model != nullptr && frame.hasLocalPawn)
         {
             const PawnCharacters& characters = *state.pawnCharacters;
-            drawViewModelFlash(fx.viewFlash, engine.renderer,
-                viewModelLayerSocket(*characters.firstPerson, characters.viewModel), viewModelZoom(characters.viewModel));
+            drawViewModelFlash(fx.viewFlash, engine.renderer, viewModelLayerSocket(*model, characters.viewModel),
+                viewModelZoom(characters.viewModel));
         }
 
         const SceneLevel* level = state.level ? &*state.level : nullptr;
-        updateDebris(fx.casings, engine.physics, level, frame.worldSeconds);
-        updateDebris(fx.magazines, engine.physics, level, frame.worldSeconds);
-        playLandings(fx, engine, fx.casings, fx.sounds.bank.casings, fx.sounds.tuning.casing);
-        playLandings(fx, engine, fx.magazines, fx.sounds.bank.magazines, fx.sounds.tuning.magazine);
-        drawDebris(fx.casings, engine.renderer);
-        drawDebris(fx.magazines, engine.renderer);
+        for (std::size_t index = 0; index < k_weaponCount; ++index)
+        {
+            updateDebris(fx.casings[index], engine.physics, level, frame.worldSeconds);
+            updateDebris(fx.magazines[index], engine.physics, level, frame.worldSeconds);
+            playLandings(fx, engine, fx.casings[index], fx.sounds.bank.casings, fx.sounds.tuning.casing);
+            playLandings(fx, engine, fx.magazines[index], fx.sounds.bank.magazines, fx.sounds.tuning.magazine);
+            drawDebris(fx.casings[index], engine.renderer);
+            drawDebris(fx.magazines[index], engine.renderer);
+        }
 
         if (state.effects.particles && state.effects.tuning.enabled && state.effects.tuning.muzzleSmoke)
         {
@@ -454,8 +494,17 @@ namespace game
         }
 
         MuzzleFlashTuning& muzzle = fx.muzzle.tuning;
-        ImGui::Text("%zu casings, %zu magazines, %zu lights, %zu hot barrels", fx.casings.pieces.size(),
-            fx.magazines.pieces.size(), fx.muzzle.lights.size(), fx.muzzle.barrels.size());
+        std::size_t casings = 0;
+        std::size_t magazines = 0;
+
+        for (std::size_t index = 0; index < k_weaponCount; ++index)
+        {
+            casings += fx.casings[index].pieces.size();
+            magazines += fx.magazines[index].pieces.size();
+        }
+
+        ImGui::Text("%zu casings, %zu magazines, %zu lights, %zu hot barrels", casings, magazines,
+            fx.muzzle.lights.size(), fx.muzzle.barrels.size());
         ImGui::Checkbox("Flash particles", &muzzle.flashes);
         ImGui::Checkbox("Flash light", &muzzle.lights);
         ImGui::Checkbox("Tracers", &muzzle.tracers);

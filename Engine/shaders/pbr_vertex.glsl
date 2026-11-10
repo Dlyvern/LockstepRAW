@@ -5,9 +5,14 @@
 #include "frame_lighting.glsl"
 
 // draw.flags.z: 0 the camera view, 1 the planar reflection view, 2 the camera view of the
-// rendered planar reflector's surface, 3 the camera view of a viewmodel draw.
+// rendered planar reflector's surface, 3 the camera view of a viewmodel draw, 4 the scope view,
+// 5 the camera view of the scope's eyepiece lens (a viewmodel draw), 6 the camera view of a
+// holographic sight's window (a viewmodel draw).
 const float k_reflectionView = 1.0;
 const float k_viewModelView = 3.0;
+const float k_scopeView = 4.0;
+const float k_scopeLensView = 5.0;
+const float k_sightWindowView = 6.0;
 
 layout(push_constant) uniform DrawConstants
 {
@@ -67,7 +72,7 @@ void main()
     outTangent = vec4(linear * inTangent.xyz, inTangent.w);
     vec4 previousWorldPosition = previousModel * vec4(inPosition, 1.0);
 
-    if (draw.flags.z == k_viewModelView)
+    if (draw.flags.z == k_viewModelView || draw.flags.z == k_scopeLensView || draw.flags.z == k_sightWindowView)
     {
         outCurrentClip = frame.viewModelMotionViewProjection * worldPosition;
         outPreviousClip = frame.previousViewModelMotionViewProjection * previousWorldPosition;
@@ -77,6 +82,12 @@ void main()
 
     outCurrentClip = frame.viewProjection * worldPosition;
     outPreviousClip = frame.previousViewProjection * previousWorldPosition;
+
+    if (draw.flags.z == k_scopeView)
+    {
+        gl_Position = frame.scopeViewProjection * worldPosition;
+        return;
+    }
 
     gl_Position = draw.flags.z == k_reflectionView ? frame.reflectionViewProjection * worldPosition
         : camera.viewProjection * worldPosition;

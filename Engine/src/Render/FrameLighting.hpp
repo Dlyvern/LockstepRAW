@@ -50,6 +50,7 @@ namespace lockstep::render
     //                    projection with TAA jitter, depth squeezed to the near end).
     // viewModelMotionViewProjection: the same without jitter (motion vectors).
     // previousViewModelMotionViewProjection: last frame's viewModelMotionViewProjection.
+    // scopeViewProjection: world to clip of the scope view (ScopeView::objective, square).
     // reflectionCamera:  xyz the mirrored camera position, w 1 if a reflection is rendered.
     // reflectionPlane:   xyz the mirror's world normal (towards the camera), w minus its offset
     //                    (dot(xyz, p) + w is the signed distance of p).
@@ -80,6 +81,24 @@ namespace lockstep::render
     //                    metre, w ripple animation seconds.
     // wetnessShading:    x porous albedo multiplier, y share of roughness removed, z ripple
     //                    strength, w 1 to tint by wetness.
+    // scopeCamera:       xyz the scope view's position, w 1 if a scope view is rendered.
+    // scopeCameraForward: xyz the scope view's forward, w tan of half its field of view.
+    // scopeCameraUp:     xyz the scope view's up, w the magnification.
+    // scopeEyepiece:     xyz the eyepiece centre in the lens draw's space, w the eye relief.
+    // scopeAxis:         xyz the scope axis in the lens draw's space, w the exit pupil radius
+    //                    (0 draws no scope shadow).
+    // scopeAxisUp:       xyz the scope's up in the lens draw's space, w the share of the scope
+    //                    target's side the view is drawn in (from its first texel).
+    // scopeReticle:      rgb the reticle line colour, w the fine line width.
+    // scopeReticleShape: x post width, y post gap, z stadia spacing, w stadia half-length.
+    // scopeIllumination: rgb the centre dot's radiance, w the dot radius.
+    // scopeFog:          x fog density at the scope view's position, y height falloff, z base
+    //                    height, w the distance it is applied over (0 for none).
+    // scopeFogColor:     rgb the fog's ambient glow, w unused.
+    // sightDirection:    xyz the holographic sight line in its window draw's space, w 1 if a
+    //                    holographic sight is drawn.
+    // sightReticle:      rgb the reticle's radiance, w the ring's angular radius.
+    // sightShape:        x half the ring's angular width, y the dot's angular radius, zw unused.
     // counts:            x local lights, y 1 if specular is on.
     // lights:            the local lights.
     // zoneParams:        x interior ambient zones in use, y blend distance, z normal offset, w 1 to
@@ -97,6 +116,7 @@ namespace lockstep::render
         math::Mat4 viewModelViewProjection{1.0f};
         math::Mat4 viewModelMotionViewProjection{1.0f};
         math::Mat4 previousViewModelMotionViewProjection{1.0f};
+        math::Mat4 scopeViewProjection{1.0f};
         float reflectionCamera[4];
         float reflectionPlane[4];
         float reflectionTint[4];
@@ -125,6 +145,20 @@ namespace lockstep::render
         float surfaceDetail[4];
         float wetness[4];
         float wetnessShading[4];
+        float scopeCamera[4];
+        float scopeCameraForward[4];
+        float scopeCameraUp[4];
+        float scopeEyepiece[4];
+        float scopeAxis[4];
+        float scopeAxisUp[4];
+        float scopeReticle[4];
+        float scopeReticleShape[4];
+        float scopeIllumination[4];
+        float scopeFog[4];
+        float scopeFogColor[4];
+        float sightDirection[4];
+        float sightReticle[4];
+        float sightShape[4];
         uint32_t counts[4];
         GpuLocalLight lights[k_maxLocalLights];
         float zoneParams[4];
@@ -135,7 +169,7 @@ namespace lockstep::render
 
     static_assert(sizeof(GpuLocalLight) == 64);
     static_assert(sizeof(GpuAmbientZone) == 32);
-    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 6 * 64 + 29 * 16 + k_maxLocalLights * 64
+    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 7 * 64 + 43 * 16 + k_maxLocalLights * 64
         + 3 * 16 + k_maxFrameAmbientZones * 32);
 
     // The lights submitted for one frame.
@@ -187,12 +221,14 @@ namespace lockstep::render
     // viewProjection: the camera's unjittered world-to-clip matrix (which shadowed local lights
     //                 reach into the view).
     // zones:          every interior ambient zone; the nearest are packed.
+    // shadowAtlasWidth: width of the shadow atlas in texels (texel snapping and sizes).
     struct LightingView
     {
         const Camera& camera;
         float aspectRatio{1.0f};
         math::Mat4 viewProjection{1.0f};
         std::span<const AmbientZone> zones;
+        uint32_t shadowAtlasWidth{4096};
     };
 
     // Packs a frame's lights, sky, interior zones and settings into the GPU block and fits the

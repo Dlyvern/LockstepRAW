@@ -176,7 +176,7 @@ namespace game
     }
 
     void flashMuzzle(MuzzleFlashes& muzzle, render::ParticleSystem* particles, const WeaponSocket& socket,
-        uint32_t shooter, render::ParticleEffectId smoke, bool isOwn, float strength)
+        uint32_t shooter, render::ParticleEffectId smoke, bool isOwn, float strength, float size)
     {
         const MuzzleFlashTuning& tuning = muzzle.tuning;
         BarrelHeat& barrel = muzzle.barrels[shooter];
@@ -202,18 +202,18 @@ namespace game
 
         if (tuning.flashes && !isOwn)
         {
-            const float size = randomRange(muzzle, 0.75f, 1.25f) * tuning.flashSize;
+            const float flashSize = randomRange(muzzle, 0.75f, 1.25f) * tuning.flashSize * size;
             const math::Vec4 tint{tuning.flashIntensity, tuning.flashIntensity, tuning.flashIntensity, 1.0f};
             static_cast<void>(particles->burst(muzzle.flashCore, render::ParticleBurst{
-                .position = socket.muzzle + socket.forward * (k_coreAhead * size),
+                .position = socket.muzzle + socket.forward * (k_coreAhead * flashSize),
                 .direction = socket.forward,
-                .sizeScale = size,
+                .sizeScale = flashSize,
                 .tint = tint}));
             static_cast<void>(particles->burst(muzzle.flashSide, render::ParticleBurst{
                 .position = socket.muzzle + socket.forward * (k_sideStretch * 4.0f * tuning.flashSize),
                 .direction = socket.forward,
                 .countScale = randomRange(muzzle, 0.6f, 1.4f),
-                .sizeScale = size,
+                .sizeScale = flashSize,
                 .tint = tint}));
 
             if (nextRandom(muzzle) % 3 == 0)

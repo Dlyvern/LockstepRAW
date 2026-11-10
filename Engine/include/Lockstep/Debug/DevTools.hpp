@@ -119,6 +119,12 @@ namespace lockstep::debug
         // timing: the frame's measured split.
         void recordFrameTiming(const FrameTiming& timing);
 
+        // Logs the GPU time of the frame and of each render graph pass, averaged over a few
+        // seconds, to the "Render" channel (the run loop turns it on for `--dev-gpu-timings`).
+        // Does nothing in builds without dev tools.
+        // enabled: true to log.
+        void logGpuTimings(bool enabled);
+
         // Returns: true if the last beginFrame() showed the overlay. This does not mean an ImGui
         //          frame is open: Game ImGui calls are only valid while this is true AND between
         //          this frame's beginFrame() and renderer.render().

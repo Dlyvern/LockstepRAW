@@ -88,6 +88,7 @@ namespace game
     // heldWeapons:  the weapon found on each armed model drawn so far.
     // reactionRigs: the joints hit reactions turn, per armed model drawn so far.
     // reactionTuning: how hit reactions look.
+    // isCrouchForced: dev (`--dev-npc-crouch`, dev panel): every living NPC is drawn crouched.
     struct NpcLooks
     {
         std::vector<NpcLook> looks;
@@ -96,6 +97,7 @@ namespace game
         std::array<NpcModelWeapon, k_npcBodyCount> heldWeapons{};
         std::array<ReactionRig, k_npcBodyCount> reactionRigs{};
         HitReactionTuning reactionTuning{};
+        bool isCrouchForced{false};
     };
 
     // Starts a presentation frame of NPC drawing.

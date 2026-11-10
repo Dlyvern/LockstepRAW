@@ -3,6 +3,7 @@
 #include "Characters/ViewModelSights.hpp"
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
+#include "Presentation/Mirrors.hpp"
 #include "Simulation/HostSimulation.hpp"
 #include "Weapons/WeaponSockets.hpp"
 
@@ -13,6 +14,7 @@
 #include <imgui.h>
 #endif
 
+#include <algorithm>
 #include <array>
 
 namespace game
@@ -49,7 +51,7 @@ namespace game
             if (const std::optional<math::Vec3> direction = viewModelShotDirection(viewModel, fov))
             {
                 state.local.aimOffset = clampAimOffset(aimOffsetTowards(viewModel.lastYaw, viewModel.lastPitch,
-                    *direction), state.settings.spread);
+                    *direction), weaponStats(state.settings.weapons, state.local.command.weapon).spread);
             }
         }
 
@@ -90,6 +92,27 @@ namespace game
             return FlashlightMount{.position = socket->muzzle - socket->forward * state.flashlights.tuning.partnerBack,
                 .direction = direction};
         }
+
+        void drawPawnOptics(const GameState& state, lockstep::render::Renderer& renderer, std::size_t local)
+        {
+            if (!state.pawnCharacters)
+            {
+                return;
+            }
+
+            for (std::size_t index = 0; index < k_playerCount; ++index)
+            {
+                const OpticModel* optic = opticModel(state.optics, state.local.statuses[index].optic);
+                const std::optional<WeaponSocket> socket = optic ? pawnWeaponSocket(*state.pawnCharacters, index)
+                                                                 : std::nullopt;
+
+                if (socket)
+                {
+                    drawOptic(renderer, *optic, socket->optic,
+                        index == local ? k_mirrorOnlyLayer : lockstep::render::k_defaultRenderLayer);
+                }
+            }
+        }
     } //namespace
 
     void presentWeaponHandling(GameState& state, EngineContext& engine, const std::optional<math::Transform>& localPawn,
@@ -113,6 +136,7 @@ namespace game
         }
 
         lights.mounts[partner] = partnerMount(state, partner);
+        drawPawnOptics(state, engine.renderer, local);
         presentFlashlights(state.flashlights, engine.renderer, lights);
 
         WeaponFeedbackFrame feedback{.flashlightOn = lights.isOn,
@@ -138,7 +162,8 @@ namespace game
 
     math::Vec3 localShotDirection(const GameState& state, const EngineContext& engine, uint8_t shotNumber)
     {
-        return shotDirection(state.local.command, localPawnIndex(engine), shotNumber, state.settings.spread);
+        return shotDirection(state.local.command, localPawnIndex(engine), shotNumber,
+            weaponStats(state.settings.weapons, state.local.command.weapon).spread);
     }
 
     float heldBreathFocus(const GameState& state)
@@ -148,7 +173,12 @@ namespace game
             return 0.0f;
         }
 
-        return state.pawnCharacters->viewModel.breath.steadiness * state.weaponFeedback.tuning.holdFocus;
+        const ViewModelState& viewModel = state.pawnCharacters->viewModel;
+        const float breath = viewModel.breath.steadiness * state.weaponFeedback.tuning.holdFocus;
+        const float scoped = viewModel.opticAim && viewModel.opticAim->isMagnified
+            ? viewModelZoom(viewModel) * state.optics.scopeTuning.outerBlur : 0.0f;
+
+        return std::max(breath, scoped);
     }
 
 #if LOCKSTEP_DEV_TOOLS
@@ -170,54 +200,15 @@ namespace game
         ImGui::Text("Last host shot: %s at %.1f m", toString(state.simulation.lastShot.outcome),
             state.simulation.lastShot.distance);
 
-        if (ImGui::TreeNode("Fire rate"))
+        for (std::size_t index = 0; index < k_weaponCount; ++index)
         {
-            ImGui::SliderFloat("Rounds per minute", &settings.fire.roundsPerMinute, 60.0f, 1500.0f);
-            int burst = settings.fire.burstLength;
-
-            if (ImGui::SliderInt("Burst length", &burst, 2, 5))
+            if (ImGui::TreeNode(weaponName(static_cast<WeaponKind>(index))))
             {
-                settings.fire.burstLength = static_cast<uint8_t>(burst);
+                weaponStatsDevSection(settings.weapons[index]);
+                ImGui::TreePop();
             }
-
-            ImGui::SliderFloat("Burst pause (s)", &settings.fire.burstPause, 0.0f, 0.5f);
-            ImGui::SliderFloat("Host rate tolerance", &settings.fire.rateTolerance, 0.0f, 1.0f);
-            ImGui::TreePop();
         }
 
-        if (ImGui::TreeNode("Camera recoil"))
-        {
-            RecoilSettings& camera = settings.recoil;
-            ImGui::SliderFloat("Climb per shot (rad)", &camera.climb, 0.0f, 0.04f, "%.4f");
-            ImGui::SliderFloat("First shot x", &camera.firstShotScale, 0.5f, 3.0f);
-            ImGui::SliderFloat("Build per shot", &camera.build, 0.0f, 0.2f);
-            ImGui::SliderFloat("Max build x", &camera.maxBuild, 1.0f, 3.0f);
-            ImGui::SliderFloat("Wander per shot (rad)", &camera.wander, 0.0f, 0.02f, "%.4f");
-            ImGui::SliderFloat("Wander band (rad)", &camera.wanderLimit, 0.0f, 0.1f, "%.4f");
-            ImGui::SliderFloat("Wander pull", &camera.wanderPull, 0.0f, 1.0f);
-            ImGui::SliderFloat("Kick time (s)", &camera.kickSeconds, 0.0f, 0.2f);
-            ImGui::SliderFloat("Recovery delay (s)", &camera.recoverDelay, 0.0f, 0.6f);
-            ImGui::SliderFloat("Recovery rate", &camera.recoverRate, 0.0f, 20.0f);
-            ImGui::SliderFloat("Recovered fraction", &camera.recoverAmount, 0.0f, 1.0f);
-            ImGui::SliderFloat("String ends after (s)", &camera.streakSeconds, 0.05f, 1.0f);
-            ImGui::SliderFloat("Aiming x", &camera.aimScale, 0.0f, 1.0f);
-            ImGui::SliderFloat("Crouched x", &camera.crouchScale, 0.0f, 1.0f);
-            ImGui::TreePop();
-        }
-
-        if (ImGui::TreeNode("Spread"))
-        {
-            SpreadSettings& spread = settings.spread;
-            ImGui::SliderFloat("Hip (rad)", &spread.hip, 0.0f, 0.1f, "%.4f");
-            ImGui::SliderFloat("Aiming (rad)", &spread.aim, 0.0f, 0.02f, "%.4f");
-            ImGui::SliderFloat("Moving (rad)", &spread.moving, 0.0f, 0.1f, "%.4f");
-            ImGui::SliderFloat("Running (rad)", &spread.sprinting, 0.0f, 0.15f, "%.4f");
-            ImGui::SliderFloat("Crouched x", &spread.crouchScale, 0.0f, 1.0f);
-            ImGui::SliderFloat("Max sight offset (rad)", &spread.maxAimOffset, 0.0f, 0.4f);
-            ImGui::TreePop();
-        }
-
-        penetrationDevSection(settings.penetration);
         flashlightDevSection(state.flashlights);
         weaponFeedbackDevSection(state.weaponFeedback);
     }

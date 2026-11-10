@@ -35,14 +35,14 @@ namespace lockstep::render
         }
 
         ShadowTile perspectiveTile(const math::Vec3& position, const math::Vec3& direction, float fov, float range,
-            uint32_t tile)
+            uint32_t tile, uint32_t atlasWidth)
         {
             const math::Mat4 view = math::lookAt(position, position + direction, upFor(direction));
 
             ShadowTile result{};
             result.viewProjection = math::perspective(fov, 1.0f, k_spotShadowNear, range) * view;
             result.atlasViewProjection = atlasTileTransform(tile) * result.viewProjection;
-            result.texelSize = 2.0f * std::tan(fov * 0.5f) / static_cast<float>(shadowTileTexels(tile));
+            result.texelSize = 2.0f * std::tan(fov * 0.5f) / static_cast<float>(shadowTileTexels(tile, atlasWidth));
 
             return result;
         }
@@ -68,9 +68,11 @@ namespace lockstep::render
             static_cast<float>(local / k_localTilesPerRow) * size / height, size / width, size / height};
     }
 
-    uint32_t shadowTileTexels(uint32_t tile)
+    uint32_t shadowTileTexels(uint32_t tile, uint32_t atlasWidth)
     {
-        return tile < k_sunShadowTiles ? k_shadowTileSize : k_localShadowTileSize;
+        const uint32_t texels = tile < k_sunShadowTiles ? k_shadowTileSize : k_localShadowTileSize;
+
+        return texels * atlasWidth / k_shadowAtlasWidth;
     }
 
     math::Mat4 atlasTileTransform(uint32_t tile)
@@ -86,7 +88,8 @@ namespace lockstep::render
     }
 
     void fitSunCascades(const Camera& camera, float aspectRatio, const math::Vec3& direction,
-        const ShadowSettings& settings, uint32_t count, std::array<ShadowTile, k_maxShadowTiles>& tiles)
+        const ShadowSettings& settings, uint32_t count, uint32_t atlasWidth,
+        std::array<ShadowTile, k_maxShadowTiles>& tiles)
     {
         const math::Vec3 forward = math::normalize(camera.target - camera.position);
         const float tanY = std::tan(camera.verticalFov * 0.5f);
@@ -107,7 +110,7 @@ namespace lockstep::render
             const float radius = std::ceil(std::sqrt(farOffset * farOffset + sliceFar * sliceFar * slope2) * 16.0f) / 16.0f;
             const math::Vec3 centre = camera.position + forward * centreDistance;
 
-            const float texelSize = radius * 2.0f / static_cast<float>(k_shadowTileSize);
+            const float texelSize = radius * 2.0f / static_cast<float>(shadowTileTexels(cascade, atlasWidth));
             math::Vec3 lightCentre = math::transformPoint(lightRotation, centre);
             lightCentre.x = std::floor(lightCentre.x / texelSize) * texelSize;
             lightCentre.y = std::floor(lightCentre.y / texelSize) * texelSize;
@@ -123,18 +126,18 @@ namespace lockstep::render
         }
     }
 
-    ShadowTile fitSpotShadow(const SpotLight& light, uint32_t tile)
+    ShadowTile fitSpotShadow(const SpotLight& light, uint32_t tile, uint32_t atlasWidth)
     {
         const float fov = std::fmin(light.outerAngle * 2.0f * k_spotShadowFovMargin, k_maxSpotShadowFov);
 
-        return perspectiveTile(light.position, math::normalize(light.direction), fov, light.range, tile);
+        return perspectiveTile(light.position, math::normalize(light.direction), fov, light.range, tile, atlasWidth);
     }
 
-    ShadowTile fitPointShadowFace(const PointLight& light, uint32_t face, uint32_t tile)
+    ShadowTile fitPointShadowFace(const PointLight& light, uint32_t face, uint32_t tile, uint32_t atlasWidth)
     {
-        const float edge = 2.0f * k_faceEdgeTexels / static_cast<float>(shadowTileTexels(tile));
+        const float edge = 2.0f * k_faceEdgeTexels / static_cast<float>(shadowTileTexels(tile, atlasWidth));
         const float fov = 2.0f * std::atan(1.0f / (1.0f - edge));
 
-        return perspectiveTile(light.position, k_faceDirections[face], fov, light.range, tile);
+        return perspectiveTile(light.position, k_faceDirections[face], fov, light.range, tile, atlasWidth);
     }
 } //namespace lockstep::render

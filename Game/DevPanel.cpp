@@ -361,6 +361,7 @@ namespace game
             roomDevSection(state);
             stationDevSection(state, engine);
             pawnCharactersDevSection(state.pawnCharacters ? &*state.pawnCharacters : nullptr);
+            opticsDevSection(state.optics);
             headMotionDevSection(state.headMotion);
             footstepsDevSection(state.footsteps);
             kickEffectsDevSection(state.kicks);

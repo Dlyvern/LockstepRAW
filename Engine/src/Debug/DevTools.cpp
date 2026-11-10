@@ -5,6 +5,7 @@
 #include "AudioPanel.hpp"
 #include "EnginePanel.hpp"
 #include "FrameTimeHistory.hpp"
+#include "GpuTimingLog.hpp"
 #include "GraphicsPanel.hpp"
 #include "ImGuiInput.hpp"
 #include "ImGuiOverlayPass.hpp"
@@ -129,6 +130,7 @@ namespace lockstep::debug
         AudioPanelState audioPanel;
         GraphicsPanelState graphicsPanel;
         FrameTimeHistories frameTimes;
+        GpuTimingLog gpuTimingLog;
     };
 
     Result<DevTools> DevTools::create(render::Renderer& renderer, platform::Window& window)
@@ -266,6 +268,16 @@ namespace lockstep::debug
         if (stats.gpuTimingValid)
         {
             frameTimes.gpu.add(stats.gpuFrameMs);
+        }
+
+        recordGpuTimings(m_state->gpuTimingLog, *m_state->renderer->graph);
+    }
+
+    void DevTools::logGpuTimings(bool enabled)
+    {
+        if (m_state)
+        {
+            m_state->gpuTimingLog.enabled = enabled;
         }
     }
 

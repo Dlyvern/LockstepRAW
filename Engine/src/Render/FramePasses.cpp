@@ -217,7 +217,7 @@ namespace lockstep::render
     vela::graphics::PassDescription ShadowPass::describe() const
     {
         vela::graphics::AttachmentSlot depth = clearedSlot(k_shadowMapAttachment, k_depthFormat);
-        depth.size = {k_shadowAtlasWidth, k_shadowAtlasHeight};
+        depth.size = {m_state->shadowAtlasWidth, m_state->shadowAtlasWidth / 2};
         depth.clear.depth = 1.0f;
 
         vela::graphics::PassDescription description{};
@@ -240,9 +240,10 @@ namespace lockstep::render
             }
 
             const math::Vec4 rect = shadowTileRect(tile);
-            const uint32_t texels = shadowTileTexels(tile);
-            recorder.setScissor(static_cast<int32_t>(rect.x * static_cast<float>(k_shadowAtlasWidth)),
-                static_cast<int32_t>(rect.y * static_cast<float>(k_shadowAtlasHeight)), texels, texels);
+            const uint32_t atlasWidth = m_state->shadowAtlasWidth;
+            const uint32_t texels = shadowTileTexels(tile, atlasWidth);
+            recorder.setScissor(static_cast<int32_t>(rect.x * static_cast<float>(atlasWidth)),
+                static_cast<int32_t>(rect.y * static_cast<float>(atlasWidth / 2)), texels, texels);
 
             const math::Mat4& tileViewProjection = prepared.tiles[tile].atlasViewProjection;
 
@@ -337,6 +338,7 @@ namespace lockstep::render
         description.inputs.push_back({std::string(k_shadowMapAttachment), vela::graphics::InputUsage::Sampled});
         description.inputs.push_back({std::string(k_environmentAttachment), vela::graphics::InputUsage::Sampled});
         description.inputs.push_back({std::string(k_reflectionColorAttachment), vela::graphics::InputUsage::Sampled});
+        description.inputs.push_back({std::string(k_scopeColorAttachment), vela::graphics::InputUsage::Sampled});
 
         return description;
     }
@@ -361,7 +363,23 @@ namespace lockstep::render
         {
             for (const uint32_t index : list)
             {
-                recordSceneDraw(recorder, m_state->draws[index], PbrView::ViewModel);
+                const DrawItem& item = m_state->draws[index];
+
+                if (item.isSightWindow)
+                {
+                    recordSceneDraw(recorder, item, PbrView::SightWindow);
+                    continue;
+                }
+
+                if (!item.isScopeLens || !m_state->scope.active)
+                {
+                    recordSceneDraw(recorder, item, PbrView::ViewModel);
+                    continue;
+                }
+
+                recorder.bindAttachment(k_planarReflectionSlot, std::string(k_scopeColorAttachment));
+                recordSceneDraw(recorder, item, PbrView::ScopeLens);
+                recorder.bindAttachment(k_planarReflectionSlot, std::string(k_reflectionColorAttachment));
             }
         };
 

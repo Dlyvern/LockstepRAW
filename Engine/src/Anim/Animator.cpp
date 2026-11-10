@@ -13,6 +13,27 @@ namespace lockstep::anim
             return clip < clips.size() ? clips[clip].duration : 0.0f;
         }
 
+        math::Quat parentRotation(const Skeleton& skeleton, const Pose& pose, uint32_t joint)
+        {
+            math::Quat rotation{};
+            uint32_t parent = skeleton.joints[joint].parent;
+
+            while (parent < skeleton.joints.size())
+            {
+                rotation = pose.joints[parent].rotation * rotation;
+                parent = skeleton.joints[parent].parent;
+            }
+
+            return rotation;
+        }
+
+        math::Transform blendTransforms(const math::Transform& from, const math::Transform& to, float weight)
+        {
+            return math::Transform{.position = math::lerp(from.position, to.position, weight),
+                .rotation = math::slerp(from.rotation, to.rotation, weight),
+                .scale = math::lerp(from.scale, to.scale, weight)};
+        }
+
         bool sameSamples(std::span<const BlendSample> left, std::span<const BlendSample> right)
         {
             return std::equal(left.begin(), left.end(), right.begin(), right.end(),
@@ -61,9 +82,62 @@ namespace lockstep::anim
         return m_parameter;
     }
 
+    void Animator::playLayer(uint32_t clip, const BoneMask& mask, float fadeSeconds, const PlaybackOptions& options)
+    {
+        m_layerMask = mask;
+        m_layerTarget = 1.0f;
+        m_layerFadeSeconds = std::max(fadeSeconds, 0.0f);
+        const bool isSameClip = m_hasLayer && m_layer.samples.size() == 1 && m_layer.samples.front().clip == clip;
+
+        if (isSameClip)
+        {
+            m_layer.options = options;
+            return;
+        }
+
+        Motion motion{};
+        motion.samples.push_back(BlendSample{.clip = clip, .parameter = 0.0f});
+        motion.options = options;
+
+        if (m_hasLayer && m_layerWeight > 0.0f && fadeSeconds > 0.0f)
+        {
+            m_previousLayer = std::move(m_layer);
+            m_hasPreviousLayer = true;
+            m_layerBlendSeconds = fadeSeconds;
+            m_layerBlendElapsed = 0.0f;
+        }
+
+        m_layer = std::move(motion);
+        m_hasLayer = true;
+
+        if (fadeSeconds <= 0.0f)
+        {
+            m_layerWeight = 1.0f;
+        }
+    }
+
+    void Animator::stopLayer(float fadeSeconds)
+    {
+        m_layerTarget = 0.0f;
+        m_layerFadeSeconds = std::max(fadeSeconds, 0.0f);
+
+        if (fadeSeconds <= 0.0f)
+        {
+            m_layerWeight = 0.0f;
+            m_hasLayer = false;
+            m_hasPreviousLayer = false;
+        }
+    }
+
+    float Animator::layerWeight() const noexcept
+    {
+        return m_hasLayer ? m_layerWeight : 0.0f;
+    }
+
     void Animator::advance(std::span<const AnimationClip> clips, float deltaSeconds)
     {
         const float delta = std::max(deltaSeconds, 0.0f);
+        advanceLayer(clips, delta);
 
         if (m_hasCurrent)
         {
@@ -95,13 +169,81 @@ namespace lockstep::anim
 
         evaluateMotion(m_current, skeleton, clips, pose);
 
-        if (!m_hasPrevious || m_fadeSeconds <= 0.0f)
+        if (m_hasPrevious && m_fadeSeconds > 0.0f)
+        {
+            evaluateMotion(m_previous, skeleton, clips, m_previousPose);
+            blendPoses(m_previousPose, pose, m_fadeElapsed / m_fadeSeconds, pose);
+        }
+
+        applyLayer(skeleton, clips, pose);
+    }
+
+    void Animator::advanceLayer(std::span<const AnimationClip> clips, float deltaSeconds)
+    {
+        if (!m_hasLayer)
         {
             return;
         }
 
-        evaluateMotion(m_previous, skeleton, clips, m_previousPose);
-        blendPoses(m_previousPose, pose, m_fadeElapsed / m_fadeSeconds, pose);
+        const float step = m_layerFadeSeconds > 0.0f ? deltaSeconds / m_layerFadeSeconds : 1.0f;
+        m_layerWeight = m_layerTarget > m_layerWeight ? std::min(m_layerWeight + step, m_layerTarget)
+                                                      : std::max(m_layerWeight - step, m_layerTarget);
+        advanceMotion(m_layer, clips, deltaSeconds);
+
+        if (m_hasPreviousLayer)
+        {
+            advanceMotion(m_previousLayer, clips, deltaSeconds);
+            m_layerBlendElapsed += deltaSeconds;
+            m_hasPreviousLayer = m_layerBlendElapsed < m_layerBlendSeconds;
+        }
+
+        if (m_layerTarget <= 0.0f && m_layerWeight <= 0.0f)
+        {
+            m_hasLayer = false;
+            m_hasPreviousLayer = false;
+        }
+    }
+
+    void Animator::applyLayer(const Skeleton& skeleton, std::span<const AnimationClip> clips, Pose& pose)
+    {
+        if (!m_hasLayer || m_layerWeight <= 0.0f || pose.joints.size() != skeleton.joints.size())
+        {
+            return;
+        }
+
+        evaluateMotion(m_layer, skeleton, clips, m_layerPose);
+
+        if (m_hasPreviousLayer && m_layerBlendSeconds > 0.0f)
+        {
+            evaluateMotion(m_previousLayer, skeleton, clips, m_previousLayerPose);
+            blendPoses(m_previousLayerPose, m_layerPose, m_layerBlendElapsed / m_layerBlendSeconds, m_layerPose);
+        }
+
+
+        for (const uint32_t root : m_layerMask.modelSpaceRoots)
+        {
+            if (root >= pose.joints.size())
+            {
+                continue;
+            }
+
+            const math::Quat baseParent = parentRotation(skeleton, pose, root);
+            const math::Quat layerParent = parentRotation(skeleton, m_layerPose, root);
+            m_layerPose.joints[root].rotation = math::normalize(math::inverse(baseParent) * layerParent
+                * m_layerPose.joints[root].rotation);
+        }
+
+        const std::size_t count = std::min(m_layerMask.weights.size(), pose.joints.size());
+
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            const float weight = m_layerMask.weights[index] * m_layerWeight;
+
+            if (weight > 0.0f)
+            {
+                pose.joints[index] = blendTransforms(pose.joints[index], m_layerPose.joints[index], weight);
+            }
+        }
     }
 
     bool Animator::isFading() const noexcept

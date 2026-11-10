@@ -2,7 +2,9 @@
 #define LOCKSTEP_GAME_PLAYER_PLAYER_COMMAND_HPP
 
 #include "Weapons/FireModes.hpp"
+#include "Weapons/OpticKind.hpp"
 #include "Weapons/Recoil.hpp"
+#include "Weapons/WeaponKind.hpp"
 #include "Weapons/WeaponStance.hpp"
 
 #include <Lockstep/Core/Math.hpp>
@@ -17,6 +19,11 @@
 namespace game
 {
     namespace math = lockstep::math;
+
+    struct WeaponStats;
+
+    // Per-weapon stats of the loadout (Weapons/WeaponCatalog.hpp).
+    using WeaponStatsTable = std::array<WeaponStats, k_weaponCount>;
 
     // Bytes an encoded PlayerCommand takes.
     inline constexpr std::size_t k_playerCommandBytes{19};
@@ -48,6 +55,10 @@ namespace game
     //             saw them. The host clamps it (SpreadSettings::maxAimOffset); see shotDirection().
     // isFlashlightOn: the weapon flashlight is on (replicated to the partner via PlayerStatus).
     // kick:       the player holds kick (V). A fresh press kicks (see PawnKick.hpp).
+    // optic:      the optic on the player's weapon in hand (the loadout choice; replicated to the
+    //             partner via PlayerStatus, presentation only).
+    // weapon:     the loadout weapon the player wants in hand (1, 2, 3 or the mouse wheel); the
+    //             host switches to it (PlayerStatus::weapon).
     struct PlayerCommand
     {
         math::Vec2 move{0.0f, 0.0f};
@@ -68,6 +79,8 @@ namespace game
         math::Vec2 aimOffset{0.0f, 0.0f};
         bool isFlashlightOn{false};
         bool kick{false};
+        OpticKind optic{OpticKind::None};
+        WeaponKind weapon{WeaponKind::M4};
     };
 
     // The local player's look, shot and interact counters, kept between ticks to build
@@ -81,6 +94,11 @@ namespace game
     // trigger:       fire mode, cadence and predicted rounds.
     // recoil:        the camera recoil, added to the look in each command.
     // isFlashlightOn: the flashlight toggle.
+    // opticSensitivityScale: multiplier on the aimed look sensitivity from the optic aimed
+    //                through (1 / magnification^power), set by the presentation each frame.
+    // weapon:        the weapon asked for (1, 2, 3, mouse wheel).
+    // previousWeapon: the weapon asked for before it (put away during the switch).
+    // switchSeconds: Player seconds left of the predicted switch to it (no shots meanwhile).
     struct LocalControls
     {
         float yaw{0.0f};
@@ -93,6 +111,10 @@ namespace game
         Trigger trigger{};
         RecoilState recoil{};
         bool isFlashlightOn{false};
+        float opticSensitivityScale{1.0f};
+        WeaponKind weapon{WeaponKind::M4};
+        WeaponKind previousWeapon{WeaponKind::M4};
+        float switchSeconds{0.0f};
     };
 
     // The key that lowers or raises the weapon.
@@ -120,8 +142,8 @@ namespace game
     // magazine:     rounds in the magazine (as last replicated); the trigger predicts its own
     //               shots on top, and a click on an empty magazine asks for a reload instead.
     // isReloading:  a reload runs (as last replicated).
-    // fire:         the fire rate (host settings).
-    // recoil:       the camera recoil pattern.
+    // weapons:      every weapon's fire rate, modes, recoil and switch times (host settings); the
+    //               one in LocalControls::weapon is in use. Must not be null.
     // aimOffset:    the sight offset of the newest presented frame (see PlayerCommand::aimOffset).
     // canToggleFlashlight: F toggles the flashlight this tick (nothing to interact with or revive).
     // scriptedFire: dev drills only: replaces the fire and aim buttons (no captured cursor needed).
@@ -133,8 +155,7 @@ namespace game
         bool isReady{true};
         int32_t magazine{0};
         bool isReloading{false};
-        FireModeSettings fire{};
-        RecoilSettings recoil{};
+        const WeaponStatsTable* weapons{nullptr};
         math::Vec2 aimOffset{0.0f, 0.0f};
         bool canToggleFlashlight{false};
         std::optional<FireButtons> scriptedFire{};
@@ -156,15 +177,17 @@ namespace game
         float maxPitch{1.45f};
     };
 
-    // settings: sensitivity settings.
-    // isAiming: the player aims down sights.
-    // Returns:  radians of look per pixel of mouse movement.
-    [[nodiscard]] float lookSensitivity(const ControlSettings& settings, bool isAiming);
+    // settings:    sensitivity settings.
+    // isAiming:    the player aims down sights.
+    // opticScale:  multiplier while aiming through a magnified optic (LocalControls::opticSensitivityScale).
+    // Returns:     radians of look per pixel of mouse movement.
+    [[nodiscard]] float lookSensitivity(const ControlSettings& settings, bool isAiming, float opticScale = 1.0f);
 
     // Builds this tick's command from local input: WASD to move, Shift to run, hold Ctrl or toggle
     // C to crouch (Ctrl or C while running slides), Space to jump (a press also clears the crouch
     // toggle), hold Q / E to lean, mouse to look, left mouse to fire (by the fire mode, B cycles
-    // it), right mouse to aim down sights, R to reload, V to kick, X (k_lowerWeaponKey) to lower
+    // it within the weapon's modes), 1 / 2 / 3 or the mouse wheel to pick the M4, the Glock or
+    // the KRISS (no shots while switching), right mouse to aim down sights, R to reload, V to kick, X (k_lowerWeaponKey) to lower
     // or raise the weapon, F to interact (held too, for reviving) or, with nothing to interact with, to toggle
     // the weapon flashlight, hold Left Alt or the middle mouse button for bullet-time. Look, fire,
     // aim, lower and interact only count while the cursor is captured. With the weapon lowered, a

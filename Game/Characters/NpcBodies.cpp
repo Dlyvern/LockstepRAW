@@ -33,7 +33,10 @@ namespace game
                 return std::nullopt;
             }
 
-            return NpcArmedBody{.body = std::move(*body), .rifle = rifle.value(), .aiming = aiming.value()};
+            std::optional<ArmedCrouch> crouch = findArmedCrouch(body->skinned(), k_armedCrouchNames);
+
+            return NpcArmedBody{.body = std::move(*body), .rifle = rifle.value(), .aiming = aiming.value(),
+                .crouch = std::move(crouch)};
         }
     } //namespace
 
@@ -76,13 +79,15 @@ namespace game
     {
         if (const auto& armed = characters.npcBodies.bodies[static_cast<std::size_t>(body)].armed; armed)
         {
-            return NpcArmedView{.body = &armed->body, .rifle = &armed->rifle, .aiming = &armed->aiming};
+            return NpcArmedView{.body = &armed->body, .rifle = &armed->rifle, .aiming = &armed->aiming,
+                .crouch = armed->crouch ? &*armed->crouch : nullptr};
         }
 
         if (characters.armed)
         {
             return NpcArmedView{.body = &characters.armed->body, .rifle = &characters.armed->rifle,
-                .aiming = &characters.armed->aiming};
+                .aiming = &characters.armed->aiming,
+                .crouch = characters.armed->crouch ? &*characters.armed->crouch : nullptr};
         }
 
         return std::nullopt;

@@ -1,6 +1,7 @@
 #include "ScreenPass.hpp"
 
 #include "FramePasses.hpp"
+#include "RenderScale.hpp"
 #include "RendererState.hpp"
 #include "VelaConversions.hpp"
 
@@ -80,12 +81,7 @@ namespace lockstep::render
         auto pass = std::make_unique<ScreenPass>(std::move(description.outputs), std::move(description.inputs),
             std::move(material).value(), description.scale, std::move(recorder));
 
-        if (auto added = graph.addPass(std::string(description.name), std::move(pass)); !added)
-        {
-            return toError(added.error());
-        }
-
-        return {};
+        return addScaledPass(graph, state, description.name, std::move(pass));
     }
 
     vela::graphics::AttachmentSlot clearedScreenSlot(std::string_view name, vela::graphics::TextureFormat format,

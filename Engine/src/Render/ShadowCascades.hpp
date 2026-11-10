@@ -35,9 +35,10 @@ namespace lockstep::render
     // Returns: the tile's rectangle in atlas uv: xy the top-left corner, zw the size.
     [[nodiscard]] math::Vec4 shadowTileRect(uint32_t tile);
 
-    // tile:    a tile index, below k_maxShadowTiles.
-    // Returns: the tile's side length in texels.
-    [[nodiscard]] uint32_t shadowTileTexels(uint32_t tile);
+    // tile:       a tile index, below k_maxShadowTiles.
+    // atlasWidth: width of the shadow atlas in texels (k_shadowAtlasWidth at the default size).
+    // Returns:    the tile's side length in texels.
+    [[nodiscard]] uint32_t shadowTileTexels(uint32_t tile, uint32_t atlasWidth);
 
     // tile:    a tile index, below k_maxShadowTiles.
     // Returns: the clip-space transform squeezing a full viewport into that tile.
@@ -49,15 +50,18 @@ namespace lockstep::render
     // direction:   unit direction sunlight travels in.
     // settings:    cascade distance and split distribution.
     // count:       cascades to fit, 1 to k_sunShadowTiles.
+    // atlasWidth:  width of the shadow atlas in texels.
     // tiles:       receives the cascades in tiles 0..count-1.
     void fitSunCascades(const Camera& camera, float aspectRatio, const math::Vec3& direction,
-        const ShadowSettings& settings, uint32_t count, std::array<ShadowTile, k_maxShadowTiles>& tiles);
+        const ShadowSettings& settings, uint32_t count, uint32_t atlasWidth,
+        std::array<ShadowTile, k_maxShadowTiles>& tiles);
 
     // Fits a spot light's perspective shadow into atlas tile `tile`.
-    // light: the spot light.
-    // tile:  the atlas tile.
-    // Returns: the tile.
-    [[nodiscard]] ShadowTile fitSpotShadow(const SpotLight& light, uint32_t tile);
+    // light:      the spot light.
+    // tile:       the atlas tile.
+    // atlasWidth: width of the shadow atlas in texels.
+    // Returns:    the tile.
+    [[nodiscard]] ShadowTile fitSpotShadow(const SpotLight& light, uint32_t tile, uint32_t atlasWidth);
 
     // Fits one cube face of a point light's shadow into atlas tile `tile`. The face's field of view
     // is a little over 90 degrees, so the filter footprint of a lookup near a face edge stays inside
@@ -65,8 +69,10 @@ namespace lockstep::render
     // light: the point light.
     // face:  the cube face, 0 to 5 (+X, -X, +Y, -Y, +Z, -Z).
     // tile:  the atlas tile.
+    // atlasWidth: width of the shadow atlas in texels.
     // Returns: the tile.
-    [[nodiscard]] ShadowTile fitPointShadowFace(const PointLight& light, uint32_t face, uint32_t tile);
+    [[nodiscard]] ShadowTile fitPointShadowFace(const PointLight& light, uint32_t face, uint32_t tile,
+        uint32_t atlasWidth);
 } //namespace lockstep::render
 
 #endif //LOCKSTEP_RENDER_SHADOW_CASCADES_HPP

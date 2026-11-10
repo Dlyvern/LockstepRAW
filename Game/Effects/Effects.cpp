@@ -154,7 +154,8 @@ namespace game
                 return false;
             }
 
-            auto particles = render::ParticleSystem::create(render::ParticleSystemDescription{});
+            auto particles = render::ParticleSystem::create(
+                render::ParticleSystemDescription{.maxParticles = renderer.graphicsQuality().particleBudget});
 
             if (!particles)
             {

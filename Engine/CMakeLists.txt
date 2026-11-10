@@ -1,6 +1,7 @@
 add_library(LockstepEngine STATIC
     src/Anim/AnimationClip.cpp
     src/Anim/Animator.cpp
+    src/Anim/BoneMask.cpp
     src/Anim/DrivenPose.cpp
     src/Anim/Limbs.cpp
     src/Anim/Skeleton.cpp
@@ -69,6 +70,8 @@ add_library(LockstepEngine STATIC
     src/Render/LensPasses.cpp
     src/Render/FrameGraph.cpp
     src/Render/FramePasses.cpp
+    src/Render/GraphicsConfig.cpp
+    src/Render/GraphicsQuality.cpp
     src/Render/IndirectLighting.cpp
     src/Render/ParticlePass.cpp
     src/Render/ParticleSystem.cpp
@@ -80,9 +83,11 @@ add_library(LockstepEngine STATIC
     src/Render/Renderer.cpp
     src/Render/RendererResources.cpp
     src/Render/RendererState.cpp
+    src/Render/RenderScale.cpp
     src/Render/ResourceLifetime.cpp
     src/Render/RenderPassAdapter.cpp
     src/Render/ScreenPass.cpp
+    src/Render/ScopeView.cpp
     src/Render/ScreenSpaceReflections.cpp
     src/Render/ShaderLoader.cpp
     src/Render/ShadowCascades.cpp
@@ -119,6 +124,7 @@ if(LOCKSTEP_DEV_TOOLS)
         src/Debug/DevTools.cpp
         src/Debug/EnginePanel.cpp
         src/Debug/FrameTimeHistory.cpp
+        src/Debug/GpuTimingLog.cpp
         src/Debug/GraphicsLookPanel.cpp
         src/Debug/DetailLensPanel.cpp
         src/Debug/GraphicsPanel.cpp
@@ -126,6 +132,7 @@ if(LOCKSTEP_DEV_TOOLS)
         src/Debug/ImGuiOverlayPass.cpp
         src/Debug/IndirectLightingPanel.cpp
         src/Debug/NetPanel.cpp
+        src/Debug/QualityPanel.cpp
     )
     target_link_libraries(LockstepEngine PUBLIC imgui)
     target_compile_definitions(LockstepEngine PUBLIC LOCKSTEP_DEV_TOOLS=1)

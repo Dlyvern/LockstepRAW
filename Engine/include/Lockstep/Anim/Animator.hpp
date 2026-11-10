@@ -2,6 +2,7 @@
 #define LOCKSTEP_ANIM_ANIMATOR_HPP
 
 #include "Lockstep/Anim/AnimationClip.hpp"
+#include "Lockstep/Anim/BoneMask.hpp"
 #include "Lockstep/Anim/Skeleton.hpp"
 
 #include <cstdint>
@@ -30,7 +31,9 @@ namespace lockstep::anim
 
     // Plays clips on one skeleton: a single clip or a 1D blend between clips by a parameter (such
     // as idle/walk/run by speed), and crossfades from the previous motion when a new one starts.
-    // Clips of a blend share one normalized phase, so walk and run cycles stay in step.
+    // Clips of a blend share one normalized phase, so walk and run cycles stay in step. An
+    // optional override layer plays one more clip on the joints of a BoneMask (e.g. a rifle-aiming
+    // upper body over crouched legs), faded in and out by weight.
     // Plain data with no pointers into models; every call that needs the clips takes them, so an
     // Animator can live in Game state. Deterministic: time only moves by advance().
     class Animator
@@ -69,6 +72,23 @@ namespace lockstep::anim
         // pose:     receives the pose.
         void evaluate(const Skeleton& skeleton, std::span<const AnimationClip> clips, Pose& pose);
 
+        // Starts (or keeps) the override layer: `clip` replaces the base motion on the joints of
+        // `mask`, its weight easing to 1. Asking for the clip already playing only updates the mask
+        // and options; another clip crossfades from the old one.
+        // clip:        index into the clips later passed to advance() and evaluate().
+        // mask:        the joints it takes over.
+        // fadeSeconds: time to fade in (and to crossfade from another layer clip); 0 is at once.
+        // options:     looping and speed of the layer clip (it keeps its own time).
+        void playLayer(uint32_t clip, const BoneMask& mask, float fadeSeconds = 0.2f,
+            const PlaybackOptions& options = {});
+
+        // Fades the override layer out (its weight eases to 0); it stops once faded.
+        // fadeSeconds: time to fade out; 0 is at once.
+        void stopLayer(float fadeSeconds = 0.2f);
+
+        // Returns: the override layer's current weight, 0 (off) to 1.
+        [[nodiscard]] float layerWeight() const noexcept;
+
         // Returns: true while a crossfade is in progress.
         [[nodiscard]] bool isFading() const noexcept;
 
@@ -96,6 +116,8 @@ namespace lockstep::anim
         void evaluateMotion(const Motion& motion, const Skeleton& skeleton, std::span<const AnimationClip> clips,
             Pose& pose);
         void start(Motion&& motion, float fadeSeconds);
+        void advanceLayer(std::span<const AnimationClip> clips, float deltaSeconds);
+        void applyLayer(const Skeleton& skeleton, std::span<const AnimationClip> clips, Pose& pose);
 
         Motion m_current{};
         Motion m_previous{};
@@ -106,6 +128,18 @@ namespace lockstep::anim
         float m_parameter{0.0f};
         Pose m_scratch{};
         Pose m_previousPose{};
+        Motion m_layer{};
+        Motion m_previousLayer{};
+        BoneMask m_layerMask{};
+        bool m_hasLayer{false};
+        bool m_hasPreviousLayer{false};
+        float m_layerWeight{0.0f};
+        float m_layerTarget{0.0f};
+        float m_layerFadeSeconds{0.0f};
+        float m_layerBlendSeconds{0.0f};
+        float m_layerBlendElapsed{0.0f};
+        Pose m_layerPose{};
+        Pose m_previousLayerPose{};
     };
 } //namespace lockstep::anim
 

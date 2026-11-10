@@ -4,6 +4,7 @@
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
 #include "LensPasses.hpp"
+#include "RenderScale.hpp"
 #include "RendererState.hpp"
 #include "TemporalAntiAliasing.hpp"
 #include "VelaConversions.hpp"
@@ -244,12 +245,7 @@ namespace lockstep::render
         auto pass = std::make_unique<FullscreenPass>(std::move(output), std::move(inputs),
             std::move(material).value(), std::move(recorder));
 
-        if (auto added = graph.addPass(name, std::move(pass)); !added)
-        {
-            return toError(added.error());
-        }
-
-        return {};
+        return addScaledPass(graph, state, name, std::move(pass));
     }
 
     FullscreenPass::FullscreenPass(vela::graphics::AttachmentSlot output, std::vector<vela::graphics::PassInput> inputs,
