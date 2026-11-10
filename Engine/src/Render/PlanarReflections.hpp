@@ -62,7 +62,7 @@ namespace lockstep::render
         // Returns: the pass.
         [[nodiscard]] static Result<std::unique_ptr<ReflectionPass>> create(RendererState& state);
 
-        // Returns: the reflection colour, ambient, velocity and depth outputs (cleared) at
+        // Returns: the reflection colour, ambient, velocity, G-buffer and depth outputs (cleared) at
         //          RendererState::reflectionScale; the shadow and environment atlases as inputs.
         [[nodiscard]] vela::graphics::PassDescription describe() const override;
 

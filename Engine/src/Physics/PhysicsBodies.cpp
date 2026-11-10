@@ -3,6 +3,8 @@
 #include "PhysXConversions.hpp"
 #include "PhysicsState.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <type_traits>
 
 namespace lockstep::physics
@@ -10,6 +12,8 @@ namespace lockstep::physics
     namespace
     {
         const physx::PxQuat k_capsuleXToY{physx::PxHalfPi, physx::PxVec3(0.0f, 0.0f, 1.0f)};
+        constexpr physx::PxU16 k_maxConvexVertices{32};
+        constexpr std::size_t k_minConvexPoints{4};
 
         struct ShapeGeometry
         {
@@ -52,11 +56,33 @@ namespace lockstep::physics
                         .geometry = physx::PxCapsuleGeometry(value.radius, value.halfHeight),
                         .localPose = physx::PxTransform(k_capsuleXToY)};
                 }
-                else
+                else if constexpr (std::is_same_v<Shape, PlaneShape>)
                 {
                     return ShapeGeometry{.geometry = physx::PxPlaneGeometry()};
                 }
+                else
+                {
+                    return std::nullopt;
+                }
             }, shape);
+        }
+
+        physx::PxConvexMesh* createConvexMesh(PhysicsState& state, const ConvexShape& convex)
+        {
+            physx::PxConvexMeshDesc description;
+            description.points.count = static_cast<physx::PxU32>(convex.points.size());
+            description.points.stride = sizeof(math::Vec3);
+            description.points.data = convex.points.data();
+            description.flags = physx::PxConvexFlag::eCOMPUTE_CONVEX;
+            description.vertexLimit = k_maxConvexVertices;
+            const physx::PxCookingParams parameters(state.physics->getTolerancesScale());
+
+            return PxCreateConvexMesh(parameters, description, state.physics->getPhysicsInsertionCallback());
+        }
+
+        bool isFinite(const math::Vec3& point)
+        {
+            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
         }
 
         physx::PxTransform planePose(const PlaneShape& plane)
@@ -77,6 +103,15 @@ namespace lockstep::physics
                 if (!(math::lengthSquared(plane->normal) > 0.0f))
                 {
                     return Error{ErrorCode::InvalidArgument, "PhysicsWorld::createBody: plane normal is zero"};
+                }
+            }
+
+            if (const auto* convex = std::get_if<ConvexShape>(&description.shape))
+            {
+                if (convex->points.size() < k_minConvexPoints
+                    || !std::all_of(convex->points.begin(), convex->points.end(), isFinite))
+                {
+                    return Error{ErrorCode::InvalidArgument, "PhysicsWorld::createBody: a convex shape needs 4 finite points"};
                 }
             }
 
@@ -113,19 +148,41 @@ namespace lockstep::physics
             return valid.error();
         }
 
-        const std::optional<ShapeGeometry> geometry = toGeometry(description.shape);
+        PhysicsState& state = *m_state;
+        physx::PxConvexMesh* convexMesh = nullptr;
+        std::optional<ShapeGeometry> geometry;
+
+        if (const auto* convex = std::get_if<ConvexShape>(&description.shape))
+        {
+            convexMesh = createConvexMesh(state, *convex);
+
+            if (convexMesh == nullptr)
+            {
+                return Error{ErrorCode::PhysicsFailure, state.errors.describeFailure("PhysicsWorld::createBody: convex hull failed")};
+            }
+
+            geometry = ShapeGeometry{.geometry = physx::PxConvexMeshGeometry(convexMesh)};
+        }
+        else
+        {
+            geometry = toGeometry(description.shape);
+        }
 
         if (!geometry)
         {
             return Error{ErrorCode::InvalidArgument, "PhysicsWorld::createBody: shape sizes must be > 0"};
         }
 
-        PhysicsState& state = *m_state;
         physx::PxMaterial* material = state.physics->createMaterial(description.friction, description.friction,
             description.restitution);
 
         if (material == nullptr)
         {
+            if (convexMesh != nullptr)
+            {
+                convexMesh->release();
+            }
+
             return Error{ErrorCode::PhysicsFailure, state.errors.describeFailure("PhysicsWorld::createBody: createMaterial failed")};
         }
 
@@ -134,6 +191,11 @@ namespace lockstep::physics
             ? physx::PxRigidActorExt::createExclusiveShape(*actor, geometry->geometry.any(), *material)
             : nullptr;
         material->release();
+
+        if (convexMesh != nullptr)
+        {
+            convexMesh->release();
+        }
 
         if (shape == nullptr)
         {
@@ -146,6 +208,11 @@ namespace lockstep::physics
         }
 
         shape->setLocalPose(geometry->localPose);
+
+        if (description.isDebris)
+        {
+            shape->setFlag(physx::PxShapeFlag::eSCENE_QUERY_SHAPE, false);
+        }
 
         if (auto* dynamic = actor->is<physx::PxRigidDynamic>())
         {

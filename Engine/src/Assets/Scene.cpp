@@ -148,7 +148,8 @@ namespace lockstep::assets
                 continue;
             }
 
-            renderer.submit(mesh.mesh, mesh.material, instance.transform);
+            renderer.submit(mesh.mesh, mesh.material, instance.transform, render::k_defaultRenderLayer,
+                instance.emissiveScale);
         }
     }
 } //namespace lockstep::assets

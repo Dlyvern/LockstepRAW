@@ -8,7 +8,9 @@ namespace lockstep::render
     struct RendererState;
 
     // Builds the Engine frame graph into RendererState::graph: environment, shadow, planar
-    // reflection and lit scene passes, then the post passes, presenting the display attachment.
+    // reflection and lit scene passes, the indirect lighting passes (ambient occlusion, contact
+    // shadows, screen-space reflections), the volumetric fog passes, then the post passes, presenting
+    // the display attachment.
     // state:   the renderer state the passes read every frame. Must outlive the graph.
     // Returns: success, or an error if a pass could not be created or added.
     [[nodiscard]] Status buildFrameGraph(RendererState& state);

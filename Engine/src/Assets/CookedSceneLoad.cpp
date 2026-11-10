@@ -154,6 +154,7 @@ namespace lockstep::assets
             description.metallicRoughness = textureAt(textures, material.metallicRoughness);
             description.occlusion = textureAt(textures, material.occlusion);
             description.emissive = textureAt(textures, material.emissive);
+            description.height = textureAt(textures, material.height);
 
             return description;
         }
@@ -219,6 +220,8 @@ namespace lockstep::assets
                 mesh.mesh = uploaded.value();
                 mesh.material = materials[cooked.material];
                 mesh.alphaMode = cooked.alphaMode;
+                const math::Vec3& emission = level.materials[cooked.material].factors.emissiveFactor;
+                mesh.isEmissive = emission.x > 0.0f || emission.y > 0.0f || emission.z > 0.0f;
                 mesh.localBounds = cooked.localBounds;
                 mesh.triangleCount = cooked.triangleCount;
                 mesh.collisionShape = cooked.collisionShape;
@@ -296,7 +299,7 @@ namespace lockstep::assets
             CookedModel& source = cooked.value();
             anim::SkinnedModel model{.name = std::move(source.name), .skeleton = std::move(source.skeleton), .parts = {},
                 .clips = std::move(source.clips), .jointRadii = std::move(source.jointRadii),
-                .bindBounds = source.bindBounds};
+                .bindBounds = source.bindBounds, .limbs = std::move(source.limbs)};
 
             for (const CookedSkinnedPart& part : source.parts)
             {
@@ -337,7 +340,7 @@ namespace lockstep::assets
 
                 context.scene.resources.meshes.push_back(mesh.value());
                 model.parts.push_back(anim::SkinnedModelPart{.mesh = mesh.value(), .material = material.value(),
-                    .materialName = part.materialName});
+                    .materialName = part.materialName, .limb = part.limb, .role = part.role});
                 context.scene.stats.triangleCount += data.value().indices.size() / 3;
             }
 

@@ -7,9 +7,12 @@ add_executable(LockstepCooker
     BlockEncoders.cpp
     CookerArguments.cpp
     CookerOutput.cpp
+    LimbCaps.cpp
+    LimbSplit.cpp
     PakWriter.cpp
     SceneCook.cpp
     SceneSource.cpp
+    SurfaceRules.cpp
     TextureCaps.cpp
     TextureCook.cpp
 )

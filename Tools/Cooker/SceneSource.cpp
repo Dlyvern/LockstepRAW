@@ -101,6 +101,7 @@ namespace lockstep::cooker
 
             const auto slot = static_cast<uint32_t>(builder.scene.materials.size());
             builder.scene.materials.push_back(cookMaterial(builder, material));
+            builder.scene.materialNames.emplace_back(material != nullptr && material->name != nullptr ? material->name : "");
             builder.materialSlots.emplace(material, slot);
 
             return slot;

@@ -30,6 +30,8 @@ namespace game
         constexpr std::string_view k_prisonerRole{"prisoner"};
         constexpr std::string_view k_chiefRole{"chief"};
         constexpr std::string_view k_idleSuffix{".idle."};
+        constexpr std::array<std::pair<std::string_view, std::string_view>, 1> k_lineRoles{{
+            {"cordonofficer", "cordon"}}};
         constexpr math::Vec3 k_upAxis{0.0f, 1.0f, 0.0f};
         constexpr float k_barkReach{2.5f};
         constexpr float k_barkHeight{1.5f};
@@ -152,7 +154,14 @@ namespace game
                 return {};
             }
 
-            const std::string base = std::string(level) + "." + std::string(role);
+            std::string_view lineRole = role;
+
+            for (const auto& [name, lines] : k_lineRoles)
+            {
+                lineRole = role == name ? lines : lineRole;
+            }
+
+            const std::string base = std::string(level.substr(0, level.find('_'))) + "." + std::string(lineRole);
             return role == k_prisonerRole ? base + "." : base + std::string(k_idleSuffix);
         }
 

@@ -22,13 +22,17 @@ namespace lockstep::cooker
     // Smallest automatic cap; textures are never capped below this by object size.
     inline constexpr uint32_t k_minAutomaticTextureCap{256};
 
+    // Largest automatic cap of a height map (parallax needs less resolution than colour).
+    inline constexpr uint32_t k_maxHeightTextureSize{1024};
+
     // UV extent above which a mesh counts as tiling (walls, floors) and is not capped by its size.
     inline constexpr float k_tilingUvExtent{1.5f};
 
     // Picks the top-mip size limit of every texture of a scene. Without `automatic` every texture
     // gets maxSize. Otherwise each mesh instance asks for texelsPerMetre times its world bounding
     // box diagonal, rounded up to a power of two and clamped to [256, maxSize]; an instance whose
-    // mesh's UVs span more than 1.5 asks for maxSize. A texture gets the largest request of the
+    // mesh's UVs span more than 1.5 asks for maxSize (height maps at most k_maxHeightTextureSize).
+    // A texture gets the largest request of the
     // instances whose material uses it, or maxSize if no instance uses it. Deterministic.
     // scene:   the scene read by readSourceScene().
     // options: the caps to apply.

@@ -17,6 +17,7 @@ layout(push_constant) uniform DrawConstants
     vec4 emissiveNormalScale;
     vec4 surface;
     vec4 flags;
+    vec4 detail;
 } draw;
 
 layout(set = 0, binding = 0) uniform Camera

@@ -55,6 +55,13 @@ namespace game
                 << set.strafeRight.strideSpeed << '\n';
         }
 
+        void logFirstPersonBody(std::string_view label, bool hasLimbs)
+        {
+            std::clog << "Game: " << label << " pawn character "
+                      << (hasLimbs ? "shows its body in first person"
+                                   : "has no limbs (cook with --limbs); no first-person body") << '\n';
+        }
+
         float yawOf(const math::Quat& rotation)
         {
             const math::Vec3 forward = rotation * k_pawnForward;
@@ -90,8 +97,12 @@ namespace game
 
             logStrides("rifle", body->skinned(), rifle.value());
             logStrides("aiming", body->skinned(), aiming.value());
+            std::optional<FirstPersonBodyMasks> firstPersonBody = findFirstPersonBodyMasks(body->skinned(),
+                body->gearMasks);
+            logFirstPersonBody("armed", firstPersonBody.has_value());
 
-            return ArmedCharacter{.body = std::move(*body), .rifle = rifle.value(), .aiming = aiming.value()};
+            return ArmedCharacter{.body = std::move(*body), .rifle = rifle.value(), .aiming = aiming.value(),
+                .firstPersonBody = firstPersonBody};
         }
 
         std::optional<FirstPersonModel> loadFirstPerson(render::Renderer& renderer, const assets::FileSystem& files)
@@ -156,6 +167,9 @@ namespace game
         }
 
         PawnCharacters characters{.unarmed = std::move(*unarmed), .locomotion = locomotion.value()};
+        characters.unarmedFirstPersonBody = findFirstPersonBodyMasks(characters.unarmed.skinned(),
+            characters.unarmed.gearMasks);
+        logFirstPersonBody("unarmed", characters.unarmedFirstPersonBody.has_value());
 
         if (crouch)
         {
@@ -178,7 +192,9 @@ namespace game
 
         return StrideLengths{.walk = cycle(characters.locomotion.walk),
             .run = cycle(characters.locomotion.run),
-            .crouch = characters.crouch ? cycle(characters.crouch->walk) : 0.0f};
+            .crouch = characters.crouch ? cycle(characters.crouch->walk) : 0.0f,
+            .walkSpeed = characters.locomotion.walk.strideSpeed,
+            .runSpeed = characters.locomotion.run.strideSpeed};
     }
 
     void beginPawnCharacters(PawnCharacters& characters)
@@ -192,7 +208,7 @@ namespace game
 
     void drawPawn(render::Renderer& renderer, const Visuals& visuals, PawnCharacters* characters,
         world::EntityOwner owner, const math::Transform& transform, const PawnLook& look, float deltaSeconds,
-        render::RenderLayers layers)
+        render::RenderLayers layers, const FirstPersonBodyView* firstPerson)
     {
         if (characters == nullptr)
         {
@@ -219,11 +235,28 @@ namespace game
         pawn.isArmedModel = armed != nullptr;
         updateLocomotion(pawn.locomotion, set, pawn.instance.animator(), foot, yaw, deltaSeconds);
         pawn.instance.update(model, deltaSeconds);
-        pawn.instance.submit(renderer, model, posedTransform(pawn, characters->pose, foot, yaw,
-            pawnLeanRoll(transform), look,
-            armed == nullptr && characters->crouch.has_value(), deltaSeconds),
-            layers, gearMask(armed != nullptr ? armed->body.gearMasks : characters->unarmed.gearMasks,
-                playerGearLook(owner)));
+        const math::Transform placement = posedTransform(pawn, characters->pose, foot, yaw, pawnLeanRoll(transform),
+            look, armed == nullptr && characters->crouch.has_value(), deltaSeconds);
+        pawn.instance.submit(renderer, model, placement, layers,
+            gearMask(armed != nullptr ? armed->body.gearMasks : characters->unarmed.gearMasks, playerGearLook(owner)));
+
+        const std::optional<FirstPersonBodyMasks>& bodyMasks = armed != nullptr ? armed->firstPersonBody
+                                                                                : characters->unarmedFirstPersonBody;
+
+        if (firstPerson == nullptr || !bodyMasks)
+        {
+            return;
+        }
+
+        const anim::PartMask parts = firstPersonBodyParts(*bodyMasks, characters->firstPersonBody, *firstPerson);
+
+        if (parts != 0)
+        {
+            const float crouch = look.isSliding ? 1.0f : look.crouch;
+            pawn.instance.submit(renderer, model,
+                firstPersonBodyPlacement(placement, characters->firstPersonBody, *firstPerson, crouch),
+                k_firstPersonBodyLayer, parts);
+        }
     }
 
     float pawnCharacterSpeed(const PawnCharacters& characters, world::EntityOwner owner)
@@ -279,6 +312,8 @@ namespace game
             ImGui::SliderFloat("Slide blend rate", &pose.slideBlendRate, 1.0f, 30.0f);
             ImGui::TreePop();
         }
+
+        firstPersonBodyDevSection(characters->firstPersonBody);
 
         if (characters->firstPerson)
         {

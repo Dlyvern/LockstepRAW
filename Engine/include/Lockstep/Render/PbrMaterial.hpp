@@ -10,7 +10,9 @@
 // metallic-roughness material model and a vertex layout with tangents. Assets fills these;
 // the Renderer implements them (Renderer::createMesh / createMaterial overloads taking these
 // types). Field meanings follow the glTF 2.0 specification exactly, so an imported material
-// looks the same as in Blender or any glTF viewer.
+// looks the same as in Blender or any glTF viewer. Two Engine extensions glTF can't express sit on
+// top (a height map for parallax and a micro-detail layer); only cooked levels fill them, and their
+// defaults leave a material exactly as glTF describes it.
 namespace lockstep::render
 {
     // One vertex of a PBR mesh.
@@ -62,6 +64,26 @@ namespace lockstep::render
         Blend
     };
 
+    // A generic tiling micro-detail layer the Renderer provides (procedural textures, about half a
+    // metre per repeat), blended over a lit material near the camera so close surfaces keep fine
+    // structure instead of going blurry: normal, roughness and slight albedo variation.
+    // None:    no detail layer.
+    // Mineral: grain and small pits (concrete, plaster, brick, stone, asphalt).
+    // Paint:   fine orange peel and light scuffs (painted surfaces, plastic, linoleum).
+    // Metal:   brushed streaks and scratches.
+    // Fibrous: weave and fibre grain (fabric, wood, cardboard).
+    enum class SurfaceDetail : uint8_t
+    {
+        None = 0,
+        Mineral,
+        Paint,
+        Metal,
+        Fibrous
+    };
+
+    // Number of SurfaceDetail layers besides None.
+    inline constexpr uint32_t k_surfaceDetailKinds{4};
+
     // A glTF 2.0 metallic-roughness material. Any texture may be left invalid; the factor alone
     // is used then. Textures are sampled with TEXCOORD_0.
     // baseColor / baseColorFactor:   albedo; the texture is sRGB, multiplied by the linear factor.
@@ -74,6 +96,11 @@ namespace lockstep::render
     //                                (emissive strength already folded into the factor).
     // alphaMode / alphaCutoff:       see AlphaMode; the cutoff only matters for Mask.
     // doubleSided:                   true disables back-face culling and lights back faces.
+    // Engine extensions (not glTF):
+    // height / heightScale:          linear height map, R from 0 (deepest) to 1 (top), for parallax
+    //                                occlusion mapping; heightScale is the depth from 1 to 0 in UV units
+    //                                (1 is one texture repeat); 0 or no texture disables parallax.
+    // detail / detailScale:          the micro-detail layer and how often it repeats per UV unit.
     struct PbrMaterialDescription
     {
         TextureHandle baseColor{};
@@ -95,6 +122,12 @@ namespace lockstep::render
         AlphaMode alphaMode{AlphaMode::Opaque};
         float alphaCutoff{0.5f};
         bool doubleSided{false};
+
+        TextureHandle height{};
+        float heightScale{0.0f};
+
+        SurfaceDetail detail{SurfaceDetail::None};
+        float detailScale{1.0f};
     };
 } //namespace lockstep::render
 

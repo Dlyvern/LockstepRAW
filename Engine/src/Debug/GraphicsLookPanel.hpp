@@ -7,8 +7,9 @@
 
 namespace lockstep::debug
 {
-    // Draws the Graphics window's look sections: interior ambient zones, auto exposure, colour
-    // grading, vignette and film grain, edited in place. Must be called inside the Graphics window.
+    // Draws the Graphics window's look sections: interior ambient zones, volumetric fog, surface
+    // wetness, auto exposure, colour grading, vignette and film grain, edited in place. Must be
+    // called inside the Graphics window.
     // settings:  the renderer settings to tune.
     // zoneCount: interior ambient zones the renderer holds (shown for reference).
     void drawLookSections(render::RenderSettings& settings, std::size_t zoneCount);

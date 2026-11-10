@@ -31,6 +31,8 @@ namespace lockstep::cooker
         }
 
         constexpr std::string_view k_noAutoCap{"--no-auto-cap"};
+        constexpr std::string_view k_limbs{"--limbs"};
+        constexpr std::string_view k_noSurfaceDetail{"--no-surface-detail"};
 
         struct ParsedFlags
         {
@@ -52,7 +54,7 @@ namespace lockstep::cooker
                     continue;
                 }
 
-                if (argument == k_noAutoCap)
+                if (argument == k_noAutoCap || argument == k_limbs || argument == k_noSurfaceDetail)
                 {
                     parsed.flags.emplace_back(argument, std::string_view{});
                     continue;
@@ -180,6 +182,22 @@ namespace lockstep::cooker
                 else if (flag == k_noAutoCap)
                 {
                     options.textureCaps.automatic = false;
+                }
+                else if (flag == k_limbs)
+                {
+                    options.splitLimbs = true;
+                }
+                else if (flag == "--wound")
+                {
+                    options.wound = std::filesystem::path(value);
+                }
+                else if (flag == "--height-dir")
+                {
+                    options.surfaces.heightDirectories.emplace_back(value);
+                }
+                else if (flag == k_noSurfaceDetail)
+                {
+                    options.surfaces.detail = false;
                 }
                 else
                 {

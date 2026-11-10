@@ -7,6 +7,10 @@ namespace lockstep::render
 {
     struct RendererState;
 
+    // Factor the viewmodel's depth is squeezed by: viewmodel pixels have depth buffer values below
+    // it, world surfaces (farther than 1.01 times the near plane) above it.
+    inline constexpr float k_viewModelDepthScale{0.01f};
+
     // layers:  a draw's render layers.
     // Returns: true if it is a viewmodel draw (see k_viewModelLayer).
     [[nodiscard]] constexpr bool isViewModelDraw(RenderLayers layers)

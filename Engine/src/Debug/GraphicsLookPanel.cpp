@@ -16,6 +16,16 @@ namespace lockstep::debug
         constexpr float k_maxAdaptationSpeed{10.0f};
         constexpr float k_liftRange{0.2f};
         constexpr float k_maxGrain{0.2f};
+        constexpr float k_maxFogDensity{0.3f};
+        constexpr float k_maxHeightFalloff{2.0f};
+        constexpr float k_heightRange{50.0f};
+        constexpr float k_maxFogLight{8.0f};
+        constexpr float k_maxFogAmbient{0.5f};
+        constexpr float k_maxInteriorScale{8.0f};
+        constexpr float k_maxFogDistance{150.0f};
+        constexpr int k_minFogSteps{8};
+        constexpr int k_maxFogSteps{64};
+        constexpr float k_maxPuddleSize{10.0f};
 
         bool header(const char* label)
         {
@@ -39,6 +49,55 @@ namespace lockstep::debug
             ImGui::SliderFloat("Blend distance (m)", &interior.blendDistance, 0.01f, k_maxBlendDistance, "%.2f");
             ImGui::SliderFloat("Normal offset (m)", &interior.normalOffset, 0.0f, k_maxNormalOffset, "%.2f");
             ImGui::Checkbox("Show zone weight", &interior.debugView);
+        }
+
+        void drawVolumetricFog(render::VolumetricFogSettings& fog)
+        {
+            if (!header("Volumetric fog"))
+            {
+                return;
+            }
+
+            int steps = static_cast<int>(fog.steps);
+            ImGui::Checkbox("Volumetric fog", &fog.enabled);
+            ImGui::SliderFloat("Haze density", &fog.density, 0.0f, k_maxFogDensity, "%.4f",
+                ImGuiSliderFlags_Logarithmic);
+            ImGui::ColorEdit3("Haze albedo", &fog.albedo.x, ImGuiColorEditFlags_Float);
+            ImGui::SliderFloat("Anisotropy (g)", &fog.anisotropy, -0.9f, 0.9f, "%.2f");
+            ImGui::SliderFloat("Height falloff", &fog.heightFalloff, 0.0f, k_maxHeightFalloff, "%.3f");
+            ImGui::SliderFloat("Base height (m)", &fog.baseHeight, -k_heightRange, k_heightRange, "%.1f");
+            ImGui::SliderFloat("Sun scattering", &fog.sunIntensity, 0.0f, k_maxFogLight, "%.2f");
+            ImGui::SliderFloat("Local light scattering", &fog.localLightIntensity, 0.0f, k_maxFogLight, "%.2f");
+            ImGui::SliderFloat("Ambient glow", &fog.ambientIntensity, 0.0f, k_maxFogAmbient, "%.4f",
+                ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("Interior density x", &fog.interiorDensityScale, 0.0f, k_maxInteriorScale, "%.2f");
+            ImGui::SliderFloat("Max distance (m)", &fog.maxDistance, 1.0f, k_maxFogDistance, "%.0f");
+
+            if (ImGui::SliderInt("Steps", &steps, k_minFogSteps, k_maxFogSteps))
+            {
+                fog.steps = static_cast<uint32_t>(steps);
+            }
+
+            ImGui::SliderFloat("Resolution scale", &fog.resolutionScale, 0.25f, 1.0f, "%.2f");
+            ImGui::Checkbox("Temporal accumulation", &fog.temporal);
+            ImGui::SliderFloat("History weight", &fog.historyWeight, 0.0f, 0.98f, "%.2f");
+        }
+
+        void drawWetness(render::WetnessSettings& wetness)
+        {
+            if (!header("Surface wetness"))
+            {
+                return;
+            }
+
+            ImGui::Checkbox("Wet surfaces", &wetness.enabled);
+            ImGui::SliderFloat("Wetness", &wetness.amount, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Puddle coverage", &wetness.puddles, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Puddle size (m)", &wetness.puddleSize, 0.2f, k_maxPuddleSize, "%.2f");
+            ImGui::SliderFloat("Porous darkening", &wetness.darkening, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Glossiness", &wetness.glossiness, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Ripples", &wetness.ripples, 0.0f, 1.0f, "%.2f");
+            ImGui::Checkbox("Show wetness (blue) and puddles (cyan)", &wetness.debugView);
         }
 
         void drawAutoExposure(render::AutoExposureSettings& exposure)
@@ -101,6 +160,8 @@ namespace lockstep::debug
     void drawLookSections(render::RenderSettings& settings, std::size_t zoneCount)
     {
         drawInteriorAmbient(settings.interiorAmbient, zoneCount);
+        drawVolumetricFog(settings.volumetricFog);
+        drawWetness(settings.wetness);
         drawAutoExposure(settings.autoExposure);
         drawColorGrading(settings.colorGrading);
         drawFilmEffects(settings.vignette, settings.filmGrain);

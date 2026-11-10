@@ -3,6 +3,8 @@
 
 #include "Lockstep/Anim/AnimationClip.hpp"
 #include "Lockstep/Anim/Animator.hpp"
+#include "Lockstep/Anim/DrivenPose.hpp"
+#include "Lockstep/Anim/Limbs.hpp"
 #include "Lockstep/Anim/Skeleton.hpp"
 #include "Lockstep/Core/Bounds.hpp"
 #include "Lockstep/Core/Transform.hpp"
@@ -27,11 +29,15 @@ namespace lockstep::anim
     // materialName: the source material's name (e.g. "HeadGear_Helmet"), so Game can pick parts
     //               to hide; empty when the source had none (or a model cooked before names
     //               were kept).
+    // limb:         the limb whose region or cut it belongs to (see Limbs.hpp); None for Whole.
+    // role:         what it is in the limb split; Whole for a model cooked without limbs.
     struct SkinnedModelPart
     {
         render::MeshHandle mesh{};
         render::MaterialHandle material{};
         std::string materialName;
+        Limb limb{Limb::None};
+        LimbPartRole role{LimbPartRole::Whole};
     };
 
     // A set of a model's parts for SkinnedInstance::submit(): bit i stands for parts[i]. Parts
@@ -49,6 +55,8 @@ namespace lockstep::anim
     // clips:       animations of the skeleton.
     // jointRadii:  per joint, the reach of the vertices it moves (see poseBounds()).
     // bindBounds:  model-space bounds in bind pose.
+    // limbs:       the limbs of a model cooked with --limbs (every limb but the torso), else
+    //              empty (see Limbs.hpp).
     struct SkinnedModel
     {
         std::string name;
@@ -57,6 +65,7 @@ namespace lockstep::anim
         std::vector<AnimationClip> clips;
         std::vector<float> jointRadii;
         math::Aabb bindBounds{};
+        std::vector<LimbInfo> limbs;
     };
 
     // One animated copy of a SkinnedModel: its Animator, current pose, and the skinning matrices
@@ -78,6 +87,22 @@ namespace lockstep::anim
         // deltaSeconds: elapsed presentation time.
         void update(const SkinnedModel& model, float deltaSeconds);
 
+        // Starts driving the pose from outside (e.g. a ragdoll): later updateDriven() calls fade
+        // from the current joint matrices into the driven pose. update() may be called again
+        // afterwards to go back to the animator.
+        // blendSeconds: length of the fade; 0 switches at once.
+        void beginDriven(float blendSeconds = 0.1f);
+
+        // Computes the pose from world-placed joints instead of the animator, fading from the
+        // pose at beginDriven() while the blend lasts. Joints that are not driven keep the local
+        // transforms of the last animated pose. Call once per presentation frame before submit().
+        // model:        the model this instance animates.
+        // placement:    the world transform later passed to submit().
+        // driven:       the world-placed joints (e.g. ragdoll bones).
+        // deltaSeconds: elapsed presentation time (advances the fade).
+        void updateDriven(const SkinnedModel& model, const math::Transform& placement,
+            std::span<const DrivenJoint> driven, float deltaSeconds);
+
         // Queues the model's parts for the next render() with this instance's pose.
         // Does nothing before the first update().
         // renderer:  the renderer the model was loaded with.
@@ -95,10 +120,17 @@ namespace lockstep::anim
         //          hand (multiply by the instance's world matrix for world space).
         [[nodiscard]] std::span<const math::Mat4> jointMatrices() const noexcept;
 
+        // Returns: skinning matrices of the current pose (model-space joint matrix times inverse
+        //          bind), e.g. to freeze a severed limb in this pose.
+        [[nodiscard]] std::span<const math::Mat4> skinMatrices() const noexcept;
+
         // Returns: model-space bounds of the current pose.
         [[nodiscard]] const math::Aabb& bounds() const noexcept;
 
     private:
+        void beginUpdate(const SkinnedModel& model);
+        void finishUpdate(const SkinnedModel& model);
+
         Animator m_animator{};
         Pose m_pose{};
         std::vector<math::Mat4> m_joints;
@@ -106,6 +138,9 @@ namespace lockstep::anim
         std::vector<math::Mat4> m_previousSkin;
         math::Aabb m_bounds{};
         bool m_hasPrevious{false};
+        std::vector<math::Mat4> m_blendFrom;
+        float m_blendSeconds{0.0f};
+        float m_drivenSeconds{0.0f};
     };
 } //namespace lockstep::anim
 

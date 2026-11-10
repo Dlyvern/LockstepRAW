@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_NPCS_NPC_HPP
 #define LOCKSTEP_GAME_NPCS_NPC_HPP
 
+#include <Lockstep/Anim/Limbs.hpp>
 #include <Lockstep/Core/Math.hpp>
 #include <Lockstep/Physics/PhysicsTypes.hpp>
 #include <Lockstep/World/Entities.hpp>
@@ -130,6 +131,10 @@ namespace game
     // shotCount:    shots fired, wrapping (replicated for muzzle flashes).
     // decisionTimer: World seconds until it reconsiders its position.
     // avoidSpot:    the goal of its last path that it got stuck on; not chosen as cover again.
+    // hitYaw:       heading the killing shot travelled along (atan2(x, z) of the horizontal
+    //               direction from the shooter), set when it dies; nothing if the shooter stood
+    //               on top of it (or a dev kill).
+    // hitLimb:      the limb the killing shot hit (from the host's drawn pose); None if unknown.
     struct Npc
     {
         lockstep::world::EntityId entity{};
@@ -171,6 +176,8 @@ namespace game
         uint8_t shotCount{0};
         float decisionTimer{0.0f};
         std::optional<math::Vec3> avoidSpot{};
+        std::optional<float> hitYaw{};
+        lockstep::anim::Limb hitLimb{lockstep::anim::Limb::None};
     };
 
     // Capsule height of an NPC crouched behind low cover, metres.

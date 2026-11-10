@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <variant>
+#include <vector>
 
 namespace lockstep::physics
 {
@@ -78,8 +79,16 @@ namespace lockstep::physics
         float distance{0.0f};
     };
 
+    // Convex hull of a point cloud in the body's local space, computed when the body is created
+    // (PhysX keeps at most 32 hull vertices). For small dynamic pieces such as a severed limb.
+    // points: at least 4 points that are not all in one plane.
+    struct ConvexShape
+    {
+        std::vector<math::Vec3> points;
+    };
+
     // The collision shape of a body.
-    using BodyShape = std::variant<BoxShape, SphereShape, CapsuleShape, PlaneShape>;
+    using BodyShape = std::variant<BoxShape, SphereShape, CapsuleShape, PlaneShape, ConvexShape>;
 
     // Settings for a new rigid body.
     // shape:       its collision shape.
@@ -88,6 +97,9 @@ namespace lockstep::physics
     // density:     kg per cubic metre, gives a dynamic body its mass. Ignored for static bodies.
     // friction:    friction coefficient for both static and dynamic friction.
     // restitution: bounciness, 0 (none) to 1.
+    // isDebris:    presentation-only debris each machine simulates for itself (gibs, casings):
+    //              raycasts and character controllers pass through it, so it never changes
+    //              game rules; it still collides with the level and other bodies.
     struct BodyDescription
     {
         BodyShape shape{BoxShape{}};
@@ -96,6 +108,7 @@ namespace lockstep::physics
         float density{1000.0f};
         float friction{0.5f};
         float restitution{0.0f};
+        bool isDebris{false};
     };
 
     // Settings for a new character controller: an upright capsule moved by sweeps, not by the
@@ -164,6 +177,8 @@ namespace lockstep::physics
     // Counters for the dev tools.
     // bodyCount:            living rigid bodies.
     // controllerCount:      living character controllers.
+    // ragdollCount:         living ragdolls.
+    // ragdollBodyCount:     simulated bodies of all ragdolls (not counted in bodyCount).
     // lastStepSeconds:      simulated seconds of the last step() (0 while the world is frozen).
     // lastSubsteps:         PhysX simulate calls made by the last step().
     // lastStepMilliseconds: wall time the last step() took.
@@ -173,6 +188,8 @@ namespace lockstep::physics
     {
         uint32_t bodyCount{0};
         uint32_t controllerCount{0};
+        uint32_t ragdollCount{0};
+        uint32_t ragdollBodyCount{0};
         float lastStepSeconds{0.0f};
         uint32_t lastSubsteps{0};
         float lastStepMilliseconds{0.0f};

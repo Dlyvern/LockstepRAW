@@ -1,12 +1,18 @@
 #include "Presentation/Frame.hpp"
 
+#include "Audio/CombatAudio.hpp"
+#include "Effects/Effects.hpp"
+
 #include "GameState.hpp"
+#include "Gore/CorpseHits.hpp"
+#include "Lights/LightAnimation.hpp"
 #include "Player/LocalPlayer.hpp"
 #include "Presentation/FirstPerson.hpp"
 #include "Presentation/Hud.hpp"
-#include "Presentation/LevelLights.hpp"
+#include "Presentation/LensEffects.hpp"
 #include "Presentation/Mirrors.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Weather/Weather.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
@@ -119,9 +125,9 @@ namespace game
             {
                 if (const world::Entity* entity = engine.entities.find(npc.entity))
                 {
-                    drawNpc(engine.renderer, state.npcLooks, pawnCharacters(state), state.visuals,
+                    drawNpc(engine.renderer, engine.physics, state.npcLooks, pawnCharacters(state), state.visuals,
                         npc.faction == NpcFaction::Squad ? Archetype::Squad : Archetype::Merc, npc.entity,
-                        entity->interpolatedTransform(alpha), npcView(npc), worldSeconds);
+                        entity->interpolatedTransform(alpha), npcView(npc), alpha, worldSeconds);
                 }
             }
         }
@@ -171,8 +177,9 @@ namespace game
 
                 if (archetype == Archetype::Merc || archetype == Archetype::Squad)
                 {
-                    drawNpc(engine.renderer, state.npcLooks, pawnCharacters(state), state.visuals, archetype,
-                        mirrored.entity, transform, mirroredNpcView(state, mirrored.hostEntity), worldSeconds);
+                    drawNpc(engine.renderer, engine.physics, state.npcLooks, pawnCharacters(state), state.visuals,
+                        archetype, mirrored.entity, transform, mirroredNpcView(state, mirrored.hostEntity), alpha,
+                        worldSeconds);
                     continue;
                 }
 
@@ -289,9 +296,82 @@ namespace game
                     .walkStride = strides.walkStride,
                     .runStride = strides.runStride,
                     .crouchStride = strides.crouchStride,
+                    .walkStrideSpeed = strides.walkStrideSpeed,
+                    .runStrideSpeed = strides.runStrideSpeed,
                     .worldScale = engine.timeDomains.scale(world::TimeDomain::World),
                     .seconds = playerSeconds},
                 steps);
+        }
+        std::vector<NpcShotSource> npcShotSources(const GameState& state, const EngineContext& engine, bool isClient)
+        {
+            std::vector<NpcShotSource> sources;
+
+            if (!isClient)
+            {
+                for (const Npc& npc : state.simulation.npcs.npcs)
+                {
+                    if (const world::Entity* entity = engine.entities.find(npc.entity))
+                    {
+                        sources.push_back(NpcShotSource{.key = npc.entity.index,
+                            .position = entity->transform().position + math::Vec3{0.0f, 1.4f, 0.0f},
+                            .shotCount = npc.shotCount});
+                    }
+                }
+
+                return sources;
+            }
+
+            for (const net::MirroredEntity& mirrored : engine.replication.mirrored())
+            {
+                const world::Entity* entity = engine.entities.find(mirrored.entity);
+
+                if (entity == nullptr)
+                {
+                    continue;
+                }
+
+                for (const NpcView& view : state.local.npcViews.npcs)
+                {
+                    if (view.entity == mirrored.hostEntity)
+                    {
+                        sources.push_back(NpcShotSource{.key = mirrored.hostEntity.index,
+                            .position = entity->transform().position + math::Vec3{0.0f, 1.4f, 0.0f},
+                            .shotCount = view.shotCount});
+                    }
+                }
+            }
+
+            return sources;
+        }
+
+        void presentCombatAudio(GameState& state, EngineContext& engine, const std::vector<FootstepPawn>& steps,
+            const std::optional<math::Transform>& localPawn, const math::Vec3& eye, const math::Vec3& aim,
+            float playerSeconds, bool isClient)
+        {
+            CombatAudioFrame frame{.scene = state.level ? &state.level->scene : nullptr,
+                .physics = &engine.physics,
+                .localIndex = localPawnIndex(engine),
+                .localShots = state.local.command.shotCount,
+                .localController = localPawn ? localController(state, engine) : lockstep::physics::ControllerId{},
+                .eye = eye,
+                .aim = aim,
+                .statuses = state.local.statuses,
+                .listener = eye,
+                .rain = rainSoundAmount(state.weather),
+                .worldSeconds = playerSeconds * engine.timeDomains.scale(world::TimeDomain::World),
+                .seconds = playerSeconds};
+
+            for (const FootstepPawn& pawn : steps)
+            {
+                if (pawn.index < frame.positions.size())
+                {
+                    frame.positions[pawn.index] = pawn.foot + math::Vec3{0.0f, 1.5f, 0.0f};
+                }
+            }
+
+            const std::vector<NpcShotSource> npcs = npcShotSources(state, engine, isClient);
+            frame.npcs = npcs;
+            updateCombatAudio(state.combatAudio, engine.audio, frame);
         }
     } //namespace
 
@@ -345,20 +425,25 @@ namespace game
             presentHost(state, engine, frameInfo.alpha, playerSeconds, worldSeconds, localPawn, steps);
         }
 
-        endNpcLooks(state.npcLooks);
+        endNpcLooks(state.npcLooks, engine.physics, engine.renderer, frameInfo.alpha, worldSeconds);
 
         const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
         presentMirrors(engine.renderer, state.level ? &state.level->scene : nullptr);
 
+        const FirstPersonLook look = presentedLook(state, engine, frameInfo);
+
         if (localPawn)
         {
+            const PawnLook ownPawnLook = localPawnLook(state, engine, localPawn);
+            const FirstPersonBodyView bodyView{.lookYaw = look.yaw,
+                .lookPitch = look.pitch,
+                .hasViewModel = ownPawnLook.isArmed && state.pawnCharacters && state.pawnCharacters->firstPerson};
             drawPawn(engine.renderer, state.visuals, pawnCharacters(state), localOwner(engine), *localPawn,
-                localPawnLook(state, engine, localPawn), playerSeconds, k_mirrorOnlyLayer);
+                ownPawnLook, playerSeconds, k_mirrorOnlyLayer, &bodyView);
         }
 
         HeadPose head{};
         View view = lobbyView(state);
-        const FirstPersonLook look = presentedLook(state, engine, frameInfo);
 
         if (localPawn)
         {
@@ -367,8 +452,8 @@ namespace game
             head = presentHead(state, engine, *localPawn, look, playerSeconds);
             view = View{.eye = head.eye,
                 .direction = lookDirection(yaw, pitch),
-                .cameraDirection = lookDirection(yaw, pitch + head.pitchOffset),
-                .up = rolledUp(yaw, pitch + head.pitchOffset, head.roll)};
+                .cameraDirection = lookDirection(yaw + head.yawOffset, pitch + head.pitchOffset),
+                .up = rolledUp(yaw + head.yawOffset, pitch + head.pitchOffset, head.roll)};
         }
         else
         {
@@ -376,7 +461,15 @@ namespace game
         }
 
         presentFootsteps(state, engine, steps, localPawn, head, playerSeconds);
+        presentWeather(state, engine, worldSeconds, frameInfo.frameSeconds);
+        presentCombatAudio(state, engine, steps, localPawn, view.eye, view.direction, playerSeconds, isClient);
+        presentEffects(state, engine, state.flyCamera.isActive ? state.flyCamera.position : view.eye, view.direction,
+            worldSeconds, frameInfo.frameSeconds);
         presentToys(state, engine, frameInfo.alpha, localPawn ? std::optional<View>(view) : std::nullopt);
+        const PawnLook ownLook = localPawnLook(state, engine);
+        presentCorpseShots(state, engine, view.eye, view.direction,
+            localPawn && ownLook.isArmed && !ownLook.isLowered && !isHoldingToy(state, engine));
+        presentGore(state, engine, frameInfo.alpha, worldSeconds, view.eye);
         presentViewModel(state, engine, localPawn ? std::optional<math::Vec3>(view.eye) : std::nullopt, head, look,
             playerSeconds);
 
@@ -390,20 +483,29 @@ namespace game
         drawHud(engine.renderer, state.hud);
         presentCombat(state, engine, steps, localPawn, look.yaw, view.eye, view.direction, frameInfo.frameSeconds);
 
-        if (state.level)
-        {
-            submitLevelLights(engine.renderer, state.level->scene,
-                state.flyCamera.isActive ? state.flyCamera.position : view.eye);
-        }
+        presentLevelLights(state.lightAnimation, engine, state.level ? &state.level->scene : nullptr,
+            state.flyCamera.isActive ? state.flyCamera.position : view.eye, worldSeconds);
+        presentLensEffects(engine.renderer.settings(), engine.timeDomains.scale(world::TimeDomain::World),
+            frameInfo.frameSeconds);
 
         if (presentFlyCamera(state, engine, frameInfo, view))
         {
             return;
         }
 
-        engine.renderer.setCamera(firstPersonCamera(view.eye, view.cameraDirection,
+        lockstep::render::Camera camera = firstPersonCamera(view.eye, view.cameraDirection,
             state.pawnCharacters ? viewModelZoom(state.pawnCharacters->viewModel) : 0.0f, view.up,
-            localPawn ? head.fovOffset : 0.0f));
+            localPawn ? head.fovOffset : 0.0f);
+
+        camera.shadowLayers = lockstep::render::k_defaultRenderLayer | k_mirrorOnlyLayer;
+
+        if (localPawn)
+        {
+            camera.layers |= k_firstPersonBodyLayer;
+        }
+
+        engine.renderer.setCamera(camera);
+
 
         if (localPawn)
         {

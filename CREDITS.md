@@ -36,6 +36,12 @@ Every new asset gets a line here when it's added.
 | Ambulance | mk2design | https://sketchfab.com/models/b78313c16c9d46a7a67643245cf278d2 | Hospital A: ambulances |
 | Yellow semi-truck with trailer | Chenzoss | https://sketchfab.com/models/ee0a8763bd8941f1bc546b43332d4001 | Hospital A: road blocks (decimated) |
 | MD '84 Armored - Low poly model | DanielZhabotinsky | https://sketchfab.com/models/26e809cce40e4359a3199649f12ef295 | Hospital A: squad truck |
+| dumpster | YJ_ | https://sketchfab.com/models/989ea7f01b924859b3484ee27103e8d9 | Hospital A: dumpsters in the yard and the alley |
+| Vending Machine | iJacques | https://sketchfab.com/models/f537e142a592428d85ca7a940be221d3 | Hospital A: vending machines in the alley (decimated) |
+| Wooden pallet | BlackMike | https://sketchfab.com/models/f2f21a299e114d43a08cfd596383efbe | Hospital A: pallets |
+| Double Brick Apartment Block | novusod | https://sketchfab.com/models/1c5ff0638a9a4c63bccce4510b76c66e | Hospital A: brick houses on the street and the surrounding city |
+| Brick Apartment Block | shawnikaros | https://sketchfab.com/models/ff25dd59f13040b59ef5034489ac66ca | Hospital A: brick houses on the street and the surrounding city |
+| Medical Examination Bed - Game Ready Asset | INGSOC1984 | https://sketchfab.com/models/6e27dde82d9c4af5b0b3fd03ce01ae58 | Hospital A: operating theatre tables |
 
 ## CC0 (Poly Haven, no attribution required)
 
@@ -105,6 +111,8 @@ Every new asset gets a line here when it's added.
 | Painted Metal Shutter (texture) | Poly Haven | https://polyhaven.com/a/painted_metal_shutter |
 | Concrete Road Barrier 02 | Poly Haven | https://polyhaven.com/a/concrete_road_barrier_02 |
 | Fire Hydrant | Poly Haven | https://polyhaven.com/a/fire_hydrant |
+| Wooden Table 02 | Serhii Khromov | https://polyhaven.com/a/wooden_table_02 |
+| Television 02 | Benny Weimer | https://polyhaven.com/a/television_02 |
 | Portable Generator | Poly Haven | https://polyhaven.com/a/portable_generator |
 | Hand Truck | Poly Haven | https://polyhaven.com/a/hand_truck |
 | Plastic Crate 02 | Poly Haven | https://polyhaven.com/a/plastic_crate_02 |
@@ -136,6 +144,16 @@ Every new asset gets a line here when it's added.
 | classic_laptop | Poly Haven | https://polyhaven.com/a/classic_laptop |
 | wooden_military_crate | Poly Haven | https://polyhaven.com/a/wooden_military_crate |
 | painted_wooden_nightstand | Poly Haven | https://polyhaven.com/a/painted_wooden_nightstand |
+| Leaking 001 (decal) | ambientCG | https://ambientcg.com/a/Leaking001 |
+| Leaking 003 (decal) | ambientCG | https://ambientcg.com/a/Leaking003 |
+| Leaking 005 (decal) | ambientCG | https://ambientcg.com/a/Leaking005 |
+| Leaking 008 (decal) | ambientCG | https://ambientcg.com/a/Leaking008 |
+| Leaking 010A (decal) | ambientCG | https://ambientcg.com/a/Leaking010A |
+| AsphaltDamage 001 (decal) | ambientCG | https://ambientcg.com/a/AsphaltDamage001 |
+| ManholeCover 005 (decal) | ambientCG | https://ambientcg.com/a/ManholeCover005 |
+| ManholeCover 007 (decal) | ambientCG | https://ambientcg.com/a/ManholeCover007 |
+| ChewingGum 001 (decal) | ambientCG | https://ambientcg.com/a/ChewingGum001 |
+| RoadLines 012 (decal) | ambientCG | https://ambientcg.com/a/RoadLines012 |
 
 ## User-provided packs (licence to confirm before shipping)
 
@@ -143,6 +161,18 @@ Every new asset gets a line here when it's added.
 |---|---|---|
 | Locker Equipment | `locker-equipment.zip` (downloaded by the developer) | Apartment: gear lockers |
 | Small TV stand | `small-tv-stand.zip` (downloaded by the developer) | Apartment: TV stand |
+
+## Sounds (Data/sounds)
+
+| Pack | Author | Licence | Source | Used for |
+|---|---|---|---|---|
+| The Free Firearm Sound Library | (library team) | CC0 | https://opengameart.org/content/the-free-firearm-sound-library | Player and NPC gunshots, near and distant |
+| Impacts/Gun/sfx | (OpenGameArt) | CC0 | https://opengameart.org/content/impactsgunsfx | Bullet impacts, flesh hits |
+| 100 CC0 SFX | rubberduck | CC0 | https://opengameart.org/content/100-cc0-sfx | Reload, dry fire, metal impacts, hits |
+| 100 CC0 SFX #2 | rubberduck | CC0 | https://opengameart.org/content/100-cc0-sfx-2 | Street and hospital ambience loops |
+| Footsteps on different surfaces | (OpenGameArt, mastered from freesound.org authors) | CC BY 3.0 | https://opengameart.org/content/footsteps-on-different-surfaces | Footsteps (credit the pack and the freesound authors in its licence files, e.g. swuing, ceberation) |
+
+The distant siren and the downed heartbeat are synthesised.
 
 ## Fonts and middleware
 

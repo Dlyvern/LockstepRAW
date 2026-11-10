@@ -2,6 +2,7 @@
 #define LOCKSTEP_GAME_CHARACTERS_PAWN_CHARACTERS_HPP
 
 #include "Characters/CharacterModel.hpp"
+#include "Characters/FirstPersonBody.hpp"
 #include "Characters/Locomotion.hpp"
 #include "Characters/ViewModel.hpp"
 #include "Player/Pawns.hpp"
@@ -121,12 +122,14 @@ namespace game
         float slideBlend{0.0f};
     };
 
-    // The armed body and its two locomotion sets.
+    // The armed body, its two locomotion sets and the parts the first-person camera may show
+    // (nothing for a model cooked without limbs).
     struct ArmedCharacter
     {
         CharacterModel body;
         LocomotionSet rifle{};
         LocomotionSet aiming{};
+        std::optional<FirstPersonBodyMasks> firstPersonBody{};
     };
 
     // The character models loaded for the pawns and one animated character per player.
@@ -139,6 +142,9 @@ namespace game
     // pawns:       Player1's and Player2's characters.
     // viewModel:   the local player's viewmodel state.
     // pose:        the crouch and slide stand-in pose.
+    // unarmedFirstPersonBody: the unarmed body's parts the first-person camera may show, or
+    //              nothing for a model cooked without limbs.
+    // firstPersonBody: how the local body shows in the first-person camera.
     struct PawnCharacters
     {
         CharacterModel unarmed;
@@ -149,6 +155,8 @@ namespace game
         std::array<PawnCharacter, k_playerCount> pawns{};
         ViewModelState viewModel{};
         PawnPoseTuning pose{};
+        std::optional<FirstPersonBodyMasks> unarmedFirstPersonBody{};
+        FirstPersonBodyTuning firstPersonBody{};
     };
 
     // Loads the k_pawnCharacter models from the mounted content and logs their stride speeds.
@@ -164,11 +172,14 @@ namespace game
     // each clip's stride speed times its length (playback is scaled to the ground speed, so the
     // cycle length stays the same). 0 where a clip is missing.
     // walk, run, crouch: the walk, run and crouched walk clips.
+    // walkSpeed, runSpeed: the walk and run clips' stride speeds, m/s (0 where missing).
     struct StrideLengths
     {
         float walk{0.0f};
         float run{0.0f};
         float crouch{0.0f};
+        float walkSpeed{0.0f};
+        float runSpeed{0.0f};
     };
 
     // characters: the pawn characters.
@@ -191,9 +202,13 @@ namespace game
     // look:         armed, aiming, lowered, crouch and slide.
     // deltaSeconds: Player time since the previous frame; animates the character.
     // layers:       render layers to draw on (k_mirrorOnlyLayer for the local pawn).
+    // firstPerson:  for the local pawn, the first-person look: the body is drawn a second time on
+    //               k_firstPersonBodyLayer, behind the eye and without head and head gear
+    //               (full-body awareness); null for other pawns.
     void drawPawn(lockstep::render::Renderer& renderer, const Visuals& visuals, PawnCharacters* characters,
         lockstep::world::EntityOwner owner, const math::Transform& transform, const PawnLook& look,
-        float deltaSeconds, lockstep::render::RenderLayers layers = lockstep::render::k_defaultRenderLayer);
+        float deltaSeconds, lockstep::render::RenderLayers layers = lockstep::render::k_defaultRenderLayer,
+        const FirstPersonBodyView* firstPerson = nullptr);
 
     // owner:   a pawn's player.
     // Returns: the planar speed its character was last drawn moving at, m/s (0 without one).

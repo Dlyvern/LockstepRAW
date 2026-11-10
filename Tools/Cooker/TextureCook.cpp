@@ -6,6 +6,7 @@
 #include "BlockEncoders.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace lockstep::cooker
@@ -13,6 +14,8 @@ namespace lockstep::cooker
     namespace
     {
         constexpr std::size_t k_channels{4};
+        constexpr uint32_t k_minHeightRange{6};
+        constexpr double k_heightClipShare{0.01};
 
         float toSigned(uint8_t value)
         {
@@ -107,6 +110,57 @@ namespace lockstep::cooker
             return levels;
         }
 
+        uint32_t histogramPercentile(const std::array<uint64_t, 256>& histogram, uint64_t rank)
+        {
+            uint64_t seen = 0;
+
+            for (uint32_t value = 0; value < histogram.size(); ++value)
+            {
+                seen += histogram[value];
+
+                if (seen > rank)
+                {
+                    return value;
+                }
+            }
+
+            return 255;
+        }
+
+        Status stretchHeights(std::span<uint8_t> rgba)
+        {
+            std::array<uint64_t, 256> histogram{};
+            const std::size_t texels = rgba.size() / k_channels;
+
+            for (std::size_t texel = 0; texel < texels; ++texel)
+            {
+                ++histogram[rgba[texel * k_channels]];
+            }
+
+            const auto clipped = static_cast<uint64_t>(static_cast<double>(texels) * k_heightClipShare);
+            const uint32_t low = histogramPercentile(histogram, clipped);
+            const uint32_t high = histogramPercentile(histogram, texels - 1 - clipped);
+
+            if (high < low + k_minHeightRange)
+            {
+                return Error{ErrorCode::InvalidArgument, "height map is flat"};
+            }
+
+            const float scale = 255.0f / static_cast<float>(high - low);
+
+            for (std::size_t texel = 0; texel < texels; ++texel)
+            {
+                const float stretched = (static_cast<float>(rgba[texel * k_channels]) - static_cast<float>(low)) * scale;
+                const auto value = static_cast<uint8_t>(std::clamp(stretched + 0.5f, 0.0f, 255.0f));
+                rgba[texel * k_channels + 0] = value;
+                rgba[texel * k_channels + 1] = value;
+                rgba[texel * k_channels + 2] = value;
+                rgba[texel * k_channels + 3] = 255;
+            }
+
+            return {};
+        }
+
         double alphaCoverage(std::span<const uint8_t> level, float threshold)
         {
             const std::size_t texels = level.size() / k_channels;
@@ -173,6 +227,7 @@ namespace lockstep::cooker
                 return render::TextureFormat::Bc7Unorm;
             }
             case TextureUsage::Occlusion:
+            case TextureUsage::Height:
             {
                 return render::TextureFormat::Bc4Unorm;
             }
@@ -194,9 +249,18 @@ namespace lockstep::cooker
             return decoded.error();
         }
 
-        const assets::DecodedTexture& source = decoded.value();
+        assets::DecodedTexture& source = decoded.value();
         const std::size_t baseBytes = static_cast<std::size_t>(source.width) * source.height * k_channels;
-        const std::span<const uint8_t> base(reinterpret_cast<const uint8_t*>(source.bytes.data()), baseBytes);
+        const std::span<uint8_t> base(reinterpret_cast<uint8_t*>(source.bytes.data()), baseBytes);
+
+        if (usage == TextureUsage::Height)
+        {
+            if (auto stretched = stretchHeights(base); !stretched)
+            {
+                return stretched.error();
+            }
+        }
+
         std::vector<std::vector<uint8_t>> levels = mipChain(base, source.width, source.height, usage);
 
         if (usage == TextureUsage::Colour && alphaCutoff > 0.0f)

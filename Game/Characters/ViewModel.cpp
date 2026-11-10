@@ -33,6 +33,7 @@ namespace game
         constexpr math::Vec3 k_weaponAnchor{-0.13f, 1.31f, 0.37f};
         constexpr float k_maxRecoil{0.15f};
         constexpr float k_maxPush{0.04f};
+        constexpr float k_maxVelocityChange{10.0f};
 
         constexpr math::Vec3 k_viewRight{1.0f, 0.0f, 0.0f};
         constexpr math::Vec3 k_viewUp{0.0f, 1.0f, 0.0f};
@@ -93,13 +94,73 @@ namespace game
             value = target + displacement;
         }
 
+        math::Vec2 worldVelocity(const ViewModelInput& input)
+        {
+            const float cosine = std::cos(input.yaw);
+            const float sine = std::sin(input.yaw);
+
+            return math::Vec2{input.velocity.x * cosine - input.velocity.y * sine,
+                -input.velocity.x * sine - input.velocity.y * cosine};
+        }
+
+        math::Vec2 viewVelocityChange(ViewModelState& state, const ViewModelInput& input)
+        {
+            const math::Vec2 world = worldVelocity(input);
+            math::Vec2 change = world - state.lastVelocity;
+            state.lastVelocity = world;
+            const float length = math::length(change);
+
+            if (length > k_maxVelocityChange)
+            {
+                change = change * (k_maxVelocityChange / length);
+            }
+
+            const float cosine = std::cos(input.yaw);
+            const float sine = std::sin(input.yaw);
+
+            return math::Vec2{change.x * cosine - change.y * sine, -change.x * sine - change.y * cosine};
+        }
+
+        void updateAirReaction(ViewModelState& state, const ViewModelInput& input, float seconds)
+        {
+            const ViewModelTuning& tuning = state.tuning;
+
+            if (!input.isGrounded)
+            {
+                if (state.wasGrounded && input.verticalSpeed > 0.0f)
+                {
+                    state.airRate = state.airRate - math::Vec2{tuning.jumpDrop, tuning.jumpPitch};
+                }
+
+                state.fallSpeed = std::max(state.fallSpeed, -input.verticalSpeed);
+            }
+            else if (!state.wasGrounded)
+            {
+                if (state.fallSpeed >= tuning.landMinSpeed)
+                {
+                    state.airRate = state.airRate - math::Vec2{tuning.landDrop, tuning.landPitch} * state.fallSpeed;
+                }
+
+                state.fallSpeed = 0.0f;
+            }
+
+            state.wasGrounded = input.isGrounded;
+            stepSpring(state.air, state.airRate, tuning.airStiffness, tuning.airDamping, seconds);
+            state.air.x = std::clamp(state.air.x, -tuning.airLimit, tuning.airLimit);
+            state.air.y = std::clamp(state.air.y, -2.0f * tuning.airLimit, 2.0f * tuning.airLimit);
+        }
+
         void updateMovementReaction(ViewModelState& state, const ViewModelInput& input, float seconds)
         {
             const ViewModelTuning& tuning = state.tuning;
-            const math::Vec2 change = input.velocity - state.lastVelocity;
-            state.lastVelocity = input.velocity;
+            const math::Vec2 change = viewVelocityChange(state, input);
             state.moveRate = state.moveRate + math::Vec3{-change.x, -std::abs(change.y) * tuning.moveDip, change.y}
                 * tuning.moveKick;
+            state.moveAngleRate = state.moveAngleRate
+                + math::Vec2{-std::abs(change.y) * tuning.movePitch, change.x * tuning.moveYaw};
+            stepSpring(state.moveAngle, state.moveAngleRate, tuning.moveStiffness, tuning.moveDamping, seconds);
+            state.moveAngle.x = std::clamp(state.moveAngle.x, -tuning.moveAngleLimit, tuning.moveAngleLimit);
+            state.moveAngle.y = std::clamp(state.moveAngle.y, -tuning.moveAngleLimit, tuning.moveAngleLimit);
 
             const float strafe = math::clamp(input.velocity.x / std::max(input.strafeSpeed, 0.1f), -1.5f, 1.5f);
             const math::Vec3 strafeTarget{-strafe * tuning.strafeShift, 0.0f, 0.0f};
@@ -123,7 +184,13 @@ namespace game
             state.tiltRate = 0.0f;
             state.moveOffset = math::Vec3{0.0f, 0.0f, 0.0f};
             state.moveRate = math::Vec3{0.0f, 0.0f, 0.0f};
-            state.lastVelocity = input.velocity;
+            state.moveAngle = math::Vec2{0.0f, 0.0f};
+            state.moveAngleRate = math::Vec2{0.0f, 0.0f};
+            state.air = math::Vec2{0.0f, 0.0f};
+            state.airRate = math::Vec2{0.0f, 0.0f};
+            state.wasGrounded = input.isGrounded;
+            state.fallSpeed = 0.0f;
+            state.lastVelocity = worldVelocity(input);
             state.shotCount = input.shotCount;
             state.lastYaw = input.yaw;
             state.lastPitch = input.pitch;
@@ -162,6 +229,7 @@ namespace game
             stepSpring(state.recoil, state.recoilRate, tuning.recoilStiffness, tuning.recoilDamping, seconds);
             state.recoil = std::clamp(state.recoil, -k_maxRecoil, k_maxRecoil);
             updateMovementReaction(state, input, seconds);
+            updateAirReaction(state, input, seconds);
         }
 
         struct AnchoredPose
@@ -220,10 +288,12 @@ namespace game
             math::Vec3 origin = anchor - rotation * k_weaponAnchor;
 
             const float bob = tuning.bobAmount * input.bobStrength * motion;
-            const float roll = std::sin(input.bobPhase) * tuning.bobRoll * input.bobStrength - state.tilt;
-            const float swing = std::sin(input.bobPhase) * tuning.sprintSwing * sprinting;
-            const math::Quat kick = math::angleAxis(swing, k_viewUp) * math::angleAxis(state.recoil * motion, k_viewRight)
-                * math::angleAxis(roll * motion, k_viewBack);
+            const float roll = std::sin(input.bobPhase) * (tuning.bobRoll * input.bobStrength
+                + tuning.sprintRollSwing * sprinting) - state.tilt - state.sway.x * tuning.swayRoll;
+            const float swing = std::sin(input.bobPhase) * tuning.sprintSwing * sprinting + state.moveAngle.y;
+            const float climb = state.recoil + state.moveAngle.x + state.air.y;
+            const math::Quat kick = math::angleAxis(swing * motion, k_viewUp)
+                * math::angleAxis(climb * motion, k_viewRight) * math::angleAxis(roll * motion, k_viewBack);
             origin = anchor + kick * (origin - anchor);
             rotation = kick * rotation;
 
@@ -232,7 +302,7 @@ namespace game
                 -(1.0f - std::cos(2.0f * input.bobPhase)) * 0.5f * bob * k_bobVertical - dip,
                 state.recoil * motion * tuning.recoilBack + dip * 0.5f};
             origin = origin + math::lerp(tuning.readyOffset, tuning.aimOffset, aimed) + clampLength(push, k_maxPush)
-                + state.moveOffset * motion
+                + state.moveOffset * motion + k_viewUp * (state.air.x * motion)
                 + k_viewUp * (-(1.0f - std::cos(2.0f * input.bobPhase)) * 0.5f * tuning.sprintBounce * sprinting);
 
             const float breathe = tuning.breatheAmount * motion;
@@ -243,7 +313,7 @@ namespace game
             origin = sway * origin;
             rotation = sway * rotation;
 
-            const math::Quat camera = math::angleAxis(input.yaw, k_viewUp)
+            const math::Quat camera = math::angleAxis(input.yaw + input.cameraYawOffset, k_viewUp)
                 * math::angleAxis(input.pitch + input.cameraPitchOffset, k_viewRight)
                 * math::angleAxis(-input.cameraRoll, k_viewBack);
 
@@ -314,6 +384,7 @@ namespace game
         ImGui::SliderFloat("Sway limit (rad)", &tuning.swayLimit, 0.0f, 0.2f);
         ImGui::SliderFloat("Sway stiffness", &tuning.swayStiffness, 10.0f, 400.0f);
         ImGui::SliderFloat("Sway damping", &tuning.swayDamping, 1.0f, 40.0f);
+        ImGui::SliderFloat("Sway cant (rad/rad)", &tuning.swayRoll, -2.0f, 2.0f);
         ImGui::SliderFloat("Bob (m)", &tuning.bobAmount, 0.0f, 0.03f);
         ImGui::SliderFloat("Bob roll (rad)", &tuning.bobRoll, 0.0f, 0.05f);
         ImGui::SliderFloat("Breathing (rad)", &tuning.breatheAmount, 0.0f, 0.02f);
@@ -330,6 +401,17 @@ namespace game
         ImGui::SliderFloat("Move stiffness", &tuning.moveStiffness, 10.0f, 400.0f);
         ImGui::SliderFloat("Move damping", &tuning.moveDamping, 1.0f, 40.0f);
         ImGui::SliderFloat("Move limit (m)", &tuning.moveLimit, 0.0f, 0.08f);
+        ImGui::SliderFloat("Move muzzle dip (rad/s per m/s)", &tuning.movePitch, 0.0f, 0.3f);
+        ImGui::SliderFloat("Move muzzle trail (rad/s per m/s)", &tuning.moveYaw, -0.3f, 0.3f);
+        ImGui::SliderFloat("Move angle limit (rad)", &tuning.moveAngleLimit, 0.0f, 0.2f);
+        ImGui::SliderFloat("Jump drop (m/s)", &tuning.jumpDrop, 0.0f, 1.5f);
+        ImGui::SliderFloat("Jump muzzle dip (rad/s)", &tuning.jumpPitch, 0.0f, 2.0f);
+        ImGui::SliderFloat("Land drop (m/s per m/s)", &tuning.landDrop, 0.0f, 0.3f);
+        ImGui::SliderFloat("Land muzzle dip (rad/s per m/s)", &tuning.landPitch, 0.0f, 0.5f);
+        ImGui::SliderFloat("Land dip from (m/s)", &tuning.landMinSpeed, 0.0f, 10.0f);
+        ImGui::SliderFloat("Jump/land stiffness", &tuning.airStiffness, 10.0f, 400.0f);
+        ImGui::SliderFloat("Jump/land damping", &tuning.airDamping, 1.0f, 40.0f);
+        ImGui::SliderFloat("Jump/land limit (m)", &tuning.airLimit, 0.0f, 0.12f);
         ImGui::SliderFloat("Aim motion scale", &tuning.aimDamping, 0.0f, 1.0f);
         ImGui::DragFloat3("Ready offset (m)", &tuning.readyOffset.x, 0.002f, -0.1f, 0.1f);
         ImGui::DragFloat3("Aim offset (m)", &tuning.aimOffset.x, 0.002f, -0.05f, 0.05f);
@@ -345,6 +427,7 @@ namespace game
         ImGui::DragFloat3("Sprint offset (m)", &tuning.sprintOffset.x, 0.002f, -0.2f, 0.2f);
         ImGui::SliderFloat("Sprint swing (rad)", &tuning.sprintSwing, 0.0f, 0.2f);
         ImGui::SliderFloat("Sprint bounce (m)", &tuning.sprintBounce, 0.0f, 0.05f);
+        ImGui::SliderFloat("Sprint roll swing (rad)", &tuning.sprintRollSwing, 0.0f, 0.2f);
         ImGui::TreePop();
     }
 #endif

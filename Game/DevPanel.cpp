@@ -3,8 +3,10 @@
 #if LOCKSTEP_DEV_TOOLS
 
 #include "GameState.hpp"
+#include "Gore/GoreDevPanel.hpp"
 #include "Hospital/HospitalDevPanel.hpp"
 #include "Level/RoomDevPanel.hpp"
+#include "Lights/LightAnimation.hpp"
 #include "Presentation/LevelLook.hpp"
 #include "Simulation/HostSimulation.hpp"
 #include "Station/StationDevPanel.hpp"
@@ -31,8 +33,8 @@ namespace game
         using lockstep::app::GameState;
 
         constexpr float k_maxWorldScale{2.0f};
-        constexpr float k_maxMoveSpeed{8.0f};
-        constexpr float k_maxAcceleration{30.0f};
+        constexpr float k_maxMoveSpeed{12.0f};
+        constexpr float k_maxAcceleration{80.0f};
         constexpr float k_maxEnemySpeed{10.0f};
         constexpr float k_maxRespawnDelay{10.0f};
         constexpr int k_maxEnemyHealth{20};
@@ -108,7 +110,7 @@ namespace game
             ImGui::TextDisabled("Raw mouse motion, applied linearly (no smoothing or acceleration)");
         }
 
-        void lookSection(const EngineContext& engine)
+        void lookSection(GameState& state, const EngineContext& engine)
         {
             constexpr LookPreset k_presets[] = {LookPreset::Day, LookPreset::Evening, LookPreset::Sunset,
                 LookPreset::Night};
@@ -123,6 +125,7 @@ namespace game
                 if (ImGui::SmallButton(label.c_str()))
                 {
                     applyLookPreset(engine.renderer.settings(), preset);
+                    resetWeatherLook(state.weather);
                 }
             }
         }
@@ -173,6 +176,8 @@ namespace game
             ImGui::SliderFloat("Deceleration", &settings.pawns.deceleration, 0.1f, k_maxAcceleration);
             ImGui::SliderFloat("Turn accel. at run", &settings.pawns.runTurnAcceleration, 0.1f, k_maxAcceleration);
             ImGui::SliderFloat("Jump height (m)", &settings.pawns.jumpHeight, 0.0f, 2.0f);
+            ImGui::SliderFloat("Gravity (m/s^2)", &settings.pawns.gravity, 1.0f, 40.0f);
+            ImGui::SliderFloat("Ground stick (m/s)", &settings.pawns.groundStick, 0.0f, 10.0f);
             ImGui::SliderFloat("Coyote time (s)", &settings.pawns.coyoteSeconds, 0.0f, 0.5f);
             ImGui::SliderFloat("Jump buffer (s)", &settings.pawns.jumpBufferSeconds, 0.0f, 0.5f);
             ImGui::SliderFloat("Hard landing from (m/s)", &settings.pawns.hardLandingSpeed, 0.0f, 20.0f);
@@ -285,7 +290,7 @@ namespace game
         {
             timeDomainSection(state, engine);
             controlsSection(state);
-            lookSection(engine);
+            lookSection(state, engine);
             ImGui::Separator();
 
             if (engine.session.role() == net::Role::Client)
@@ -303,6 +308,12 @@ namespace game
             pawnCharactersDevSection(state.pawnCharacters ? &*state.pawnCharacters : nullptr);
             headMotionDevSection(state.headMotion);
             footstepsDevSection(state.footsteps);
+            npcLooksDevSection(state.npcLooks, engine.physics);
+            combatAudioDevSection(state.combatAudio);
+            effectsDevSection(state.effects);
+            weatherDevSection(state.weather);
+            lightAnimationDevSection(state.lightAnimation);
+            goreDevSection(state, engine);
 
             if (state.level)
             {

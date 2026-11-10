@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <iostream>
 
 namespace game
@@ -21,6 +22,7 @@ namespace game
         constexpr float k_manDownReach{15.0f};
         constexpr float k_attackedReaction{0.2f};
         constexpr float k_decisionStagger{0.8f};
+        constexpr float k_minHitDistance{0.1f};
         constexpr std::array<std::string_view, 10> k_mercCallouts{"hospital.gunman.callout.01",
             "hospital.gunman.callout.02", "hospital.gunman.callout.03", "hospital.gunman.callout.04",
             "hospital.gunman.callout.05", "hospital.gunman.callout.06", "hospital.gunman.callout.07",
@@ -74,6 +76,19 @@ namespace game
             {
                 callOut(roster, *nearest, NpcCalloutKind::ManDown, settings);
             }
+        }
+
+        std::optional<float> headingFrom(const math::Vec3& source, const math::Vec3& target)
+        {
+            const float x = target.x - source.x;
+            const float z = target.z - source.z;
+
+            if (x * x + z * z < k_minHitDistance * k_minHitDistance)
+            {
+                return std::nullopt;
+            }
+
+            return std::atan2(x, z);
         }
     } //namespace
 
@@ -183,6 +198,7 @@ namespace game
         npc.failedPeeks = 0;
         npc.burstLeft = 0;
         npc.aimSeconds = 0.0f;
+        npc.hitLimb = lockstep::anim::Limb::None;
 
         if (world::Entity* entity = entities.find(npc.entity))
         {
@@ -309,6 +325,8 @@ namespace game
 
         if (const std::optional<math::Vec3> foot = physics.footPosition(npc.controller))
         {
+            npc.hitYaw = headingFrom(source, *foot);
+
             if (world::Entity* entity = entities.find(npc.entity))
             {
                 placePawnEntity(*entity, *foot, npc.yaw, npc.isCrouched ? k_npcCrouchHeight : k_pawnStandHeight, 0.0f);

@@ -1,8 +1,10 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 // The output pass: FXAA 3.11 (quality preset 12) after T. Lottes on the tonemapped image, or
-// sharpening of the TAA result, or a plain copy; then film grain (grain x intensity, y highlight
-// response, z size in pixels), the screen fade and output dithering.
+// sharpening of the TAA result, or a plain copy; then the lens effects (lens_effects.glsl), film
+// grain (grain x intensity, y highlight response, z size in pixels), the screen fade and output
+// dithering.
 
 const float k_edgeThreshold = 0.125;
 const float k_edgeThresholdMin = 0.0312;
@@ -23,10 +25,16 @@ layout(push_constant) uniform OutputConstants
     float sharpness;
     vec2 padding;
     vec4 grain;
+    vec4 motionBlur;
+    vec4 depthOfField;
+    vec4 lens;
+    vec4 depthParams;
 } constants;
 
 layout(set = 2, binding = 0) uniform sampler2D source;
 layout(set = 2, binding = 1) uniform sampler2D temporal;
+layout(set = 2, binding = 2) uniform sampler2D depthTexture;
+layout(set = 2, binding = 3) uniform sampler2D velocityTexture;
 
 layout(location = 0) in vec2 inUv;
 
@@ -214,6 +222,8 @@ vec3 toLinear(vec3 srgb)
     return mix(srgb / 12.92, pow((srgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), srgb));
 }
 
+#include "lens_effects.glsl"
+
 float hash(vec3 point)
 {
     point = fract(point * vec3(0.1031, 0.1030, 0.0973));
@@ -274,6 +284,8 @@ void main()
     {
         color = texelFetch(source, pixel, 0).rgb;
     }
+
+    color = lensEffects(color, uv);
 
     if (constants.grain.x > 0.0)
     {

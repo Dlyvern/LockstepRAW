@@ -115,7 +115,9 @@ namespace lockstep::render
     // opaque world draws front to back, decals in submission order, the sky behind them, alpha-blended world draws back to
     // front, then alpha-blended viewmodel draws. Lit materials write direct
     // light to the colour target and environment light to the ambient target (so SSAO can darken
-    // only the latter); unlit materials and the sky write colour only. Lit materials and the sky
+    // only the latter) and a small G-buffer (normal, roughness, environment specular, specular
+    // weight) for screen-space reflections and ambient occlusion; unlit materials and the sky write
+    // colour only (neutral G-buffer values). Lit materials and the sky
     // also write motion vectors; the planar reflector's surface composites the reflection texture.
     class LitScenePass final : public vela::graphics::Pass
     {
@@ -126,7 +128,8 @@ namespace lockstep::render
         // Returns: the pass, or an error if a shader is missing or the material failed.
         [[nodiscard]] static Result<std::unique_ptr<LitScenePass>> create(RendererState& state);
 
-        // Returns: colour, ambient, velocity and depth outputs (cleared; multisampled and resolved
+        // Returns: colour, ambientLit, velocity, G-buffer (surfaceNormal, surfaceSpecular) and depth
+        //          outputs (cleared; multisampled and resolved
         //          into them when RendererState::sceneSamples > 1); the shadow atlas, environment
         //          atlas and planar reflection as sampled inputs.
         [[nodiscard]] vela::graphics::PassDescription describe() const override;

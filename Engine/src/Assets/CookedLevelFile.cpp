@@ -9,6 +9,7 @@ namespace lockstep::assets
     {
         constexpr std::size_t k_minimumStringBytes{sizeof(uint32_t)};
         constexpr std::size_t k_minimumMaterialBytes{70};
+        constexpr std::size_t k_surfaceDetailBytes{13};
         constexpr std::size_t k_minimumMeshBytes{41};
         constexpr std::size_t k_minimumInstanceBytes{68};
         constexpr std::size_t k_minimumNodeBytes{44};
@@ -41,9 +42,13 @@ namespace lockstep::assets
             writer.write(material.metallicRoughness);
             writer.write(material.occlusion);
             writer.write(material.emissive);
+            writer.write(material.height);
+            writer.write(factors.heightScale);
+            writer.write(static_cast<uint8_t>(factors.detail));
+            writer.write(factors.detailScale);
         }
 
-        void readMaterial(BinaryReader& reader, CookedMaterial& material)
+        void readMaterial(BinaryReader& reader, CookedMaterial& material, bool hasSurfaceDetail)
         {
             render::PbrMaterialDescription& factors = material.factors;
             uint8_t alphaMode = 0;
@@ -67,6 +72,16 @@ namespace lockstep::assets
             reader.read(material.emissive);
             factors.alphaMode = static_cast<render::AlphaMode>(alphaMode);
             factors.doubleSided = doubleSided != 0;
+
+            if (hasSurfaceDetail)
+            {
+                uint8_t detail = 0;
+                reader.read(material.height);
+                reader.read(factors.heightScale);
+                reader.read(detail);
+                reader.read(factors.detailScale);
+                factors.detail = static_cast<render::SurfaceDetail>(detail);
+            }
         }
 
         void writeMesh(BinaryWriter& writer, const CookedMesh& mesh)
@@ -144,8 +159,9 @@ namespace lockstep::assets
         {
             return validTexture(material.baseColor, level) && validTexture(material.normal, level)
                 && validTexture(material.metallicRoughness, level) && validTexture(material.occlusion, level)
-                && validTexture(material.emissive, level)
-                && material.factors.alphaMode <= render::AlphaMode::Blend;
+                && validTexture(material.emissive, level) && validTexture(material.height, level)
+                && material.factors.alphaMode <= render::AlphaMode::Blend
+                && static_cast<uint32_t>(material.factors.detail) <= render::k_surfaceDetailKinds;
         }
 
         bool validReferences(const CookedLevel& level)
@@ -308,7 +324,12 @@ namespace lockstep::assets
         CookedLevel level{};
         const auto readString = [](BinaryReader& source, std::string& text) { source.readString(text); };
         readArray(reader, level.textures, k_minimumStringBytes, readString);
-        readArray(reader, level.materials, k_minimumMaterialBytes, readMaterial);
+        const bool hasSurfaceDetail = version > k_levelVersionWithoutSurfaceDetail;
+        readArray(reader, level.materials, k_minimumMaterialBytes + (hasSurfaceDetail ? k_surfaceDetailBytes : 0),
+            [hasSurfaceDetail](BinaryReader& source, CookedMaterial& material)
+        {
+            readMaterial(source, material, hasSurfaceDetail);
+        });
         readArray(reader, level.meshes, k_minimumMeshBytes, readMesh);
         readArray(reader, level.collisionShapes, k_minimumStringBytes, readString);
         readArray(reader, level.instances, k_minimumInstanceBytes + hierarchyBytes,
@@ -337,7 +358,7 @@ namespace lockstep::assets
         readArray(reader, level.lights, k_minimumLightBytes, readLight);
         readBounds(reader, level.bounds);
 
-        if (version >= k_levelVersion)
+        if (version > k_levelVersionWithoutSkins)
         {
             readArray(reader, level.models, k_minimumStringBytes, readString);
             readArray(reader, level.skinnedInstances, k_skinnedInstanceBytes,

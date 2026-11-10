@@ -2,6 +2,9 @@
 #define LOCKSTEP_RENDER_RENDER_SETTINGS_HPP
 
 #include "Lockstep/Core/Math.hpp"
+#include "Lockstep/Render/DetailSettings.hpp"
+#include "Lockstep/Render/IndirectLightingSettings.hpp"
+#include "Lockstep/Render/WetnessSettings.hpp"
 
 #include <cstdint>
 
@@ -171,19 +174,81 @@ namespace lockstep::render
         float skyBlend{0.0f};
     };
 
-    // Screen-space ambient occlusion from the depth buffer, at half resolution. Darkens only
-    // ambient (environment) light, never direct light.
-    // enabled:   compute and apply it.
-    // radius:    world-space sampling radius in metres.
-    // intensity: strength of the darkening.
-    // power:     contrast curve applied to the result.
-    // showOnly:  display the occlusion buffer instead of the scene.
+    // Volumetric fog: haze in the air that the sun and point/spot lights scatter towards the camera,
+    // shadowed by the shadow atlas, so light shafts through windows, spot cones and the glow around
+    // lamps become visible. Raymarched per pixel at reduced resolution from the camera to the first
+    // opaque surface (or maxDistance), with per-pixel jitter, reprojected over frames and upsampled
+    // by depth, then composited into the HDR scene before bloom and tonemapping.
+    // Density follows an exponential height profile: density * exp(-heightFalloff * (y - baseHeight)).
+    // enabled:            compute and composite it.
+    // density:            extinction per metre at baseHeight (0.01 thin haze, 0.05 thick smoke).
+    // albedo:             linear RGB colour of the haze: the share of extinguished light scattered
+    //                     (rather than absorbed) per channel; also tints the ambient term.
+    // anisotropy:         Henyey-Greenstein g, -0.9 to 0.9: 0 scatters evenly, towards 1 mostly forward
+    //                     (shafts bright when looking towards the light).
+    // heightFalloff:      how quickly density drops with height, per metre; 0 is even everywhere.
+    // baseHeight:         world height where `density` applies.
+    // sunIntensity:       multiplier on light scattered from the sun.
+    // localLightIntensity: multiplier on light scattered from point and spot lights (each light's own
+    //                     `volumetric` factor applies on top).
+    // ambientIntensity:   radiance of an even, unshadowed glow of the haze (light bounced everywhere),
+    //                     so it reads in the dark too; 0 for none.
+    // interiorDensityScale: density multiplier while the camera is inside an interior ambient zone
+    //                     (fades over a couple of metres at the zone faces); 1 for none.
+    // maxDistance:        metres along the view ray the fog is raymarched and absorbs; farther
+    //                     surfaces are left to the distance fog.
+    // steps:              raymarch samples for the sun, 8 to 64 (each point/spot light the ray passes
+    //                     through gets half as many, within its range).
+    // resolutionScale:    size of the raymarch relative to the window, 0.25 to 1. A change rebuilds
+    //                     its attachments.
+    // temporal:           blend each pixel with last frame's reprojected result (hides the jitter
+    //                     noise; can ghost slightly behind fast-moving lights).
+    // historyWeight:      share of last frame kept by `temporal`, 0 to 0.98.
+    struct VolumetricFogSettings
+    {
+        bool enabled{false};
+        float density{0.015f};
+        math::Vec3 albedo{0.9f, 0.9f, 0.9f};
+        float anisotropy{0.45f};
+        float heightFalloff{0.0f};
+        float baseHeight{0.0f};
+        float sunIntensity{1.0f};
+        float localLightIntensity{1.0f};
+        float ambientIntensity{0.0f};
+        float interiorDensityScale{1.0f};
+        float maxDistance{40.0f};
+        uint32_t steps{24};
+        float resolutionScale{0.5f};
+        bool temporal{true};
+        float historyWeight{0.9f};
+    };
+
+    // Screen-space ambient occlusion (GTAO: horizon search in a few screen slices around each
+    // pixel, integrated against its normal) at half resolution. Darkens only ambient
+    // (environment) light, never direct light.
+    // enabled:           compute and apply it.
+    // radius:            world-space search radius in metres.
+    // intensity:         strength of the darkening.
+    // power:             contrast curve applied to the visibility.
+    // slices:            screen directions searched per pixel, 1 to 4.
+    // steps:             depth samples per direction and side, 2 to 12.
+    // multiBounce:       brighten occlusion by light bounced between the occluding surfaces,
+    //                    tinted by the surface colour (less dirty-looking corners on light walls).
+    // multiBounceAlbedo: assumed surface reflectance for the multi-bounce, 0 to 1.
+    // specularOcclusion: also occlude environment and screen-space reflections, by the visible
+    //                    cone of the reflection lobe (reflections stop glowing in corners).
+    // showOnly:          display the occlusion buffer instead of the scene.
     struct AmbientOcclusionSettings
     {
         bool enabled{true};
         float radius{0.6f};
         float intensity{1.0f};
-        float power{1.5f};
+        float power{1.3f};
+        uint32_t slices{2};
+        uint32_t steps{6};
+        bool multiBounce{true};
+        float multiBounceAlbedo{0.5f};
+        bool specularOcclusion{true};
         bool showOnly{false};
     };
 
@@ -362,7 +427,10 @@ namespace lockstep::render
         InteriorAmbientSettings interiorAmbient{};
         ShadowSettings shadows{};
         FogSettings fog{};
+        VolumetricFogSettings volumetricFog{};
         AmbientOcclusionSettings ambientOcclusion{};
+        ContactShadowSettings contactShadows{};
+        ScreenSpaceReflectionSettings screenSpaceReflections{};
         BloomSettings bloom{};
         TonemapSettings tonemap{};
         AutoExposureSettings autoExposure{};
@@ -372,6 +440,12 @@ namespace lockstep::render
         AntiAliasingSettings antiAliasing{};
         PlanarReflectionSettings reflections{};
         CullingSettings culling{};
+        SurfaceDetailSettings surfaceDetail{};
+        MotionBlurSettings motionBlur{};
+        ChromaticAberrationSettings chromaticAberration{};
+        LensDirtSettings lensDirt{};
+        DepthOfFieldSettings depthOfField{};
+        WetnessSettings wetness{};
     };
 } //namespace lockstep::render
 

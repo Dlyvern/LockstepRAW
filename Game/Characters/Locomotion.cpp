@@ -25,7 +25,7 @@ namespace game
         constexpr float k_sectorHalfAngle{k_pi * 0.25f};
         constexpr float k_sectorHysteresis{k_pi / 15.0f};
         constexpr float k_minPlayback{0.5f};
-        constexpr float k_maxPlayback{2.0f};
+        constexpr float k_maxPlayback{2.8f};
         constexpr float k_walkOnlyStretch{1.15f};
         constexpr uint32_t k_strideSamples{96};
         constexpr float k_plantedHeight{0.03f};

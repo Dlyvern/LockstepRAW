@@ -7,12 +7,14 @@
 #include <Lockstep/Assets/SceneCollision.hpp>
 #include <Lockstep/Core/Math.hpp>
 #include <Lockstep/Core/Result.hpp>
+#include <Lockstep/Physics/PhysicsTypes.hpp>
 
 #include <array>
 #include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace lockstep::physics
 {
@@ -48,10 +50,14 @@ namespace game
     };
 
     // An imported level: what is drawn and the static colliders that make it walkable.
+    // blockers: invisible static boxes from "Blocker_<anything>" nodes (Blender cube empties,
+    //           display size 1, scaled and rotated to cover the area), e.g. level bounds. They
+    //           block players, NPCs and rays but are never drawn. Destroy them with the level.
     struct SceneLevel
     {
         lockstep::assets::Scene scene;
         lockstep::assets::SceneCollision collision;
+        std::vector<lockstep::physics::BodyId> blockers;
     };
 
     // Where players and the enemy appear in a level.

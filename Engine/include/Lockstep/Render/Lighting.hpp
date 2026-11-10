@@ -35,6 +35,8 @@ namespace lockstep::render
     // range:     distance at which the light fades out completely, in metres.
     // castsShadows: true to cast a shadow (six shadow atlas tiles, one per cube face) when it is
     //              among the nearest shadow casters this frame (see ShadowSettings::maxLocalLights).
+    // volumetric:  multiplier on the light it scatters in volumetric fog; 0 for none (a muzzle
+    //              flash, a light at the camera that would wash out the view).
     struct PointLight
     {
         math::Vec3 position{0.0f, 0.0f, 0.0f};
@@ -42,6 +44,7 @@ namespace lockstep::render
         float intensity{10.0f};
         float range{10.0f};
         bool castsShadows{false};
+        float volumetric{1.0f};
     };
 
     // An axis-aligned world box whose inside is sheltered from the sky (a building interior): lit
@@ -64,6 +67,8 @@ namespace lockstep::render
     // outerAngle:   half-angle where the cone has faded to nothing, in radians. Must be > innerAngle.
     // castsShadows: true to cast a shadow (one shadow atlas tile) when it is among the nearest
     //               shadow casters this frame (see ShadowSettings::maxLocalLights).
+    // volumetric:   multiplier on the light it scatters in volumetric fog; 0 for none (the local
+    //               player's own flashlight, if its cone fills the view too much).
     struct SpotLight
     {
         math::Vec3 position{0.0f, 0.0f, 0.0f};
@@ -74,6 +79,7 @@ namespace lockstep::render
         float innerAngle{math::radians(12.0f)};
         float outerAngle{math::radians(25.0f)};
         bool castsShadows{false};
+        float volumetric{1.0f};
     };
 } //namespace lockstep::render
 

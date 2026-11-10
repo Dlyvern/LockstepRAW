@@ -3,6 +3,7 @@
 
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Physics/PhysicsTypes.hpp"
+#include "Lockstep/Physics/Ragdoll.hpp"
 
 #include <cstddef>
 #include <memory>
@@ -202,6 +203,64 @@ namespace lockstep::physics
         // Returns:    whether its last move() ended on the ground (false before the first move or
         //             for a stale handle).
         [[nodiscard]] bool isGrounded(ControllerId controller) const noexcept;
+
+        // Creates a ragdoll: one dynamic capsule per body, joined by limited joints, simulated by
+        // step() with the World delta like other dynamic bodies. A ragdoll is presentation only
+        // (each machine simulates its own): it collides with static bodies and other ragdolls,
+        // never with dynamic bodies or controllers, and raycasts and controller moves pass
+        // through it.
+        // description: bodies, starting velocity and settings.
+        // Returns:     its handle, or InvalidArgument for a bad description (no bodies, too many,
+        //              a parent after its child, a non-positive size, out-of-range limits), or an
+        //              error PhysX reported.
+        [[nodiscard]] Result<RagdollId> createRagdoll(const RagdollDescription& description);
+
+        // Destroys a ragdoll and all its bodies. Its handle, and every copy, becomes stale.
+        // ragdoll: the ragdoll.
+        // Returns: true if it was alive and is now destroyed.
+        bool destroyRagdoll(RagdollId ragdoll);
+
+        // ragdoll: the ragdoll.
+        // Returns: true if `ragdoll` refers to a living ragdoll.
+        [[nodiscard]] bool isAlive(RagdollId ragdoll) const noexcept;
+
+        // Pushes one body of a ragdoll and wakes it up.
+        // ragdoll: the ragdoll.
+        // body:    index of the body in the description.
+        // impulse: change of momentum in kg m/s (direction times strength).
+        // point:   world point the impulse acts at (off-centre points also spin the body); nothing
+        //          pushes the body's centre of mass.
+        // Returns: false for a stale handle or a body that is out of range or removed.
+        bool applyRagdollImpulse(RagdollId ragdoll, uint32_t body, const math::Vec3& impulse,
+            const std::optional<math::Vec3>& point = std::nullopt);
+
+        // Reads the world frame of every body (the bone frames given as RagdollBodyDescription::
+        // pose, now moved by the simulation), blended between the last two step() results like
+        // interpolated entities. Removed bodies report where they were removed.
+        // ragdoll: the ragdoll.
+        // alpha:   0 gives the frame before the last step(), 1 the frame after it.
+        // poses:   receives one transform per body (scale 1); must have the body count.
+        // Returns: false for a stale handle or a wrong-sized span.
+        bool ragdollPoses(RagdollId ragdoll, float alpha, std::span<math::Transform> poses) const;
+
+        // ragdoll: the ragdoll.
+        // Returns: whether it sleeps and how fast it moves, or nothing for a stale handle.
+        [[nodiscard]] std::optional<RagdollStatus> ragdollStatus(RagdollId ragdoll) const;
+
+        // Breaks the joint between a body and its parent: the body and its children fall away
+        // as a separate piece (e.g. a severed limb). They still collide and report poses.
+        // ragdoll: the ragdoll.
+        // body:    index of the body; the root has no joint to break.
+        // Returns: false for a stale handle, the root, an out-of-range or removed body, or a body
+        //          already detached.
+        bool detachRagdollBody(RagdollId ragdoll, uint32_t body);
+
+        // Removes a body and all its children from the simulation (e.g. a limb that is now drawn
+        // as a separate object). Their poses stay where they were removed.
+        // ragdoll: the ragdoll.
+        // body:    index of the body.
+        // Returns: false for a stale handle or an out-of-range or already removed body.
+        bool removeRagdollBodies(RagdollId ragdoll, uint32_t body);
 
         // Returns: body and controller counts, last step timing and PhysX error counts.
         [[nodiscard]] PhysicsStats stats() const noexcept;

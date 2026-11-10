@@ -44,7 +44,7 @@ namespace lockstep::render
             float mask[4];
         };
 
-        static_assert(sizeof(PbrDrawConstants) == 192);
+        static_assert(sizeof(PbrDrawConstants) == 208);
         static_assert(sizeof(MaskedShadowConstants) == 80);
 
         vela::graphics::AttachmentSlot clearedSlot(std::string_view name, vela::graphics::TextureFormat format)
@@ -106,6 +106,12 @@ namespace lockstep::render
         }
 
         constants.factors.flags[3] = static_cast<float>(item.jointBase);
+
+        for (uint32_t channel = 0; channel < 3; ++channel)
+        {
+            constants.factors.emissiveNormalScale[channel] *= item.emissiveScale;
+        }
+
         recorder.draw(*item.mesh, item.material->material, constants);
     }
 
@@ -300,8 +306,12 @@ namespace lockstep::render
     {
         vela::graphics::AttachmentSlot color = clearedSlot(k_sceneColorAttachment, k_sceneColorFormat);
         color.clear = {0.0f, 0.0f, 0.0f, 1.0f};
-        vela::graphics::AttachmentSlot ambient = clearedSlot(k_sceneAmbientAttachment, k_sceneColorFormat);
+        vela::graphics::AttachmentSlot ambient = clearedSlot(k_sceneAmbientLitAttachment, k_sceneColorFormat);
         ambient.clear = {0.0f, 0.0f, 0.0f, 0.0f};
+        vela::graphics::AttachmentSlot surfaceNormal = clearedSlot(k_surfaceNormalAttachment, k_sceneColorFormat);
+        surfaceNormal.clear = {0.0f, 0.0f, 1.0f, 1.0f};
+        vela::graphics::AttachmentSlot surfaceSpecular = clearedSlot(k_surfaceSpecularAttachment, k_sceneColorFormat);
+        surfaceSpecular.clear = {0.0f, 0.0f, 0.0f, 1.0f};
 
         vela::graphics::AttachmentSlot velocity = clearedSlot(k_sceneVelocityAttachment, k_sceneColorFormat);
         velocity.clear = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -313,12 +323,16 @@ namespace lockstep::render
             multisample(ambient, k_sceneAmbientMsaaAttachment, m_state->sceneSamples);
             multisample(velocity, k_sceneVelocityMsaaAttachment, m_state->sceneSamples);
             multisample(depth, k_sceneDepthMsaaAttachment, m_state->sceneSamples);
+            multisample(surfaceNormal, k_surfaceNormalMsaaAttachment, m_state->sceneSamples);
+            multisample(surfaceSpecular, k_surfaceSpecularMsaaAttachment, m_state->sceneSamples);
         }
 
         vela::graphics::PassDescription description{};
         description.colorOutputs.push_back(color);
         description.colorOutputs.push_back(ambient);
         description.colorOutputs.push_back(velocity);
+        description.colorOutputs.push_back(surfaceNormal);
+        description.colorOutputs.push_back(surfaceSpecular);
         description.depthOutput = depth;
         description.inputs.push_back({std::string(k_shadowMapAttachment), vela::graphics::InputUsage::Sampled});
         description.inputs.push_back({std::string(k_environmentAttachment), vela::graphics::InputUsage::Sampled});

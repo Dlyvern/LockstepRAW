@@ -11,6 +11,7 @@
 #include "Assets/GltfSkins.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,20 +23,25 @@ namespace lockstep::cooker
     // Normal:    tangent-space normal map: xy in Bc5Unorm, z reconstructed by the shader.
     // Data:      metallic-roughness (occlusion too when it shares the image): Bc7Unorm.
     // Occlusion: occlusion in its own image (R only): Bc4Unorm.
+    // Height:    height map for parallax (R only, stretched to the full 0-1 range): Bc4Unorm.
     enum class TextureUsage : uint8_t
     {
         Colour = 0,
         Normal,
         Data,
-        Occlusion
+        Occlusion,
+        Height
     };
 
-    // One texture to cook: a glTF image read for one usage.
+    // One texture to cook: a glTF image, or an image file beside the source, read for one usage.
+    // image:       the glTF image, or null when `file` is set.
+    // file:        an image file on disk (height maps found by applySurfaceRules()); empty for glTF images.
     // alphaCutoff: cutoff of the alpha-masked material using it as base colour, or negative when no
     //              masked material does (its mips then keep their alpha coverage, see cookTexture()).
     struct SourceTexture
     {
         const cgltf_image* image{nullptr};
+        std::filesystem::path file{};
         TextureUsage usage{TextureUsage::Colour};
         float alphaCutoff{-1.0f};
     };
@@ -66,6 +72,7 @@ namespace lockstep::cooker
     // directory: the virtual folder of the document, for image URIs.
     // textures:  textures to cook.
     // materials: materials, their texture slots indexing `textures`.
+    // materialNames: the source name of each material (empty when unnamed).
     // meshes:    meshes to cook.
     // instances: placed meshes.
     // nodes:     named nodes (markers included).
@@ -80,6 +87,7 @@ namespace lockstep::cooker
         std::string directory;
         std::vector<SourceTexture> textures;
         std::vector<assets::CookedMaterial> materials;
+        std::vector<std::string> materialNames;
         std::vector<SourceMesh> meshes;
         std::vector<assets::SceneInstance> instances;
         std::vector<assets::SceneNode> nodes;

@@ -11,7 +11,6 @@ namespace lockstep::render
     {
         constexpr float k_viewModelNearPlane{0.01f};
         constexpr float k_viewModelFarPlane{100.0f};
-        constexpr float k_viewModelDepthScale{0.01f};
         constexpr float k_minViewModelFov{math::radians(10.0f)};
         constexpr float k_maxViewModelFov{math::radians(150.0f)};
 

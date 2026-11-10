@@ -2,9 +2,11 @@ add_executable(LockstepGame
     main.cpp
     Game.cpp
     DevPanel.cpp
+    Audio/CombatAudio.cpp
     Audio/Footsteps.cpp
     Audio/Surfaces.cpp
     Characters/CharacterModel.cpp
+    Characters/FirstPersonBody.cpp
     Characters/GearLooks.cpp
     Characters/Locomotion.cpp
     Characters/NpcPlaceholders.cpp
@@ -12,7 +14,20 @@ add_executable(LockstepGame
     Characters/ViewModel.cpp
     Dialogue/Dialogue.cpp
     Echo/EchoRecording.cpp
+    Effects/EffectLibrary.cpp
+    Effects/EffectTextures.cpp
+    Effects/Effects.cpp
     Enemies/Enemy.cpp
+    Gore/BloodAssets.cpp
+    Gore/BloodDecals.cpp
+    Gore/BloodSpray.cpp
+    Gore/BloodTextures.cpp
+    Gore/CorpseHits.cpp
+    Gore/Gore.cpp
+    Gore/GoreDevPanel.cpp
+    Gore/GoreEvents.cpp
+    Gore/GoreRules.cpp
+    Gore/SeveredLimbs.cpp
     Hospital/HospitalDevPanel.cpp
     Hospital/HospitalMission.cpp
     Interaction/Interactables.cpp
@@ -26,6 +41,9 @@ add_executable(LockstepGame
     Level/RoomDevPanel.cpp
     Level/RoomState.cpp
     Level/SceneLevel.cpp
+    Lights/LightAnimation.cpp
+    Lights/LightBuzz.cpp
+    Lights/LightPatterns.cpp
     Npcs/NavGrid.cpp
     Npcs/NpcBrain.cpp
     Npcs/NpcFiring.cpp
@@ -35,10 +53,12 @@ add_executable(LockstepGame
     Npcs/NpcMovement.cpp
     Npcs/NpcPositions.cpp
     Npcs/NpcPresentation.cpp
+    Npcs/NpcRagdolls.cpp
     Npcs/NpcRoster.cpp
     Npcs/NpcSenses.cpp
     Npcs/NpcTactics.cpp
     Player/LocalPlayer.cpp
+    Player/MoveDrill.cpp
     Player/PawnHealth.cpp
     Player/PawnLean.cpp
     Player/PawnMantle.cpp
@@ -53,9 +73,11 @@ add_executable(LockstepGame
     Presentation/FlyCamera.cpp
     Presentation/Frame.cpp
     Presentation/HeadMotion.cpp
+    Presentation/HeadWeight.cpp
     Presentation/Hud.cpp
     Presentation/LevelAmbience.cpp
     Presentation/LevelLights.cpp
+    Presentation/LensEffects.cpp
     Presentation/LevelLook.cpp
     Presentation/Lighting.cpp
     Presentation/MaterialShowcase.cpp
@@ -73,9 +95,13 @@ add_executable(LockstepGame
     Station/StationMission.cpp
     Station/StationState.cpp
     Weapons/Ammo.cpp
+    Weapons/DroppedWeapons.cpp
     Weapons/Hitscan.cpp
     Weapons/LagCompensation.cpp
     Weapons/WeaponStance.cpp
+    Weather/RainLook.cpp
+    Weather/RainParticles.cpp
+    Weather/Weather.cpp
 )
 
 target_include_directories(LockstepGame PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

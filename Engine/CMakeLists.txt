@@ -1,6 +1,8 @@
 add_library(LockstepEngine STATIC
     src/Anim/AnimationClip.cpp
     src/Anim/Animator.cpp
+    src/Anim/DrivenPose.cpp
+    src/Anim/Limbs.cpp
     src/Anim/Skeleton.cpp
     src/Anim/SkinnedModel.cpp
     src/App/Run.cpp
@@ -50,8 +52,11 @@ add_library(LockstepEngine STATIC
     src/Physics/PhysicsControllers.cpp
     src/Physics/PhysicsMeshes.cpp
     src/Physics/PhysicsQueries.cpp
+    src/Physics/PhysicsRagdolls.cpp
     src/Physics/PhysicsWorld.cpp
     src/Physics/PhysXErrorReporter.cpp
+    src/Physics/RagdollSkeleton.cpp
+    src/Physics/RagdollState.cpp
     src/Platform/Input.cpp
     src/Platform/VelaInput.cpp
     src/Platform/Window.cpp
@@ -60,8 +65,12 @@ add_library(LockstepEngine STATIC
     src/Render/ExposurePasses.cpp
     src/Render/FrameCulling.cpp
     src/Render/FrameLighting.cpp
+    src/Render/LensPasses.cpp
     src/Render/FrameGraph.cpp
     src/Render/FramePasses.cpp
+    src/Render/IndirectLighting.cpp
+    src/Render/ParticlePass.cpp
+    src/Render/ParticleSystem.cpp
     src/Render/PbrResources.cpp
     src/Render/PlanarReflections.cpp
     src/Render/PostPasses.cpp
@@ -71,17 +80,21 @@ add_library(LockstepEngine STATIC
     src/Render/RendererState.cpp
     src/Render/ResourceLifetime.cpp
     src/Render/RenderPassAdapter.cpp
+    src/Render/ScreenPass.cpp
+    src/Render/ScreenSpaceReflections.cpp
     src/Render/ShaderLoader.cpp
     src/Render/ShadowCascades.cpp
     src/Render/ShadowMaterials.cpp
     src/Render/Shapes.cpp
     src/Render/Skinning.cpp
     src/Render/SkyModel.cpp
+    src/Render/SurfaceTextures.cpp
     src/Render/TemporalAntiAliasing.cpp
     src/Render/TextPass.cpp
     src/Render/TextureLayout.cpp
     src/Render/VelaConversions.cpp
     src/Render/ViewModel.cpp
+    src/Render/VolumetricFog.cpp
     src/World/Entities.cpp
     src/World/TimeDomains.cpp
 )
@@ -105,9 +118,11 @@ if(LOCKSTEP_DEV_TOOLS)
         src/Debug/EnginePanel.cpp
         src/Debug/FrameTimeHistory.cpp
         src/Debug/GraphicsLookPanel.cpp
+        src/Debug/DetailLensPanel.cpp
         src/Debug/GraphicsPanel.cpp
         src/Debug/ImGuiInput.cpp
         src/Debug/ImGuiOverlayPass.cpp
+        src/Debug/IndirectLightingPanel.cpp
         src/Debug/NetPanel.cpp
     )
     target_link_libraries(LockstepEngine PUBLIC imgui)
@@ -183,8 +198,15 @@ set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/environment.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fullscreen.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_blur.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_fog.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_fog_temporal.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_fog_composite.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gtao.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/occlusion_blur.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_trace.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_resolve.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_source.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/indirect_composite.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_prefilter.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_down.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_up.frag
@@ -196,6 +218,8 @@ set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fxaa.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/text.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/text.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/particle.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/particle.frag
 )
 
 if(LOCKSTEP_DEV_TOOLS)

@@ -156,18 +156,15 @@ namespace lockstep::render
                 continue;
             }
 
-            if ((item.layers & state.camera.layers) == 0)
-            {
-                continue;
-            }
+            const bool isSeen = (item.layers & state.camera.layers) != 0;
 
-            if (!cull || intersects(cameraFrustum, item.worldBounds))
+            if (isSeen && (!cull || intersects(cameraFrustum, item.worldBounds)))
             {
                 const bool isBlended = item.material->alphaMode == AlphaMode::Blend;
                 (isBlended ? (item.isDecal ? lists.decals : lists.blended) : lists.opaque).push_back(index);
             }
 
-            if (!castsShadow(item))
+            if ((item.layers & state.camera.shadowLayers) == 0 || !castsShadow(item))
             {
                 continue;
             }

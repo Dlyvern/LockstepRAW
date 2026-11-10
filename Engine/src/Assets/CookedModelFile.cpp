@@ -15,6 +15,8 @@ namespace lockstep::assets
         constexpr std::size_t k_minimumPartBytes{4 + 4};
         constexpr std::size_t k_keyTimeBytes{sizeof(float)};
         constexpr std::size_t k_keyValueBytes{4 * sizeof(float)};
+        constexpr std::size_t k_minimumLimbBytes{1 + 4 + 4};
+        constexpr std::size_t k_hullPointBytes{3 * sizeof(float) + 4 + 4 * sizeof(float)};
 
         Error modelError(std::string_view path, std::string_view what)
         {
@@ -37,6 +39,32 @@ namespace lockstep::assets
                 writer.write(value.z);
                 writer.write(value.w);
             }
+        }
+
+        bool validLimbs(const CookedModel& model, std::size_t jointCount)
+        {
+            const auto validLimb = [](anim::Limb limb)
+            {
+                return static_cast<std::size_t>(limb) < anim::k_limbCount || limb == anim::Limb::None;
+            };
+
+            for (const CookedSkinnedPart& part : model.parts)
+            {
+                if (!validLimb(part.limb) || part.role > anim::LimbPartRole::PieceCap)
+                {
+                    return false;
+                }
+            }
+
+            return std::all_of(model.limbs.begin(), model.limbs.end(), [&](const anim::LimbInfo& limb)
+            {
+                return static_cast<std::size_t>(limb.limb) < anim::k_limbCount && limb.rootJoint < jointCount
+                    && std::all_of(limb.hull.begin(), limb.hull.end(), [jointCount](const anim::LimbHullPoint& point)
+                    {
+                        return std::all_of(point.joints.begin(), point.joints.end(),
+                            [jointCount](uint8_t joint) { return joint < jointCount; });
+                    });
+            });
         }
 
         void readChannel(BinaryReader& reader, anim::AnimationChannel& channel)
@@ -67,6 +95,43 @@ namespace lockstep::assets
                     reader.read(value.z);
                     reader.read(value.w);
                 }
+            }
+        }
+
+        void writeLimb(BinaryWriter& writer, const anim::LimbInfo& limb)
+        {
+            writer.write(static_cast<uint8_t>(limb.limb));
+            writer.write(limb.rootJoint);
+            writer.write(static_cast<uint32_t>(limb.hull.size()));
+
+            for (const anim::LimbHullPoint& point : limb.hull)
+            {
+                writeVec3(writer, point.position);
+
+                for (const uint8_t joint : point.joints)
+                {
+                    writer.write(joint);
+                }
+
+                for (const float weight : point.weights)
+                {
+                    writer.write(weight);
+                }
+            }
+        }
+
+        void readHullPoint(BinaryReader& reader, anim::LimbHullPoint& point)
+        {
+            readVec3(reader, point.position);
+
+            for (uint8_t& joint : point.joints)
+            {
+                reader.read(joint);
+            }
+
+            for (float& weight : point.weights)
+            {
+                reader.read(weight);
             }
         }
 
@@ -116,6 +181,11 @@ namespace lockstep::assets
                 {
                     return false;
                 }
+            }
+
+            if (!validLimbs(model, jointCount))
+            {
+                return false;
             }
 
             return std::all_of(model.clips.begin(), model.clips.end(), [jointCount](const anim::AnimationClip& clip)
@@ -171,6 +241,19 @@ namespace lockstep::assets
         for (const CookedSkinnedPart& part : model.parts)
         {
             writer.writeString(part.materialName);
+        }
+
+        for (const CookedSkinnedPart& part : model.parts)
+        {
+            writer.write(static_cast<uint8_t>(part.limb));
+            writer.write(static_cast<uint8_t>(part.role));
+        }
+
+        writer.write(static_cast<uint32_t>(model.limbs.size()));
+
+        for (const anim::LimbInfo& limb : model.limbs)
+        {
+            writeLimb(writer, limb);
         }
 
         return writer.take();
@@ -230,6 +313,28 @@ namespace lockstep::assets
             {
                 reader.readString(part.materialName);
             }
+        }
+
+        if (reader.ok() && !reader.atEnd())
+        {
+            for (CookedSkinnedPart& part : model.parts)
+            {
+                uint8_t limb = 0;
+                uint8_t role = 0;
+                reader.read(limb);
+                reader.read(role);
+                part.limb = static_cast<anim::Limb>(limb);
+                part.role = static_cast<anim::LimbPartRole>(role);
+            }
+
+            readArray(reader, model.limbs, k_minimumLimbBytes, [](BinaryReader& source, anim::LimbInfo& limb)
+            {
+                uint8_t value = 0;
+                source.read(value);
+                limb.limb = static_cast<anim::Limb>(value);
+                source.read(limb.rootJoint);
+                readArray(source, limb.hull, k_hullPointBytes, readHullPoint);
+            });
         }
 
         if (!reader.ok() || !reader.atEnd())

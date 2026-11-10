@@ -99,6 +99,8 @@ namespace lockstep::assets
             part.material = material.value();
             part.alphaMode = primitive.material != nullptr ? toAlphaMode(primitive.material->alpha_mode)
                 : render::AlphaMode::Opaque;
+            part.isEmissive = primitive.material != nullptr && (primitive.material->emissive_factor[0] > 0.0f
+                || primitive.material->emissive_factor[1] > 0.0f || primitive.material->emissive_factor[2] > 0.0f);
             part.localBounds = data.bounds;
             part.triangleCount = static_cast<uint32_t>(data.indices.size() / 3);
 

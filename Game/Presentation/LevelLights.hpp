@@ -4,6 +4,9 @@
 #include <Lockstep/Assets/Scene.hpp>
 #include <Lockstep/Core/Math.hpp>
 
+#include <optional>
+#include <span>
+
 namespace lockstep::render
 {
     class Renderer;
@@ -11,6 +14,15 @@ namespace lockstep::render
 
 namespace game
 {
+    // A per-frame change to one authored light (animation).
+    // intensity: multiplier on the authored intensity.
+    // color:     replaces the authored colour when set.
+    struct LightOverride
+    {
+        float intensity{1.0f};
+        std::optional<lockstep::math::Vec3> color{};
+    };
+
     // Submits the level's authored point and spot lights that matter most to a viewer at `eye`:
     // those whose range reaches within a few metres of it, nearest edge first, at most the
     // renderer's k_maxLocalLights. Lights near the cut (the reach limit, or the first light that
@@ -21,8 +33,11 @@ namespace game
     // renderer: the renderer.
     // scene:    the current level.
     // eye:      the camera position.
+    // overrides: per light, indexed like scene.lights; empty (or shorter) leaves the rest as authored.
+    //           A light overridden to 0 is skipped, unless it casts shadows (then it stays
+    //           submitted dark, so the shadow budget does not move to other lights while it flickers).
     void submitLevelLights(lockstep::render::Renderer& renderer, const lockstep::assets::Scene& scene,
-        const lockstep::math::Vec3& eye);
+        const lockstep::math::Vec3& eye, std::span<const LightOverride> overrides = {});
 } //namespace game
 
 #endif //LOCKSTEP_GAME_PRESENTATION_LEVEL_LIGHTS_HPP

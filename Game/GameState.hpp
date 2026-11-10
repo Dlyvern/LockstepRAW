@@ -1,16 +1,20 @@
 #ifndef LOCKSTEP_GAME_GAME_STATE_HPP
 #define LOCKSTEP_GAME_GAME_STATE_HPP
 
+#include "Audio/CombatAudio.hpp"
 #include "Audio/Footsteps.hpp"
 #include "Characters/NpcPlaceholders.hpp"
 #include "Characters/PawnCharacters.hpp"
 #include "Dialogue/Dialogue.hpp"
 #include "Echo/EchoRecording.hpp"
+#include "Effects/Effects.hpp"
 #include "Enemies/Enemy.hpp"
+#include "Gore/Gore.hpp"
 #include "Hospital/HospitalMission.hpp"
 #include "Level/ApartmentRoom.hpp"
 #include "Level/Arena.hpp"
 #include "Level/SceneLevel.hpp"
+#include "Lights/LightAnimation.hpp"
 #include "Npcs/NavGrid.hpp"
 #include "Npcs/Npc.hpp"
 #include "Npcs/NpcMessages.hpp"
@@ -33,6 +37,7 @@
 #include "Weapons/Hitscan.hpp"
 #include "Weapons/LagCompensation.hpp"
 #include "Weapons/WeaponStance.hpp"
+#include "Weather/Weather.hpp"
 
 #include <array>
 #include <cstdint>
@@ -51,6 +56,7 @@ namespace lockstep::app
         // hasEnemy:        the host spawns the enemy (off in the apartment room).
         // startArmed:      players join carrying the weapon (--armed, or the arena without a level);
         //                  otherwise they are armed later by the story (or the dev panel).
+        // gore:            when a hit severs a limb.
         struct Settings
         {
             float worldScale{1.0f};
@@ -65,6 +71,7 @@ namespace lockstep::app
             game::DownedSettings downed{};
             game::AmmoSettings ammo{};
             game::NpcSettings npcs{};
+            game::GoreRules gore{};
         };
 
         // This machine's player.
@@ -115,6 +122,10 @@ namespace lockstep::app
         //                     it (else the level's spawn points).
         // restartSeconds:     Player seconds until the checkpoint restart, while isRestarting.
         // isRestarting:       the squad failed (both down, or one bled out).
+        // goreEvents:         blood and severed limbs decided this tick, published at its end.
+        // goreSeed:           counter the gore events' seeds are made from.
+        // corpseReports:      bullets of the host's player that hit dead bodies on its machine,
+        //                     applied next tick.
         struct Simulation
         {
             std::array<game::Pawn, game::k_playerCount> pawns{};
@@ -131,6 +142,9 @@ namespace lockstep::app
             std::optional<std::array<math::Vec3, game::k_playerCount>> checkpoint{};
             float restartSeconds{0.0f};
             bool isRestarting{false};
+            std::vector<game::GoreEvent> goreEvents{};
+            uint32_t goreSeed{0};
+            std::vector<game::CorpseHitReport> corpseReports{};
         };
 
         game::Visuals visuals{};
@@ -148,11 +162,16 @@ namespace lockstep::app
         game::Subtitles subtitles{};
         game::NpcPlaceholders npcs{};
         game::NpcLooks npcLooks{};
+        game::GoreState gore{};
         game::LevelFlow levelFlow{};
         std::optional<game::EchoPlayback> echo{};
         game::FlyCamera flyCamera{};
         game::HeadMotionState headMotion{};
         game::Footsteps footsteps{};
+        game::CombatAudio combatAudio{};
+        game::Effects effects{};
+        game::LightAnimation lightAnimation{};
+        game::Weather weather{};
         Settings settings{};
         Local local{};
         Simulation simulation{};

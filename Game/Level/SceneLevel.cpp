@@ -24,6 +24,7 @@ namespace game
 
         constexpr std::string_view k_levelFlag{"--level"};
         constexpr std::string_view k_decalPrefix{"Decal_"};
+        constexpr std::string_view k_blockerPrefix{"Blocker_"};
         constexpr std::string_view k_sceneFlag{"--scene"};
         constexpr std::string_view k_scaleFlag{"--scene-scale"};
         constexpr std::array<std::string_view, 2> k_spawnNodeNames{"PlayerStart", "Spawn"};
@@ -154,7 +155,7 @@ namespace game
                 << ") to (" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z << ")\n";
             std::clog << "Game: scene collision: " << level.collision.bodies.size() << " bodies, "
                 << level.collision.triangleCount << " triangles, " << level.collision.skipped << " instances skipped, "
-                << level.collision.seconds << " s\n";
+                << level.collision.seconds << " s, " << level.blockers.size() << " blockers\n";
 
             for (const lockstep::anim::SkinnedModel& model : level.scene.skinnedModels)
             {
@@ -248,7 +249,7 @@ namespace game
             return scene.error();
         }
 
-        SceneLevel level{.scene = std::move(scene).value(), .collision = {}};
+        SceneLevel level{.scene = std::move(scene).value(), .collision = {}, .blockers = {}};
         auto collision = assets::createSceneCollision(physics, level.scene);
 
         if (!collision)
@@ -257,6 +258,29 @@ namespace game
         }
 
         level.collision = std::move(collision).value();
+
+        for (const assets::SceneNode& node : level.scene.nodes)
+        {
+            if (!std::string_view(node.name).starts_with(k_blockerPrefix))
+            {
+                continue;
+            }
+
+            const math::Vec3 half{std::abs(node.transform.scale.x), std::abs(node.transform.scale.y),
+                std::abs(node.transform.scale.z)};
+            auto body = physics.createBody(physics::BodyDescription{.shape = physics::BoxShape{.halfExtents = half},
+                .type = physics::BodyType::Static,
+                .transform = math::Transform{.position = node.transform.position, .rotation = node.transform.rotation}});
+
+            if (!body)
+            {
+                std::clog << "Game: blocker '" << node.name << "' not created: " << body.error().message << '\n';
+                continue;
+            }
+
+            level.blockers.push_back(body.value());
+        }
+
         logLevel(launch, level);
         std::clog << "Game: " << applyLevelAmbientZones(renderer, level.scene) << " interior ambient zones, "
             << assets::markDecalInstances(level.scene, k_decalPrefix) << " decal instances, look '"

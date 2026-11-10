@@ -117,6 +117,7 @@ namespace lockstep::debug
             ImGui::TextUnformatted("Physics");
             ImGui::Text("Bodies      %u", stats.bodyCount);
             ImGui::Text("Controllers %u", stats.controllerCount);
+            ImGui::Text("Ragdolls    %u (%u bodies)", stats.ragdollCount, stats.ragdollBodyCount);
             ImGui::Text("Step        %.2f ms (%u x %.2f ms sim)", stats.lastStepMilliseconds, stats.lastSubsteps,
                 stats.lastSubsteps > 0
                     ? static_cast<double>(stats.lastStepSeconds * k_millisecondsPerSecond) / stats.lastSubsteps

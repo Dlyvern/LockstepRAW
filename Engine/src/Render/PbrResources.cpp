@@ -29,7 +29,9 @@ namespace lockstep::render
             MetallicRoughness,
             Occlusion,
             Emissive,
-            Lighting
+            Lighting,
+            Height = 7,
+            FirstDetail = 8
         };
 
         constexpr uint32_t k_unlitAlbedoSlot{0};
@@ -213,6 +215,21 @@ namespace lockstep::render
             return {};
         }
 
+        Status bindSurfaceDetail(vela::graphics::Material& material, const EnvironmentResources& defaults)
+        {
+            for (uint32_t layer = 0; layer < defaults.surfaceDetail.size(); ++layer)
+            {
+                const uint32_t slot = static_cast<uint32_t>(PbrSlot::FirstDetail) + layer;
+
+                if (auto bound = material.setTexture(slot, defaults.surfaceDetail[layer]); !bound)
+                {
+                    return toError(bound.error());
+                }
+            }
+
+            return {};
+        }
+
         PbrFactors toFactors(const PbrMaterialDescription& description)
         {
             PbrFactors factors{};
@@ -233,6 +250,9 @@ namespace lockstep::render
             factors.surface[3] = description.alphaMode == AlphaMode::Mask ? description.alphaCutoff : k_notMasked;
             factors.flags[0] = description.doubleSided ? 1.0f : 0.0f;
             factors.flags[1] = description.alphaMode == AlphaMode::Blend ? 1.0f : 0.0f;
+            factors.detail[0] = description.height.isValid() ? std::max(description.heightScale, 0.0f) : 0.0f;
+            factors.detail[1] = static_cast<float>(description.detail);
+            factors.detail[2] = std::max(description.detailScale, 1e-3f);
 
             return factors;
         }
@@ -332,14 +352,15 @@ namespace lockstep::render
         RendererState& state = *m_state;
         const EnvironmentResources& defaults = state.environment;
 
-        const std::array<std::tuple<PbrSlot, TextureHandle, const vela::graphics::Texture*, const char*>, 5> textures{{
+        const std::array<std::tuple<PbrSlot, TextureHandle, const vela::graphics::Texture*, const char*>, 6> textures{{
             {PbrSlot::BaseColor, description.baseColor, &defaults.whiteSrgb, "base colour"},
             {PbrSlot::Normal, description.normal, &defaults.flatNormal, "normal"},
             {PbrSlot::MetallicRoughness, description.metallicRoughness, &defaults.whiteLinear, "metallic-roughness"},
             {PbrSlot::Occlusion, description.occlusion, &defaults.whiteLinear, "occlusion"},
-            {PbrSlot::Emissive, description.emissive, &defaults.whiteSrgb, "emissive"}}};
+            {PbrSlot::Emissive, description.emissive, &defaults.whiteSrgb, "emissive"},
+            {PbrSlot::Height, description.height, &defaults.whiteLinear, "height"}}};
 
-        std::array<const vela::graphics::Texture*, 5> resolved{};
+        std::array<const vela::graphics::Texture*, 6> resolved{};
 
         for (std::size_t index = 0; index < textures.size(); ++index)
         {
@@ -387,6 +408,11 @@ namespace lockstep::render
             !bound)
         {
             return toError(bound.error());
+        }
+
+        if (auto bound = bindSurfaceDetail(material.value(), defaults); !bound)
+        {
+            return bound.error();
         }
 
         if (isSkinned)

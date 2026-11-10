@@ -221,8 +221,16 @@ namespace game
 
         void releaseLevel(GameState& state, EngineContext& engine)
         {
+            clearGore(state.gore, engine.physics);
+            clearDroppedWeapons(state.npcLooks.weapons, engine.physics);
+
             if (state.level)
             {
+                for (const lockstep::physics::BodyId blocker : state.level->blockers)
+                {
+                    engine.physics.destroyBody(blocker);
+                }
+
                 assets::releaseScene(engine.renderer, engine.physics, state.level->scene, state.level->collision);
             }
 

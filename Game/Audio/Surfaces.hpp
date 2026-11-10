@@ -46,6 +46,13 @@ namespace game
     // Returns: the surface, or nothing when no keyword matches.
     [[nodiscard]] std::optional<Surface> surfaceFromName(std::string_view name);
 
+    // Classifies the level instance a body belongs to by its node name and the names of its named
+    // ancestors (nearest first).
+    // level:   the loaded level, or null (Concrete).
+    // body:    a body hit by a ray.
+    // Returns: the surface, Concrete when nothing named is found.
+    [[nodiscard]] Surface surfaceOfBody(const SceneLevel* level, lockstep::physics::BodyId body);
+
     // Finds the surface below a point: a short downward ray, mapped back to the level instance it
     // hit and classified by its node name and the names of its named ancestors (nearest first).
     // Material names would be better but are not in the loaded scene yet.

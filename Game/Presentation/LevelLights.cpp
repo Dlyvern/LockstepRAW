@@ -62,7 +62,8 @@ namespace game
         }
     } //namespace
 
-    void submitLevelLights(render::Renderer& renderer, const assets::Scene& scene, const math::Vec3& eye)
+    void submitLevelLights(render::Renderer& renderer, const assets::Scene& scene, const math::Vec3& eye,
+        std::span<const LightOverride> overrides)
     {
         const std::vector<RankedLight> ranked = rankLights(scene, eye);
         const float cutoff = ranked.size() > render::k_maxLocalLights
@@ -81,18 +82,28 @@ namespace game
             }
 
             const bool castsShadows = entry.light->name.find(k_shadowNameTag) != std::string::npos;
+            const auto lightIndex = static_cast<std::size_t>(entry.light - scene.lights.data());
+            const LightOverride change = lightIndex < overrides.size() ? overrides[lightIndex] : LightOverride{};
+            const float intensity = fade * change.intensity;
+
+            if (intensity <= 0.0f && !castsShadows)
+            {
+                continue;
+            }
 
             if (entry.light->type == assets::SceneLightType::Spot)
             {
                 render::SpotLight spot = assets::toSpotLight(*entry.light);
-                spot.intensity *= fade;
+                spot.intensity *= intensity;
+                spot.color = change.color.value_or(spot.color);
                 spot.castsShadows = castsShadows;
                 renderer.submitLight(spot);
             }
             else
             {
                 render::PointLight point = assets::toPointLight(*entry.light);
-                point.intensity *= fade;
+                point.intensity *= intensity;
+                point.color = change.color.value_or(point.color);
                 point.castsShadows = castsShadows;
                 renderer.submitLight(point);
             }

@@ -2,6 +2,7 @@
 #define LOCKSTEP_ASSETS_COOKED_FORMAT_HPP
 
 #include "Lockstep/Anim/AnimationClip.hpp"
+#include "Lockstep/Anim/Limbs.hpp"
 #include "Lockstep/Anim/Skeleton.hpp"
 #include "Lockstep/Assets/Scene.hpp"
 #include "Lockstep/Core/Bounds.hpp"
@@ -24,7 +25,9 @@
 //   mesh (.mesh):      CookedMeshHeader, PbrVertex[vertexCount], uint32 index[indexCount]
 //   skinned mesh:      the same with k_skinnedMeshMagic and SkinnedPbrVertex vertices
 //   model (.model):    written by writeCookedModel(): a skinned model's skeleton, clips, bounds
-//                      and parts (skinned mesh paths and level material indices)
+//                      and parts (skinned mesh paths and level material indices), then two
+//                      trailing sections older files lack: the parts' material names, and the
+//                      limb split (each part's limb and role, the limbs' root joints and hulls)
 //   texture (.tex):    CookedTextureHeader, every mip level largest first, tightly packed in
 //                      the final GPU format (render::TextureDescription layout)
 //   collision (.col):  CookedCollisionHeader, then PhysX's serialized triangle mesh
@@ -37,9 +40,11 @@ namespace lockstep::assets
 
     // Version of level files, separate from k_cookedVersion so mesh, texture and collision files
     // stay valid when only the level layout changes. Version 2 added SceneNode::parent and
-    // SceneInstance::node; version 3 added skinned models and their instances. Older levels
-    // still load, without what came later.
-    inline constexpr uint32_t k_levelVersion{3};
+    // SceneInstance::node; version 3 added skinned models and their instances; version 4 added the
+    // materials' height map, parallax scale and surface detail layer. Older levels still load,
+    // without what came later.
+    inline constexpr uint32_t k_levelVersion{4};
+    inline constexpr uint32_t k_levelVersionWithoutSurfaceDetail{3};
     inline constexpr uint32_t k_levelVersionWithoutSkins{2};
     inline constexpr uint32_t k_levelVersionWithoutHierarchy{1};
     inline constexpr std::array<char, 4> k_meshMagic{'L', 'M', 'S', 'H'};
@@ -91,7 +96,8 @@ namespace lockstep::assets
 
     // A material of a cooked level: the PBR factors, and texture slots as indices into
     // CookedLevel::textures (k_noTexture for none).
-    // factors: everything but the texture handles, which are ignored.
+    // factors: everything but the texture handles, which are ignored (heightScale, detail and
+    //          detailScale included; see PbrMaterialDescription).
     struct CookedMaterial
     {
         render::PbrMaterialDescription factors{};
@@ -100,6 +106,7 @@ namespace lockstep::assets
         uint32_t metallicRoughness{k_noTexture};
         uint32_t occlusion{k_noTexture};
         uint32_t emissive{k_noTexture};
+        uint32_t height{k_noTexture};
     };
 
     // A mesh of a cooked level.
@@ -124,11 +131,15 @@ namespace lockstep::assets
     // material:     index into CookedLevel::materials (created as a skinned material).
     // materialName: the source material's name. Stored after the parts in a trailing section of
     //               the .model file (files cooked without it load with empty names).
+    // limb, role:   its place in the limb split, in the limb section after the names (files
+    //               cooked without it load as Whole parts).
     struct CookedSkinnedPart
     {
         std::string path;
         uint32_t material{0};
         std::string materialName;
+        anim::Limb limb{anim::Limb::None};
+        anim::LimbPartRole role{anim::LimbPartRole::Whole};
     };
 
     // The contents of a .model file: an anim::SkinnedModel without GPU handles.
@@ -140,6 +151,7 @@ namespace lockstep::assets
         std::vector<float> jointRadii;
         math::Aabb bindBounds{};
         std::vector<CookedSkinnedPart> parts;
+        std::vector<anim::LimbInfo> limbs;
     };
 
     // The contents of a level file.
@@ -242,7 +254,8 @@ namespace lockstep::assets
     // bytes:   the file contents.
     // path:    the file's virtual path, for messages.
     // Returns: the model, or AssetLoadFailed for another format or version or damaged data (a
-    //          joint parent not before its child, a channel out of range or with mismatched keys).
+    //          joint parent not before its child, a channel out of range or with mismatched keys,
+    //          a limb, role or hull joint out of range).
     [[nodiscard]] Result<CookedModel> readCookedModel(std::span<const std::byte> bytes, std::string_view path);
 
     // header:  format, size and level count (magic and version are set here).

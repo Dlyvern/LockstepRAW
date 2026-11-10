@@ -45,7 +45,8 @@ namespace game
     using GearMasks = std::array<lockstep::anim::PartMask, k_gearLookCount>;
 
     // Finds the head gear parts of a model by material name. Parts it can't find are simply
-    // never hidden (a model without them draws the same in every look).
+    // never hidden (a model without them draws the same in every look). Wound caps of a model
+    // cooked with limbs are left out of every look.
     // model:   the character model.
     // Returns: the part mask of every look.
     [[nodiscard]] GearMasks findGearMasks(const lockstep::anim::SkinnedModel& model);

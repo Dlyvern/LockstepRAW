@@ -347,6 +347,8 @@ namespace lockstep::render
         description.colorOutputs.push_back(target(k_reflectionColorAttachment, k_sceneColorFormat, true));
         description.colorOutputs.push_back(target(k_reflectionAmbientAttachment, k_sceneColorFormat, false));
         description.colorOutputs.push_back(target(k_reflectionVelocityAttachment, k_sceneColorFormat, false));
+        description.colorOutputs.push_back(target(k_reflectionSurfaceNormalAttachment, k_sceneColorFormat, false));
+        description.colorOutputs.push_back(target(k_reflectionSurfaceSpecularAttachment, k_sceneColorFormat, false));
         description.depthOutput = target(k_reflectionDepthAttachment, k_depthFormat, false);
         description.inputs.push_back({std::string(k_shadowMapAttachment), vela::graphics::InputUsage::Sampled});
         description.inputs.push_back({std::string(k_environmentAttachment), vela::graphics::InputUsage::Sampled});

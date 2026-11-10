@@ -2,11 +2,14 @@
 
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
+#include "IndirectLighting.hpp"
+#include "ParticlePass.hpp"
 #include "PlanarReflections.hpp"
 #include "PostPasses.hpp"
 #include "RendererState.hpp"
 #include "TextPass.hpp"
 #include "VelaConversions.hpp"
+#include "VolumetricFog.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -22,6 +25,7 @@ namespace lockstep::render
         constexpr std::string_view k_shadowPassName{"shadow"};
         constexpr std::string_view k_scenePassName{"scene"};
         constexpr std::string_view k_reflectionPassName{"reflection"};
+        constexpr std::string_view k_particlePassName{"particles"};
         constexpr float k_minReflectionScale{0.25f};
         constexpr float k_maxReflectionScale{1.0f};
 
@@ -173,6 +177,28 @@ namespace lockstep::render
         }
 
         if (auto added = addFramePass(graph.value(), k_scenePassName, std::move(scenePass).value()); !added)
+        {
+            return added;
+        }
+
+        if (auto added = addIndirectLightingPasses(graph.value(), state); !added)
+        {
+            return added;
+        }
+
+        if (auto added = addVolumetricFogPasses(graph.value(), state); !added)
+        {
+            return added;
+        }
+
+        auto particlePass = ParticlePass::create(state);
+
+        if (!particlePass)
+        {
+            return particlePass.error();
+        }
+
+        if (auto added = addFramePass(graph.value(), k_particlePassName, std::move(particlePass).value()); !added)
         {
             return added;
         }

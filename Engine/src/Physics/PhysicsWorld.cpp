@@ -33,7 +33,7 @@ namespace lockstep::physics
             physx::PxSceneDesc sceneDescription(state.physics->getTolerancesScale());
             sceneDescription.gravity = toPx(description.gravity);
             sceneDescription.cpuDispatcher = state.dispatcher;
-            sceneDescription.filterShader = physx::PxDefaultSimulationFilterShader;
+            sceneDescription.filterShader = ragdollAwareFilterShader;
             state.scene = state.physics->createScene(sceneDescription);
 
             if (state.scene == nullptr)
@@ -56,6 +56,17 @@ namespace lockstep::physics
             }
 
             return {};
+        }
+
+        void forEachRagdoll(PhysicsState& state, void (*visit)(RagdollSlot&) noexcept)
+        {
+            for (uint32_t index = 0; index < state.ragdolls.capacity(); ++index)
+            {
+                if (const auto key = state.ragdolls.keyAt(index))
+                {
+                    visit(*state.ragdolls.find(*key));
+                }
+            }
         }
     } //namespace
 
@@ -83,6 +94,17 @@ namespace lockstep::physics
         if (controllerManager != nullptr)
         {
             controllerManager->release();
+        }
+
+        for (uint32_t index = 0; ragdolls.count() > 0; ++index)
+        {
+            if (auto key = ragdolls.keyAt(index))
+            {
+                if (auto ragdoll = ragdolls.remove(*key))
+                {
+                    releaseRagdoll(*ragdoll);
+                }
+            }
         }
 
         for (uint32_t index = 0; bodies.count() > 0; ++index)
@@ -138,6 +160,16 @@ namespace lockstep::physics
         return controllers.find({controller.index, controller.generation});
     }
 
+    RagdollSlot* PhysicsState::findRagdoll(RagdollId ragdoll) noexcept
+    {
+        return ragdolls.find({ragdoll.index, ragdoll.generation});
+    }
+
+    const RagdollSlot* PhysicsState::findRagdoll(RagdollId ragdoll) const noexcept
+    {
+        return ragdolls.find({ragdoll.index, ragdoll.generation});
+    }
+
     Result<PhysicsWorld> PhysicsWorld::create(const PhysicsDescription& description)
     {
         auto state = std::make_unique<PhysicsState>();
@@ -190,11 +222,15 @@ namespace lockstep::physics
         const uint32_t substeps = std::clamp(static_cast<uint32_t>(wantedSubsteps), 1u, k_maxSubsteps);
         const float substepSeconds = std::min(deltaSeconds / static_cast<float>(substeps), k_maxSubstepSeconds);
 
+        forEachRagdoll(*m_state, beginRagdollStep);
+
         for (uint32_t substep = 0; substep < substeps; ++substep)
         {
             m_state->scene->simulate(substepSeconds);
             m_state->scene->fetchResults(true);
         }
+
+        forEachRagdoll(*m_state, endRagdollStep);
 
         const auto elapsed = std::chrono::steady_clock::now() - startTime;
         m_state->lastStepSeconds = substepSeconds * static_cast<float>(substeps);
@@ -207,6 +243,8 @@ namespace lockstep::physics
         return PhysicsStats{
             .bodyCount = m_state->bodies.count(),
             .controllerCount = m_state->controllers.count(),
+            .ragdollCount = m_state->ragdolls.count(),
+            .ragdollBodyCount = m_state->ragdollBodyCount,
             .lastStepSeconds = m_state->lastStepSeconds,
             .lastSubsteps = m_state->lastSubsteps,
             .lastStepMilliseconds = m_state->lastStepMilliseconds,

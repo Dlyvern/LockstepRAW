@@ -77,7 +77,9 @@ namespace game
     // Finds the "Npc_*" markers of a level. The role comes from the name: Npc_DeskSergeant
     // ("sergeant"), Npc_Armorer ("armorer"), Npc_RangeOfficer ("range"), Npc_Guard ("guard"),
     // Npc_Officer_* ("npc"), Npc_Prisoner_* (lines "<level>.prisoner.*"); they say
-    // "<level>.<role>.idle.*". Npc_Chief stays silent (he speaks through the briefing).
+    // "<level>.<role>.idle.*", where <level> is the level name up to any '_' (hospital_a and
+    // hospital_b speak hospital.* lines) and Npc_CordonOfficer's role is "cordon". Npc_Chief
+    // stays silent (he speaks through the briefing).
     // Npc_Squad_<n> markers are skipped: they are the armed squad officers (Npcs/).
     // Poses by role: Npc_Civilian_* and Npc_Survivor_* crouch (hiding); Npc_SquadOutside_*,
     // Npc_CordonOfficer and Npc_Guard are armed; the rest idle. A

@@ -13,6 +13,7 @@
 
 #include "EnvironmentResources.hpp"
 #include "FrameLighting.hpp"
+#include "FrameParticles.hpp"
 #include "PlanarReflections.hpp"
 #include "TemporalAntiAliasing.hpp"
 #include "RenderPass.hpp"
@@ -74,12 +75,15 @@ namespace lockstep::render
     //                      not masked).
     // flags:               x 1 if double-sided, y 1 if alpha-blended (2 for a decal draw, set when
     //                      recorded), z the PbrView, w the joint palette base.
+    // detail:              x parallax height scale (0 without a height map), y the SurfaceDetail
+    //                      layer (0 none), z detail repeats per UV unit, w unused.
     struct PbrFactors
     {
         float baseColorFactor[4]{1.0f, 1.0f, 1.0f, 1.0f};
         float emissiveNormalScale[4]{0.0f, 0.0f, 0.0f, 1.0f};
         float surface[4]{0.0f, 1.0f, 1.0f, -1.0f};
         float flags[4]{0.0f, 0.0f, 0.0f, 0.0f};
+        float detail[4]{0.0f, 0.0f, 1.0f, 0.0f};
     };
 
     // A texture and how many living or retired materials bind it; a destroyed texture is
@@ -125,6 +129,7 @@ namespace lockstep::render
     // isDecal:        submitted with submitDecal().
     // jointBase:      skinned draws: index in RendererState::jointData of the palette's first
     //                 matrix (current and previous matrices interleaved per joint).
+    // emissiveScale:  multiplier on the material's emissive factor for this draw.
     struct DrawItem
     {
         const vela::graphics::Mesh* mesh{nullptr};
@@ -137,6 +142,7 @@ namespace lockstep::render
         bool isReflector{false};
         bool isDecal{false};
         uint32_t jointBase{0};
+        float emissiveScale{1.0f};
     };
 
     // Indices into RendererState::draws chosen for one frame.
@@ -255,6 +261,7 @@ namespace lockstep::render
         float shadowMaterialBias{0.0f};
         uint32_t sceneSamples{1};
         float reflectionScale{0.5f};
+        float volumetricFogScale{0.5f};
 
         std::vector<RegisteredPass> passes;
         uint32_t passNameCounter{0};
@@ -268,6 +275,7 @@ namespace lockstep::render
         std::vector<AmbientZone> ambientZones;
         PreparedLighting prepared;
         PreparedReflection reflection;
+        FrameParticles particles;
         TemporalState temporal;
         RenderSettings settings{};
         math::Vec4 screenFade{0.0f, 0.0f, 0.0f, 0.0f};

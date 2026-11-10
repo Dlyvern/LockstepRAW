@@ -101,7 +101,9 @@ namespace game
             }
         }
 
-        return GearMasks{anim::k_allParts, anim::k_allParts & ~nvg, anim::k_allParts & ~nvg & ~helmetAndHeadset};
+        const anim::PartMask base = anim::k_allParts & ~anim::woundCapParts(model);
+
+        return GearMasks{base, base & ~nvg, base & ~nvg & ~helmetAndHeadset};
     }
 
     anim::PartMask gearMask(const GearMasks& masks, GearLook look)

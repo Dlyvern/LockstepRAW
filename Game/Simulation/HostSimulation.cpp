@@ -1,6 +1,7 @@
 #include "Simulation/HostSimulation.hpp"
 
 #include "GameState.hpp"
+#include "Gore/GoreRules.hpp"
 #include "Simulation/HospitalSimulation.hpp"
 #include "Simulation/NpcSimulation.hpp"
 #include "Simulation/PlayerCombat.hpp"
@@ -438,6 +439,7 @@ namespace game
             updateEnemyOnHost(state, engine);
         }
 
+        applyCorpseHits(state, engine);
         runNpcHostTick(state, engine);
         updateDownedPawns(state, engine);
         respawnPawns(state, engine);

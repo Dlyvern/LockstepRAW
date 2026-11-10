@@ -1,6 +1,7 @@
 #include "Npcs/NpcMessages.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace game
 {
@@ -12,9 +13,11 @@ namespace game
         constexpr std::byte k_alertBit{0x02};
         constexpr unsigned k_gearLookShift{2};
         constexpr std::byte k_gearLookBits{0x03};
+        constexpr std::byte k_hitBit{0x10};
+        constexpr float k_headingSteps{256.0f};
         constexpr std::size_t k_headerBytes{2};
         constexpr std::size_t k_entityBytes{8};
-        constexpr std::size_t k_viewBytes{k_entityBytes + 2};
+        constexpr std::size_t k_viewBytes{k_entityBytes + 4};
         constexpr std::size_t k_maxCount{255};
 
         void writeUint32(std::vector<std::byte>& bytes, uint32_t value)
@@ -49,6 +52,24 @@ namespace game
             return value < k_gearLookCount ? static_cast<GearLook>(value) : GearLook::Full;
         }
 
+        std::optional<uint8_t> headingStep(const std::optional<float>& yaw)
+        {
+            if (!yaw)
+            {
+                return std::nullopt;
+            }
+
+            const float turns = *yaw / (2.0f * math::k_pi);
+            const float step = std::round((turns - std::floor(turns)) * k_headingSteps);
+            return static_cast<uint8_t>(static_cast<int>(step) & 0xFF);
+        }
+
+        lockstep::anim::Limb limbOf(std::byte value)
+        {
+            const auto limb = static_cast<uint8_t>(value);
+            return limb < lockstep::anim::k_limbCount ? static_cast<lockstep::anim::Limb>(limb) : lockstep::anim::Limb::None;
+        }
+
         lockstep::world::EntityId readEntity(std::span<const std::byte> bytes, std::size_t offset)
         {
             return lockstep::world::EntityId{.index = readUint32(bytes, offset),
@@ -62,7 +83,20 @@ namespace game
             .isDead = npc.mode == NpcMode::Dead,
             .isAlert = npc.mode == NpcMode::Alert || npc.mode == NpcMode::Combat,
             .shotCount = npc.shotCount,
-            .gearLook = npc.faction == NpcFaction::Squad ? squadGearLook(npc.name) : mercGearLook(npc.name)};
+            .gearLook = npc.faction == NpcFaction::Squad ? squadGearLook(npc.name) : mercGearLook(npc.name),
+            .hitHeading = npc.mode == NpcMode::Dead ? headingStep(npc.hitYaw) : std::nullopt,
+            .hitLimb = npc.mode == NpcMode::Dead ? npc.hitLimb : lockstep::anim::Limb::None};
+    }
+
+    std::optional<math::Vec3> hitDirection(const NpcView& view)
+    {
+        if (!view.hitHeading)
+        {
+            return std::nullopt;
+        }
+
+        const float yaw = static_cast<float>(*view.hitHeading) / k_headingSteps * 2.0f * math::k_pi;
+        return math::Vec3{std::sin(yaw), 0.0f, std::cos(yaw)};
     }
 
     std::vector<std::byte> encodeNpcState(const NpcStateMessage& message)
@@ -77,8 +111,10 @@ namespace game
             writeEntity(bytes, view.entity);
             const std::byte gearLook = (static_cast<std::byte>(view.gearLook) & k_gearLookBits) << k_gearLookShift;
             bytes.push_back((view.isDead ? k_deadBit : std::byte{0}) | (view.isAlert ? k_alertBit : std::byte{0})
-                | gearLook);
+                | (view.hitHeading ? k_hitBit : std::byte{0}) | gearLook);
             bytes.push_back(static_cast<std::byte>(view.shotCount));
+            bytes.push_back(static_cast<std::byte>(view.hitHeading.value_or(0)));
+            bytes.push_back(static_cast<std::byte>(view.hitLimb));
         }
 
         return bytes;
@@ -108,7 +144,11 @@ namespace game
                 .isDead = (flags & k_deadBit) != std::byte{0},
                 .isAlert = (flags & k_alertBit) != std::byte{0},
                 .shotCount = static_cast<uint8_t>(bytes[offset + k_entityBytes + 1]),
-                .gearLook = gearLookOf((flags >> k_gearLookShift) & k_gearLookBits)});
+                .gearLook = gearLookOf((flags >> k_gearLookShift) & k_gearLookBits),
+                .hitHeading = (flags & k_hitBit) != std::byte{0}
+                    ? std::optional<uint8_t>(static_cast<uint8_t>(bytes[offset + k_entityBytes + 2]))
+                    : std::nullopt,
+                .hitLimb = limbOf(bytes[offset + k_entityBytes + 3])});
         }
 
         return message;

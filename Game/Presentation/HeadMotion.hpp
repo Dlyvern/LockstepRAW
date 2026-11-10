@@ -1,6 +1,8 @@
 #ifndef LOCKSTEP_GAME_PRESENTATION_HEAD_MOTION_HPP
 #define LOCKSTEP_GAME_PRESENTATION_HEAD_MOTION_HPP
 
+#include "Presentation/HeadWeight.hpp"
+
 #include <Lockstep/Core/Math.hpp>
 
 #include <cstdint>
@@ -16,14 +18,22 @@ namespace game
     // stepMinSpeed:  vertical foot speed (m/s) on the ground from which a height change counts as a
     //               step rather than a ramp.
     // stepMaxOffset: largest step smoothed, metres; bigger jumps (teleports) snap.
-    // walkStride, runStride, crouchStride: metres travelled per bob cycle (two steps).
-    // walkBob, runBob, crouchBob: vertical bob depth in metres at that gait.
+    // walkStride, runStride, crouchStride: metres travelled per bob cycle (two steps); set from
+    //               the character clips when they load, so the bob keeps the drawn legs' cadence.
+    // walkStrideSpeed, runStrideSpeed: speeds (m/s) at which the walk and the run stride apply;
+    //               in between they blend (the clips' own speeds, as the character blends them).
+    // walkBob, runBob, crouchBob: vertical bob depth in metres at that gait. The bob bottoms out
+    //               sharply at each footfall (the moment the footstep sound plays).
     // bobSide:       sideways bob as a fraction of the vertical one.
     // bobSmoothing:  how fast the bob fades in and out, 1/s.
-    // landImpulse:   downward eye speed per m/s of fall speed on landing.
+    // landImpulse:   downward eye speed per m/s of fall speed on landing (the compression grows
+    //               with the fall).
     // landMinSpeed:  falls slower than this (m/s) don't dip.
+    // landMinAirSeconds: shorter times off the ground (running down stairs) don't count as a
+    //               landing.
     // landMaxDip:    deepest landing dip, metres.
     // landStiffness, landDamping: the landing spring.
+    // jumpDip:       downward eye speed (m/s) when a jump leaves the ground (the take-off push).
     // strafeRoll:    roll in radians at full strafe speed (leans into the strafe).
     // slideRoll:     roll while sliding, radians (negative tilts left).
     // rollRate:      how fast roll follows its target, 1/s.
@@ -35,31 +45,37 @@ namespace game
     // leanRoll:      camera roll at a full lean, radians.
     // sprintFov:     field of view added while running, radians.
     // bulletTimeFov: field of view added in bullet-time, radians (negative narrows it).
-    // fovRate:       how fast the field of view follows, 1/s.
+    // sprintFovRate: how fast the field of view widens into a run, 1/s.
+    // fovRate:       how fast it narrows back (and follows bullet-time), 1/s.
     // bulletTimeRate: how fast the bullet-time heaviness comes and goes, 1/s.
     // bulletTimeBob: bob depth multiplier in bullet-time.
     // bulletTimeRoll: roll rate multiplier in bullet-time (the head turns heavier).
     // bulletTimeLandDamping: landing spring damping multiplier in bullet-time.
+    // weight:        the body's weight reactions (leans, footfall plant, turn roll, head lag).
     struct HeadMotionTuning
     {
         float eyeHeightRate{12.0f};
         float stepSmoothRate{25.0f};
         float stepMinSpeed{5.0f};
         float stepMaxOffset{0.45f};
-        float walkStride{1.5f};
-        float runStride{2.4f};
-        float crouchStride{1.1f};
-        float walkBob{0.018f};
-        float runBob{0.035f};
-        float crouchBob{0.010f};
-        float bobSide{0.5f};
+        float walkStride{1.7f};
+        float runStride{2.75f};
+        float crouchStride{1.25f};
+        float walkStrideSpeed{1.6f};
+        float runStrideSpeed{3.75f};
+        float walkBob{0.022f};
+        float runBob{0.04f};
+        float crouchBob{0.012f};
+        float bobSide{0.45f};
         float bobSmoothing{8.0f};
-        float landImpulse{0.3f};
-        float landMinSpeed{2.0f};
-        float landMaxDip{0.16f};
-        float landStiffness{120.0f};
-        float landDamping{14.0f};
-        float strafeRoll{0.012f};
+        float landImpulse{0.42f};
+        float landMinSpeed{1.5f};
+        float landMinAirSeconds{0.12f};
+        float landMaxDip{0.22f};
+        float landStiffness{140.0f};
+        float landDamping{13.0f};
+        float jumpDip{0.55f};
+        float strafeRoll{0.018f};
         float slideRoll{-0.07f};
         float rollRate{8.0f};
         float recoilKick{0.35f};
@@ -68,13 +84,15 @@ namespace game
         float aimRecoilScale{0.5f};
         float crouchRecoilScale{0.75f};
         float leanRoll{0.17f};
-        float sprintFov{0.06f};
+        float sprintFov{0.085f};
         float bulletTimeFov{-0.05f};
+        float sprintFovRate{11.0f};
         float fovRate{6.0f};
         float bulletTimeRate{4.0f};
         float bulletTimeBob{0.75f};
         float bulletTimeRoll{0.5f};
         float bulletTimeLandDamping{1.4f};
+        HeadWeightTuning weight{};
     };
 
     // What drives the head motion this frame, from the local pawn's predicted (client) or
@@ -93,7 +111,8 @@ namespace game
     // isSprinting:   running (field of view kick).
     // isBulletTime:  the World domain is slowed (the head feels heavier, the view narrows; the
     //                pawn's own speed is unchanged).
-    // walkSpeed, runSpeed, strafeSpeed: movement speeds the bob and roll are scaled by.
+    // walkSpeed, runSpeed, strafeSpeed: movement speeds the bob and roll are scaled by (the
+    //               PawnSettings values).
     // shotCount:     the local shot counter; each increase kicks when `canKick`.
     // canKick:       a shot fires the weapon (armed, weapon up, no toy held).
     // deltaSeconds:  Player time since the previous frame.
@@ -112,9 +131,9 @@ namespace game
         bool isAiming{false};
         bool isSprinting{false};
         bool isBulletTime{false};
-        float walkSpeed{1.6f};
-        float runSpeed{4.0f};
-        float strafeSpeed{1.6f};
+        float walkSpeed{3.8f};
+        float runSpeed{6.4f};
+        float strafeSpeed{3.4f};
         uint8_t shotCount{0};
         bool canKick{false};
         float deltaSeconds{0.0f};
@@ -123,11 +142,13 @@ namespace game
     // Where the camera sits this frame. Presentation only: the command's yaw and pitch (the aim the
     // host checks) never include any of it.
     // eye:         camera position (smoothed eye height, bob and landing dip).
-    // pitchOffset: recoil kick added to the look pitch, radians.
+    // pitchOffset: recoil kick and body weight added to the look pitch, radians.
+    // yawOffset:   head lag added to the look yaw, radians.
     // roll:        camera roll, radians (positive tilts the right ear down).
     // bobPhase:    the step cycle, radians, for the viewmodel's bob.
     // bobStrength: bob size relative to walking (0 still, about 2 running), for the viewmodel.
-    // footfalls:   steps taken so far (one per half bob cycle, at the bottom of the bob), wrapping.
+    // footfalls:   steps taken so far (one per half bob cycle, at the bottom of the bob), wrapping;
+    //              footstep sounds play on each.
     // landings:    landings so far, wrapping.
     // landSpeed:   fall speed of the newest landing, m/s.
     // fovOffset:   field of view to add (running, bullet-time), radians.
@@ -135,6 +156,7 @@ namespace game
     {
         math::Vec3 eye{0.0f, 0.0f, 0.0f};
         float pitchOffset{0.0f};
+        float yawOffset{0.0f};
         float roll{0.0f};
         float bobPhase{0.0f};
         float bobStrength{0.0f};
@@ -154,12 +176,14 @@ namespace game
     // dip, dipRate: landing dip (negative is down) and its rate.
     // wasGrounded:  grounded last frame.
     // fallSpeed:    fastest fall since leaving the ground, m/s.
+    // airSeconds:   time since leaving the ground.
     // footfalls, landings, landSpeed: as in HeadPose.
     // roll:         smoothed camera roll.
     // kick, kickRate: camera recoil pitch and its rate.
     // fovOffset:    smoothed field of view offset, radians.
     // bulletTimeWeight: 0 normal to 1 fully in bullet-time, eased.
     // shotCount:    the local shot counter last seen.
+    // weight:       the body's weight reactions.
     struct HeadMotionState
     {
         HeadMotionTuning tuning{};
@@ -174,6 +198,7 @@ namespace game
         float dipRate{0.0f};
         bool wasGrounded{true};
         float fallSpeed{0.0f};
+        float airSeconds{0.0f};
         uint32_t footfalls{0};
         uint32_t landings{0};
         float landSpeed{0.0f};
@@ -183,14 +208,16 @@ namespace game
         float fovOffset{0.0f};
         float bulletTimeWeight{0.0f};
         uint8_t shotCount{0};
+        HeadWeightState weight{};
     };
 
     // Advances the head motion by one frame: eases the eye to the stance's height, smooths steps
-    // the controller climbs or drops (stairs), bobs it with
-    // the stride (walk, run and crouch differ), dips on landing, rolls into strafes, slides and
-    // leans, moves it with the lean, springs the camera recoil back, widens the view while running
-    // and makes the head heavier (less bob, slower roll, more damped landings, narrower view) in
-    // bullet-time.
+    // the controller climbs or drops (stairs), bobs it with the stride (walk, run and crouch
+    // differ; a footfall plants with a small dip), dips on take-off and compresses on landing by
+    // the fall speed, rolls into strafes, turns, slides and leans, leans into speed changes, trails
+    // fast turns slightly, moves it with the lean, springs the camera recoil back, widens the view
+    // while running and makes the head heavier (less bob, slower roll, more damped landings,
+    // narrower view) in bullet-time.
     // state:   the head motion, updated.
     // input:   this frame's pawn state.
     // Returns: the camera pose.
@@ -200,7 +227,7 @@ namespace game
     // state: the head motion.
     void resetHeadMotion(HeadMotionState& state);
 
-    // yaw:     camera yaw.
+    // yaw:     camera yaw (look yaw plus HeadPose::yawOffset).
     // pitch:   camera pitch (look pitch plus HeadPose::pitchOffset).
     // roll:    camera roll (HeadPose::roll).
     // Returns: the camera's up vector for that orientation.

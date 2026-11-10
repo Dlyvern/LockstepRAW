@@ -1,6 +1,7 @@
 #include "Simulation/NpcSimulation.hpp"
 
 #include "GameState.hpp"
+#include "Gore/GoreRules.hpp"
 #include "Npcs/NpcBrain.hpp"
 #include "Npcs/NpcGroups.hpp"
 #include "Npcs/NpcRoster.hpp"
@@ -162,21 +163,55 @@ namespace game
             simulation.sentNpcs = std::move(message);
         }
 
+        std::optional<math::Vec3> chestOf(const EngineContext& engine, world::EntityId entity)
+        {
+            const world::Entity* found = engine.entities.find(entity);
+
+            if (found == nullptr)
+            {
+                return std::nullopt;
+            }
+
+            return pawnFootPosition(found->transform()) + k_up * (found->transform().scale.y * k_chestShare);
+        }
+
+        math::Vec3 shotDirection(const math::Vec3& from, const math::Vec3& to)
+        {
+            const math::Vec3 offset = to - from;
+            return math::lengthSquared(offset) > 0.0f ? math::normalize(offset) : math::Vec3{0.0f, 0.0f, -1.0f};
+        }
+
         void applyHits(GameState& state, EngineContext& engine, const std::vector<NpcHit>& hits)
         {
             NpcRoster& roster = state.simulation.npcs;
 
             for (const NpcHit& hit : hits)
             {
-                if (hit.target.kind == NpcTargetRef::Kind::Pawn)
+                if (hit.target.kind == NpcTargetRef::Kind::Pawn && hit.target.index < state.simulation.pawns.size())
                 {
+                    const world::EntityId pawn = state.simulation.pawns[hit.target.index].entity;
+
+                    if (const std::optional<math::Vec3> chest = chestOf(engine, pawn))
+                    {
+                        recordHitGore(state, pawn, *chest, shotDirection(hit.source, *chest));
+                    }
+
                     hurtPawn(state, engine, hit.target.index, hit.damage, hit.source);
                 }
-                else if (hit.target.kind == NpcTargetRef::Kind::Npc && hit.target.index < roster.npcs.size())
+                else if (hit.target.kind == NpcTargetRef::Kind::Npc && hit.target.index < roster.npcs.size()
+                    && isNpcAlive(roster.npcs[hit.target.index]))
                 {
-                    damageNpc(roster, hit.target.index, hit.damage, hit.source,
+                    const std::optional<math::Vec3> chest = chestOf(engine, roster.npcs[hit.target.index].entity);
+                    const bool killed = damageNpc(roster, hit.target.index, hit.damage, hit.source,
                         NpcTargetRef{.kind = NpcTargetRef::Kind::Npc, .index = static_cast<uint32_t>(hit.shooter)},
                         engine.entities, engine.physics, state.settings.npcs);
+
+                    if (chest)
+                    {
+                        recordNpcGore(state, NpcGoreHit{.npc = hit.target.index, .point = *chest,
+                            .direction = shotDirection(hit.source, *chest), .damage = hit.damage, .killed = killed,
+                            .isNpcShot = true});
+                    }
                 }
             }
         }
@@ -220,8 +255,12 @@ namespace game
         ++pawn.hitCount;
         ++pawn.hits;
 
-        if (damageNpc(roster, *struck, state.settings.npcs.playerDamage, origin, shooter, engine.entities,
-                engine.physics, state.settings.npcs))
+        const bool killed = damageNpc(roster, *struck, state.settings.npcs.playerDamage, origin, shooter,
+            engine.entities, engine.physics, state.settings.npcs);
+        recordNpcGore(state, NpcGoreHit{.npc = *struck, .point = end, .direction = shotDirection(origin, end),
+            .damage = state.settings.npcs.playerDamage, .killed = killed});
+
+        if (killed)
         {
             ++pawn.killCount;
         }
@@ -266,6 +305,7 @@ namespace game
 
         voiceCallouts(state, engine);
         publishNpcState(state, engine);
+        publishGoreEvents(state, engine);
     }
 
     void restartNpcs(GameState& state, EngineContext& engine)

@@ -29,7 +29,7 @@ namespace lockstep::render
         void packPoint(GpuLocalLight& target, const PointLight& light)
         {
             store(target.positionRange, light.position, light.range);
-            store(target.color, light.color * light.intensity, 0.0f);
+            store(target.color, light.color * light.intensity, std::max(light.volumetric, 0.0f));
             store(target.directionCosOuter, math::Vec3{0.0f, 0.0f, 0.0f}, -1.0f);
             store(target.cosInnerKind, math::Vec3{1.0f, k_pointKind, k_noShadow}, 0.0f);
         }
@@ -37,7 +37,7 @@ namespace lockstep::render
         void packSpot(GpuLocalLight& target, const SpotLight& light)
         {
             store(target.positionRange, light.position, light.range);
-            store(target.color, light.color * light.intensity, 0.0f);
+            store(target.color, light.color * light.intensity, std::max(light.volumetric, 0.0f));
             store(target.directionCosOuter, math::normalize(light.direction), std::cos(light.outerAngle));
             store(target.cosInnerKind, math::Vec3{std::cos(light.innerAngle), k_spotKind, k_noShadow}, 0.0f);
         }
@@ -282,6 +282,26 @@ namespace lockstep::render
 
             gpu.zoneParams[0] = static_cast<float>(count);
         }
+
+        void packSurfaceDetail(GpuFrameLighting& gpu, const SurfaceDetailSettings& surface)
+        {
+            const float minSteps = static_cast<float>(std::clamp(surface.parallaxMinSteps, 4u, 64u));
+            const float maxSteps = std::max(static_cast<float>(std::clamp(surface.parallaxMaxSteps, 4u, 64u)), minSteps);
+            store(gpu.surfaceParallax, math::Vec3{surface.parallax ? std::max(surface.parallaxDistance, 0.0f) : 0.0f,
+                minSteps, maxSteps}, surface.parallaxShadows ? 1.0f : 0.0f);
+            store(gpu.surfaceDetail, math::Vec3{surface.detail ? std::max(surface.detailDistance, 0.0f) : 0.0f,
+                std::clamp(surface.detailStrength, 0.0f, 2.0f), 0.0f}, 0.0f);
+        }
+
+        void packWetness(GpuFrameLighting& gpu, const WetnessSettings& wetness)
+        {
+            const float amount = wetness.enabled ? std::clamp(wetness.amount, 0.0f, 1.0f) : 0.0f;
+            store(gpu.wetness, math::Vec3{amount, std::clamp(wetness.puddles, 0.0f, 1.0f),
+                1.0f / std::max(wetness.puddleSize, 0.1f)}, wetness.rippleTime);
+            store(gpu.wetnessShading, math::Vec3{std::clamp(wetness.darkening, 0.0f, 1.0f),
+                std::clamp(wetness.glossiness, 0.0f, 1.0f), std::clamp(wetness.ripples, 0.0f, 1.0f)},
+                wetness.debugView ? 1.0f : 0.0f);
+        }
     } //namespace
 
     bool FrameLights::hasRoom() const
@@ -309,6 +329,8 @@ namespace lockstep::render
         GpuFrameLighting& gpu = prepared.lighting;
 
         store(gpu.ambient, settings.lighting.ambientColor * settings.lighting.ambientIntensity, 0.0f);
+        packSurfaceDetail(gpu, settings.surfaceDetail);
+        packWetness(gpu, settings.wetness);
 
         const std::optional<DirectionalLight> sun = frameSun(lights, settings);
         const math::Vec3 skySunDirection = sun ? math::normalize(sun->direction)

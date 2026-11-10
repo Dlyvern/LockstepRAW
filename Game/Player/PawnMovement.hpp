@@ -86,7 +86,7 @@ namespace game
     // per second of Player time; a diagonal move gets the speed of the ellipse through the
     // forward/backward and strafe speeds. Host and client must use the same values (the client
     // predicts with its own copy).
-    // walkSpeed:    walking forward.
+    // walkSpeed:    moving forward without sprint (a brisk combat jog, not a stroll).
     // runSpeed:     running forward while sprint is held (forward and forward-diagonal moves only).
     // weaponUpRunSpeed: cap on running while the weapon is raised (PlayerCommand::isWeaponUp).
     // backSpeed:    walking backward.
@@ -103,9 +103,10 @@ namespace game
     // slideMinSpeed: a slide only starts from at least this planar speed.
     // slideSteerRate: how fast a slide turns towards the move direction, rad/s.
     // acceleration: m/s^2 while speeding up on the ground below walk speed (about 0.1 s from
-    //               standing to walking).
+    //               standing to the default move speed).
     // runAcceleration: m/s^2 while speeding up on the ground above walk speed (into a run).
-    // deceleration: m/s^2 while slowing down on the ground (a little slower than starting).
+    // deceleration: m/s^2 while slowing down on the ground (a little slower than starting: about
+    //               0.15 s from moving, 0.25 s from running, so stops are short but not instant).
     // runTurnAcceleration: m/s^2 of sideways change at run speed, so turning while running is
     //               slower than while walking (which turns at `acceleration`).
     // airAcceleration: m/s^2 of steering while airborne (limited air control).
@@ -114,7 +115,7 @@ namespace game
     // coyoteSeconds: how long after leaving the ground a jump still works.
     // jumpBufferSeconds: how long a jump press before landing is remembered.
     // hardLandingSpeed: fall speed (m/s) from which a landing slows the pawn (a plain jump lands
-    //               at about 4.5 m/s; 7.5 is a drop of about 1.6 m).
+    //               at about 4.7 m/s; 8.5 is walking off a drop of about 1.3 m).
     // hardLandingFullSpeed: fall speed of the longest slowdown.
     // hardLandingMinSeconds, hardLandingMaxSeconds: slowdown length at those two speeds.
     // hardLandingScale: speed multiplier right after a hard landing; recovers to 1 over the
@@ -135,48 +136,48 @@ namespace game
     // respawnDelay: Player seconds from death to respawn.
     struct PawnSettings
     {
-        float walkSpeed{1.6f};
-        float runSpeed{4.0f};
-        float weaponUpRunSpeed{2.8f};
-        float backSpeed{1.2f};
-        float strafeSpeed{1.6f};
-        float sprintStrafeSpeed{1.6f};
-        float aimSpeed{1.3f};
-        float crouchSpeed{1.0f};
+        float walkSpeed{3.8f};
+        float runSpeed{6.4f};
+        float weaponUpRunSpeed{6.0f};
+        float backSpeed{3.0f};
+        float strafeSpeed{3.4f};
+        float sprintStrafeSpeed{4.2f};
+        float aimSpeed{2.4f};
+        float crouchSpeed{2.2f};
         float crouchHeight{1.2f};
         float slideHeight{1.0f};
-        float slideSpeed{5.5f};
-        float slideEndSpeed{1.6f};
-        float slideSeconds{0.8f};
+        float slideSpeed{8.5f};
+        float slideEndSpeed{2.6f};
+        float slideSeconds{0.75f};
         float slideCooldown{0.6f};
-        float slideMinSpeed{2.4f};
-        float slideSteerRate{1.0f};
-        float acceleration{16.0f};
-        float runAcceleration{6.0f};
-        float deceleration{11.0f};
-        float runTurnAcceleration{7.0f};
-        float airAcceleration{2.5f};
-        float airDrag{0.3f};
+        float slideMinSpeed{4.6f};
+        float slideSteerRate{1.5f};
+        float acceleration{40.0f};
+        float runAcceleration{14.0f};
+        float deceleration{26.0f};
+        float runTurnAcceleration{20.0f};
+        float airAcceleration{4.0f};
+        float airDrag{0.2f};
         float jumpHeight{0.55f};
         float coyoteSeconds{0.1f};
         float jumpBufferSeconds{0.1f};
-        float hardLandingSpeed{7.5f};
-        float hardLandingFullSpeed{13.0f};
-        float hardLandingMinSeconds{0.25f};
-        float hardLandingMaxSeconds{0.7f};
-        float hardLandingScale{0.35f};
+        float hardLandingSpeed{8.5f};
+        float hardLandingFullSpeed{14.0f};
+        float hardLandingMinSeconds{0.2f};
+        float hardLandingMaxSeconds{0.6f};
+        float hardLandingScale{0.4f};
         float leanDistance{0.35f};
         float leanSeconds{0.2f};
         float leanClearance{0.2f};
         float sprintRecoverSeconds{0.15f};
         float mantleMinHeight{0.4f};
         float mantleMaxHeight{1.1f};
-        float mantleReach{0.45f};
-        float mantleRiseSpeed{4.5f};
-        float mantleForwardDistance{0.65f};
-        float mantleForwardSeconds{0.15f};
-        float gravity{18.0f};
-        float groundStick{3.0f};
+        float mantleReach{0.6f};
+        float mantleRiseSpeed{5.5f};
+        float mantleForwardDistance{0.7f};
+        float mantleForwardSeconds{0.12f};
+        float gravity{20.0f};
+        float groundStick{4.5f};
         int32_t maxHealth{100};
         float respawnDelay{3.0f};
     };

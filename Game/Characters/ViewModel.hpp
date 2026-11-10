@@ -52,7 +52,9 @@ namespace game
     // swayLag:        radians the weapon lags per radian of look.
     // swayLimit:      largest lag, in radians.
     // swayStiffness:  spring pulling the lag back, 1/s^2.
-    // swayDamping:    damping of that spring, 1/s.
+    // swayDamping:    damping of that spring, 1/s (below critical, so the weapon overshoots a
+    //                 little as it catches up: a heavy rifle).
+    // swayRoll:       roll per radian of sideways sway (the weapon cants as it trails a turn).
     // bobAmount:      sideways bob in metres at walking speed (vertical is two thirds of it).
     // bobRoll:        roll of the bob in radians at walking speed.
     // breatheAmount:  idle breathing sway, radians.
@@ -66,8 +68,21 @@ namespace game
     // moveKick:       metres/s of weapon lag per m/s of velocity change (back and down when
     //                 speeding up, forward when stopping).
     // moveDip:        vertical part of that lag, relative to its forward part.
-    // moveStiffness, moveDamping: the spring of the movement reaction.
+    // moveStiffness, moveDamping: the spring of the movement reaction (it overshoots a little,
+    //                 so stopping ends in a short settle).
     // moveLimit:      largest movement offset, metres.
+    // movePitch:      muzzle dip rate (rad/s) per m/s of forward velocity change (starting and
+    //                 stopping both dip it).
+    // moveYaw:        muzzle trail rate (rad/s) per m/s of sideways velocity change.
+    // moveAngleLimit: largest muzzle dip or trail from movement, radians.
+    // jumpDrop:       downward speed (m/s) of the weapon when a jump leaves the ground.
+    // jumpPitch:      muzzle dip rate (rad/s) at take-off.
+    // landDrop:       downward speed (m/s) of the weapon per m/s of fall speed on landing.
+    // landPitch:      muzzle dip rate (rad/s) per m/s of fall speed on landing.
+    // landMinSpeed:   falls slower than this (m/s) don't dip the weapon.
+    // airStiffness, airDamping: the spring of the jump and landing dips.
+    // airLimit:       largest jump or landing drop, metres (the pitch is limited to twice that in
+    //                 radians).
     // aimDamping:     multiplier of sway, bob and recoil while aiming.
     // readyOffset:    extra view-space offset with the weapon up (ready or lowered).
     // aimOffset:      extra view-space offset while aiming down sights.
@@ -81,16 +96,18 @@ namespace game
     // sprintOffset:   extra view-space offset of the running pose.
     // sprintSwing:    sideways swing per step while running, radians.
     // sprintBounce:   vertical bounce per step while running, metres.
+    // sprintRollSwing: roll swing per step while running, radians.
     struct ViewModelTuning
     {
         float aimSeconds{0.15f};
         float raiseSeconds{0.3f};
         float aimDip{0.012f};
-        float swayLag{0.12f};
-        float swayLimit{0.06f};
-        float swayStiffness{110.0f};
-        float swayDamping{16.0f};
-        float bobAmount{0.005f};
+        float swayLag{0.16f};
+        float swayLimit{0.08f};
+        float swayStiffness{85.0f};
+        float swayDamping{11.0f};
+        float swayRoll{0.6f};
+        float bobAmount{0.006f};
         float bobRoll{0.008f};
         float breatheAmount{0.004f};
         float breatheRate{0.25f};
@@ -99,13 +116,24 @@ namespace game
         float recoilStiffness{320.0f};
         float recoilDamping{26.0f};
         float crouchRecoilScale{0.7f};
-        float strafeTilt{0.07f};
-        float strafeShift{0.008f};
-        float moveKick{0.03f};
+        float strafeTilt{0.08f};
+        float strafeShift{0.012f};
+        float moveKick{0.02f};
         float moveDip{0.6f};
-        float moveStiffness{90.0f};
-        float moveDamping{11.0f};
-        float moveLimit{0.03f};
+        float moveStiffness{75.0f};
+        float moveDamping{9.0f};
+        float moveLimit{0.035f};
+        float movePitch{0.06f};
+        float moveYaw{0.05f};
+        float moveAngleLimit{0.06f};
+        float jumpDrop{0.3f};
+        float jumpPitch{0.5f};
+        float landDrop{0.06f};
+        float landPitch{0.1f};
+        float landMinSpeed{1.5f};
+        float airStiffness{110.0f};
+        float airDamping{10.0f};
+        float airLimit{0.05f};
         float aimDamping{0.35f};
         math::Vec3 readyOffset{0.0f, 0.0f, 0.0f};
         math::Vec3 aimOffset{0.0f, 0.0f, 0.0f};
@@ -114,13 +142,14 @@ namespace game
         float loweredRoll{0.1f};
         math::Vec3 loweredPivot{0.17f, -0.07f, -0.23f};
         math::Vec3 loweredOffset{-0.02f, 0.0f, 0.0f};
-        float sprintSeconds{0.2f};
+        float sprintSeconds{0.16f};
         float sprintPitch{0.35f};
         float sprintYaw{0.6f};
         float sprintRoll{0.5f};
         math::Vec3 sprintOffset{0.0f, -0.02f, 0.03f};
-        float sprintSwing{0.05f};
-        float sprintBounce{0.012f};
+        float sprintSwing{0.07f};
+        float sprintBounce{0.016f};
+        float sprintRollSwing{0.06f};
     };
 
     // The local player's viewmodel: its animated instance and the state of its procedural motion.
@@ -135,7 +164,12 @@ namespace game
     // shotCount:  the local shot counter last seen, so each new shot kicks once.
     // tilt, tiltRate: strafe roll in radians, and its rate.
     // moveOffset, moveRate: view-space lag from velocity changes and strafing, and its rate.
-    // lastVelocity: view-relative planar velocity of the previous frame (x right, y forward).
+    // moveAngle, moveAngleRate: (pitch, yaw) muzzle dip and trail from velocity changes, radians,
+    //               and its rate.
+    // air, airRate: (drop in metres, pitch in radians) from jumping and landing, and its rate.
+    // wasGrounded:  on the ground last frame.
+    // fallSpeed:    fastest fall since leaving the ground, m/s.
+    // lastVelocity: world planar velocity of the previous frame (x, z; m/s).
     // lastYaw, lastPitch: the look of the previous frame.
     // isDrawn:    drawn last frame; false restarts the motion state.
     // tuning:     feel settings.
@@ -155,6 +189,12 @@ namespace game
         float tiltRate{0.0f};
         math::Vec3 moveOffset{0.0f, 0.0f, 0.0f};
         math::Vec3 moveRate{0.0f, 0.0f, 0.0f};
+        math::Vec2 moveAngle{0.0f, 0.0f};
+        math::Vec2 moveAngleRate{0.0f, 0.0f};
+        math::Vec2 air{0.0f, 0.0f};
+        math::Vec2 airRate{0.0f, 0.0f};
+        bool wasGrounded{true};
+        float fallSpeed{0.0f};
         math::Vec2 lastVelocity{0.0f, 0.0f};
         float lastYaw{0.0f};
         float lastPitch{0.0f};
@@ -165,11 +205,13 @@ namespace game
     // What drives the viewmodel this frame.
     // eye:          the camera position.
     // yaw, pitch:   the look (radians, as in PlayerCommand); sway follows their changes.
-    // cameraPitchOffset, cameraRoll: the camera's presentation-only kick and roll (HeadPose), so
-    //               the weapon stays fixed on screen.
+    // cameraPitchOffset, cameraYawOffset, cameraRoll: the camera's presentation-only kick, lag
+    //               and roll (HeadPose), so the weapon stays fixed on screen.
     // bobPhase:     the head's step cycle (HeadPose::bobPhase), so weapon and camera bob together.
     // bobStrength:  bob size relative to walking (HeadPose::bobStrength).
     // velocity:     the pawn's planar velocity relative to the look yaw, m/s (x right, y forward).
+    // verticalSpeed: the pawn's upward speed, m/s (jump and landing dips).
+    // isGrounded:   the pawn is on the ground.
     // strafeSpeed:  the strafe speed the tilt is scaled by.
     // isCrouched:   crouched or sliding (less recoil).
     // isAiming:     the player aims down sights.
@@ -185,11 +227,14 @@ namespace game
         float yaw{0.0f};
         float pitch{0.0f};
         float cameraPitchOffset{0.0f};
+        float cameraYawOffset{0.0f};
         float cameraRoll{0.0f};
         float bobPhase{0.0f};
         float bobStrength{0.0f};
         math::Vec2 velocity{0.0f, 0.0f};
-        float strafeSpeed{1.6f};
+        float verticalSpeed{0.0f};
+        bool isGrounded{true};
+        float strafeSpeed{3.4f};
         bool isCrouched{false};
         bool isAiming{false};
         bool isLowered{false};
@@ -207,8 +252,9 @@ namespace game
     [[nodiscard]] lockstep::Result<FirstPersonModel> createFirstPersonModel(CharacterModel&& character,
         std::string_view aimClip);
 
-    // Animates the viewmodel (raise/lower crossfade, look sway, idle breathing, walk bob, strafe
-    // tilt, lag when starting and stopping, running pose, aim-in, recoil) and
+    // Animates the viewmodel (raise/lower crossfade, look sway with overshoot and cant, idle
+    // breathing, walk bob, strafe tilt, lag and muzzle dip when starting and stopping, dips on
+    // jumping and landing, running pose swinging with the steps, aim-in, recoil) and
     // queues it on render::k_viewModelLayer, placed relative to the camera. Sway turns it about the
     // eye; bob, dip and recoil together move it at most a few centimetres, so it never comes near
     // the eye.

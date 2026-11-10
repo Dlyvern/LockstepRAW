@@ -54,6 +54,10 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     vec4 skyZenithTint;
     vec4 sunDisk;
     vec4 sceneDepthParams;
+    vec4 surfaceParallax;
+    vec4 surfaceDetail;
+    vec4 wetness;
+    vec4 wetnessShading;
     uvec4 counts;
     LocalLight lights[k_maxLocalLights];
     vec4 zoneParams;

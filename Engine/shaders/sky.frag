@@ -18,6 +18,8 @@ layout(location = 0) in vec4 inFarPoint;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outAmbient;
 layout(location = 2) out vec4 outVelocity;
+layout(location = 3) out vec4 outSurfaceNormal;
+layout(location = 4) out vec4 outSurfaceSpecular;
 
 // Screen motion of a direction at infinity: only the camera's rotation moves it.
 vec4 skyMotion(vec3 direction)
@@ -48,4 +50,6 @@ void main()
     outColor = vec4(radiance, 1.0);
     outAmbient = vec4(0.0);
     outVelocity = skyMotion(direction);
+    outSurfaceNormal = vec4(0.0, 0.0, 1.0, 1.0);
+    outSurfaceSpecular = vec4(0.0, 0.0, 0.0, 1.0);
 }

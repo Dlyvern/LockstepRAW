@@ -50,13 +50,14 @@ namespace lockstep::cooker
     // encoding, so a capped texture is the source downscaled by the same filter as its mips.
     // For alpha-masked colour textures each smaller level's alpha is rescaled so the share of
     // texels passing the cutoff matches the base level (foliage keeps its density at a distance
-    // instead of thinning out). Deterministic.
+    // instead of thinning out). Height maps are stretched so their 1st to 99th percentile fill 0-1
+    // (one parallax scale fits every map); a map with almost no range is rejected. Deterministic.
     // encoded:     the image file contents.
     // usage:       what it holds, which picks the format.
     // maxSize:     largest allowed side of the top level, in texels (at least 1).
     // alphaCutoff: the masked material's alpha cutoff, or negative for no coverage preservation.
     // gate:        the cook's shared Basis transcoder gate.
-    // Returns:     the cooked texture, or the decode error.
+    // Returns:     the cooked texture, or the decode error (or InvalidArgument for a flat height map).
     [[nodiscard]] Result<CookedTexture> cookTexture(std::span<const std::byte> encoded, TextureUsage usage,
         uint32_t maxSize, float alphaCutoff, assets::TranscoderGate& gate);
 } //namespace lockstep::cooker

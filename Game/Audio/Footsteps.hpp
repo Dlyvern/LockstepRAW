@@ -133,17 +133,21 @@ namespace game
     // walkSpeed, runSpeed: movement speeds the volume blends between.
     // walkStride, runStride, crouchStride: metres per stride cycle (two steps) at those gaits,
     //              the head motion's values, so other players step like the local camera bobs.
+    // walkStrideSpeed, runStrideSpeed: speeds at which the walk and run strides apply (the head
+    //              motion's values).
     // worldScale:  the World time domain's scale (below 1 in bullet-time).
     // seconds:     Player time since the previous frame.
     struct FootstepFrame
     {
         const SceneLevel* level{nullptr};
         const lockstep::physics::PhysicsWorld* physics{nullptr};
-        float walkSpeed{1.6f};
-        float runSpeed{4.0f};
+        float walkSpeed{3.8f};
+        float runSpeed{6.4f};
         float walkStride{1.5f};
         float runStride{2.4f};
         float crouchStride{1.1f};
+        float walkStrideSpeed{1.6f};
+        float runStrideSpeed{3.75f};
         float worldScale{1.0f};
         float seconds{0.0f};
     };

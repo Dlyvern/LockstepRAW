@@ -3,6 +3,7 @@
 
 #include <Lockstep/Core/Result.hpp>
 
+#include "SurfaceRules.hpp"
 #include "TextureCaps.hpp"
 
 #include <cstdint>
@@ -19,6 +20,13 @@ namespace lockstep::cooker
     // scale:   uniform scale applied to the scene.
     // threads: worker threads; 0 picks the hardware thread count.
     // textureCaps: texture size limits (see textureCaps()).
+    // splitLimbs: split humanoid skinned models into limb regions with wound caps (--limbs; see
+    //          splitLimbs()); models whose skeleton lacks a limb joint are cooked whole.
+    // wound:   with splitLimbs, a glTF whose node "Wound_Stump" holds the wound stump mesh (axis
+    //          +Y, wound face on top); it is placed at every cut and its material becomes the
+    //          wound material (--wound). Empty for plain caps.
+    // surfaces: height maps for parallax and micro-detail layers by material (see
+    //          applySurfaceRules(); --height-dir, --no-surface-detail).
     struct CookOptions
     {
         std::filesystem::path source;
@@ -27,6 +35,9 @@ namespace lockstep::cooker
         float scale{1.0f};
         uint32_t threads{0};
         TextureCapOptions textureCaps{};
+        bool splitLimbs{false};
+        std::filesystem::path wound;
+        SurfaceRuleOptions surfaces{};
     };
 
     // Cooks a glTF scene into engine-ready files: meshes in PbrVertex layout, textures in their

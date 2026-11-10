@@ -1,6 +1,8 @@
 #include "GraphicsPanel.hpp"
 
+#include "DetailLensPanel.hpp"
 #include "GraphicsLookPanel.hpp"
+#include "IndirectLightingPanel.hpp"
 
 #include <imgui.h>
 
@@ -29,9 +31,6 @@ namespace lockstep::debug
         constexpr float k_maxGlowIntensity{2.0f};
         constexpr float k_minGlowHeight{0.01f};
         constexpr float k_maxGlowSpread{16.0f};
-        constexpr float k_maxOcclusionRadius{3.0f};
-        constexpr float k_maxOcclusionIntensity{3.0f};
-        constexpr float k_maxOcclusionPower{4.0f};
         constexpr float k_maxBloomStrength{0.3f};
         constexpr int k_maxCascades{static_cast<int>(render::k_maxShadowCascades)};
         constexpr int k_maxShadowedLights{static_cast<int>(render::k_maxShadowedLocalLights)};
@@ -230,13 +229,6 @@ namespace lockstep::debug
                 return;
             }
 
-            render::AmbientOcclusionSettings& occlusion = settings.ambientOcclusion;
-            ImGui::Checkbox("SSAO", &occlusion.enabled);
-            ImGui::SliderFloat("SSAO radius (m)", &occlusion.radius, 0.05f, k_maxOcclusionRadius, "%.2f");
-            ImGui::SliderFloat("SSAO intensity", &occlusion.intensity, 0.0f, k_maxOcclusionIntensity, "%.2f");
-            ImGui::SliderFloat("SSAO power", &occlusion.power, 0.5f, k_maxOcclusionPower, "%.2f");
-            ImGui::Checkbox("Show SSAO only", &occlusion.showOnly);
-            ImGui::Separator();
             ImGui::Checkbox("Bloom", &settings.bloom.enabled);
             ImGui::SliderFloat("Bloom strength", &settings.bloom.strength, 0.0f, k_maxBloomStrength, "%.3f");
             ImGui::Checkbox("Frustum culling", &settings.culling.frustumCulling);
@@ -304,11 +296,13 @@ namespace lockstep::debug
             drawLighting(settings.lighting);
             drawSky(settings.sky, settings.ibl);
             drawShadows(settings.shadows);
+            drawIndirectLightingSections(settings);
             drawPostProcessing(settings);
             drawAntiAliasing(settings.antiAliasing);
             drawReflections(settings.reflections);
             drawTonemap(settings.tonemap);
             drawLookSections(settings, renderer.ambientZones.size());
+            drawDetailLensSections(settings);
             drawFog(settings.fog);
         }
 

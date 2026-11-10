@@ -23,7 +23,7 @@ namespace game
         constexpr int32_t k_maxEncodedValue{255};
         constexpr float k_reviveSteps{20.0f};
         constexpr std::size_t k_tagBytes{1};
-        constexpr std::size_t k_bytesPerPlayer{11};
+        constexpr std::size_t k_bytesPerPlayer{12};
 
         enum class Field : std::size_t
         {
@@ -37,7 +37,8 @@ namespace game
             DamageCount,
             DamageYaw,
             HitCount,
-            KillCount
+            KillCount,
+            ShotCount
         };
 
         std::size_t at(std::size_t player, Field field)
@@ -84,7 +85,8 @@ namespace game
             .damageCount = pawn.damageCount,
             .damageYaw = pawn.damageYaw,
             .hitCount = pawn.hitCount,
-            .killCount = pawn.killCount};
+            .killCount = pawn.killCount,
+            .shotCount = static_cast<uint8_t>(pawn.shots)};
     }
 
     std::array<std::byte, k_playerStatusBytes> encodeStatusMessage(const StatusMessage& message)
@@ -113,6 +115,7 @@ namespace game
             bytes[at(index, Field::DamageYaw)] = static_cast<std::byte>(status.damageYaw);
             bytes[at(index, Field::HitCount)] = static_cast<std::byte>(status.hitCount);
             bytes[at(index, Field::KillCount)] = static_cast<std::byte>(status.killCount);
+            bytes[at(index, Field::ShotCount)] = static_cast<std::byte>(status.shotCount);
         }
 
         return bytes;
@@ -153,7 +156,8 @@ namespace game
                 .damageCount = valueAt(Field::DamageCount),
                 .damageYaw = valueAt(Field::DamageYaw),
                 .hitCount = valueAt(Field::HitCount),
-                .killCount = valueAt(Field::KillCount)};
+                .killCount = valueAt(Field::KillCount),
+                .shotCount = static_cast<uint8_t>(valueAt(Field::ShotCount))};
         }
 
         return message;

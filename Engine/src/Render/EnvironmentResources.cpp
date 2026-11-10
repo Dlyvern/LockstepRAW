@@ -1,5 +1,6 @@
 #include "EnvironmentResources.hpp"
 
+#include "SurfaceTextures.hpp"
 #include "VelaConversions.hpp"
 
 #include <Vela/Core/Context.hpp>
@@ -11,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <span>
 #include <utility>
 #include <vector>
@@ -23,6 +25,7 @@ namespace lockstep::render
         constexpr uint32_t k_lutSamples{256};
         constexpr std::size_t k_lutChannels{4};
         constexpr float k_pi{3.14159265358979f};
+        constexpr float k_detailAnisotropy{8.0f};
 
         float radicalInverse(uint32_t bits)
         {
@@ -153,6 +156,49 @@ namespace lockstep::render
             return std::move(texture).value();
         }
 
+        Result<vela::graphics::Texture> createMipmapped(vela::core::Context& context, std::span<const uint8_t> texels,
+            uint32_t size, const vela::graphics::SamplerDescription& sampler)
+        {
+            vela::graphics::ImageData image{};
+            image.pixels = std::as_bytes(texels);
+            image.width = size;
+            image.height = size;
+            image.format = vela::graphics::TextureFormat::RGBA8Unorm;
+
+            auto texture = vela::graphics::Texture::create(context, image, sampler,
+                vela::graphics::TextureOptions{.generateMips = true});
+
+            if (!texture)
+            {
+                return toError(texture.error());
+            }
+
+            return std::move(texture).value();
+        }
+
+        Result<std::vector<vela::graphics::Texture>> createSurfaceDetail(vela::core::Context& context,
+            std::vector<std::future<std::vector<uint8_t>>>& jobs)
+        {
+            vela::graphics::SamplerDescription sampler{};
+            sampler.anisotropy = k_detailAnisotropy;
+            std::vector<vela::graphics::Texture> textures;
+
+            for (std::future<std::vector<uint8_t>>& job : jobs)
+            {
+                const std::vector<uint8_t> texels = job.get();
+                auto texture = createMipmapped(context, texels, k_surfaceDetailSize, sampler);
+
+                if (!texture)
+                {
+                    return texture.error();
+                }
+
+                textures.push_back(std::move(texture).value());
+            }
+
+            return textures;
+        }
+
         Result<vela::graphics::Texture> createPixel(vela::core::Context& context, std::array<uint8_t, 4> rgba,
             vela::graphics::TextureFormat format)
         {
@@ -162,6 +208,15 @@ namespace lockstep::render
 
     Result<EnvironmentResources> EnvironmentResources::create(vela::core::Context& context)
     {
+        std::vector<std::future<std::vector<uint8_t>>> detailJobs;
+
+        for (uint32_t kind = 1; kind <= k_surfaceDetailKinds; ++kind)
+        {
+            detailJobs.push_back(std::async(std::launch::async, surfaceDetailTexels, static_cast<SurfaceDetail>(kind)));
+        }
+
+        std::future<std::vector<uint8_t>> dirtJob = std::async(std::launch::async, lensDirtTexels);
+
         auto whiteSrgb = createPixel(context, {255, 255, 255, 255}, vela::graphics::TextureFormat::RGBA8Srgb);
 
         if (!whiteSrgb)
@@ -192,10 +247,27 @@ namespace lockstep::render
             return brdfLut.error();
         }
 
+        auto surfaceDetail = createSurfaceDetail(context, detailJobs);
+
+        if (!surfaceDetail)
+        {
+            return surfaceDetail.error();
+        }
+
+        const std::vector<uint8_t> dirtTexels = dirtJob.get();
+        auto lensDirt = createMipmapped(context, dirtTexels, k_lensDirtSize, clampedSampler());
+
+        if (!lensDirt)
+        {
+            return lensDirt.error();
+        }
+
         return EnvironmentResources{
             .whiteSrgb = std::move(whiteSrgb).value(),
             .whiteLinear = std::move(whiteLinear).value(),
             .flatNormal = std::move(flatNormal).value(),
-            .brdfLut = std::move(brdfLut).value()};
+            .brdfLut = std::move(brdfLut).value(),
+            .surfaceDetail = std::move(surfaceDetail).value(),
+            .lensDirt = std::move(lensDirt).value()};
     }
 } //namespace lockstep::render

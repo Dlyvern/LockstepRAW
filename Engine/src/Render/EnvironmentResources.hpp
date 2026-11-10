@@ -5,6 +5,8 @@
 
 #include <Vela/Graphics/Texture.hpp>
 
+#include <vector>
+
 namespace vela::core
 {
     class Context;
@@ -18,14 +20,19 @@ namespace lockstep::render
     // flatNormal:  1x1 tangent-space +Z; stands in for a missing normal map.
     // brdfLut:     split-sum environment BRDF table (x: n.v, y: roughness; r scale, g bias on F0),
     //              computed on the CPU at startup.
+    // surfaceDetail: the micro-detail layers, indexed by SurfaceDetail minus one (k_surfaceDetailKinds
+    //              of them; see SurfaceTextures.hpp), repeating, mipmapped, anisotropic.
+    // lensDirt:    the lens dirt bloom lights up (see SurfaceTextures.hpp), clamped, mipmapped.
     struct EnvironmentResources
     {
         vela::graphics::Texture whiteSrgb;
         vela::graphics::Texture whiteLinear;
         vela::graphics::Texture flatNormal;
         vela::graphics::Texture brdfLut;
+        std::vector<vela::graphics::Texture> surfaceDetail;
+        vela::graphics::Texture lensDirt;
 
-        // Creates the textures.
+        // Creates the textures (the procedural ones are generated on worker threads).
         // context: the GPU context.
         // Returns: the resources, or an error if an upload failed.
         [[nodiscard]] static Result<EnvironmentResources> create(vela::core::Context& context);

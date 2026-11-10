@@ -16,7 +16,7 @@ namespace game
 
         constexpr float k_range{80.0f};
         constexpr float k_unsettledSpread{2.0f};
-        constexpr float k_runSpeed{4.0f};
+        constexpr float k_runSpeed{6.4f};
         constexpr float k_downedSpread{0.7f};
 
         float roughNormal(uint32_t& random)

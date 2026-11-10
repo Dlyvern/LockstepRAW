@@ -199,6 +199,17 @@ namespace lockstep::render
         //            ones are ignored, and assert in debug).
         void submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform, RenderLayers layers);
 
+        // Queues one draw like submit() with layers, with its material's emissive light scaled for
+        // this draw only (a lamp mesh dimming with its flickering light).
+        // mesh:          the mesh to draw.
+        // material:      the material to draw it with.
+        // transform:     world placement of the mesh.
+        // layers:        the layers it is on.
+        // emissiveScale: multiplier on the material's emissive light, 0 (dark) and up; negative
+        //                values count as 0. Lit materials only (unlit ones ignore it).
+        void submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform, RenderLayers layers,
+            float emissiveScale);
+
         // Queues a decal draw on k_defaultRenderLayer for the next render(): a thin mesh (usually a
         // quad) lying a few millimetres off a surface, drawn with an alpha-blended material over the
         // opaque scene right after it (before the sky and other transparent draws), in submission

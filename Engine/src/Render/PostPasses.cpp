@@ -3,6 +3,7 @@
 #include "ExposurePasses.hpp"
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
+#include "LensPasses.hpp"
 #include "RendererState.hpp"
 #include "TemporalAntiAliasing.hpp"
 #include "VelaConversions.hpp"
@@ -21,24 +22,13 @@ namespace lockstep::render
     namespace
     {
         constexpr std::string_view k_fullscreenVertexShader{"fullscreen.vert.spv"};
-        constexpr std::string_view k_ssaoShader{"ssao.frag.spv"};
-        constexpr std::string_view k_ssaoBlurShader{"ssao_blur.frag.spv"};
         constexpr std::string_view k_bloomPrefilterShader{"bloom_prefilter.frag.spv"};
         constexpr std::string_view k_bloomDownShader{"bloom_down.frag.spv"};
         constexpr std::string_view k_bloomUpShader{"bloom_up.frag.spv"};
         constexpr std::string_view k_tonemapShader{"tonemap.frag.spv"};
-        constexpr std::string_view k_fxaaShader{"fxaa.frag.spv"};
         constexpr uint32_t k_fullscreenTriangleVertices{3};
-        constexpr float k_occlusionScale{0.5f};
-        constexpr float k_ditherAmplitude{1.0f / 255.0f};
         constexpr uint32_t k_viewScene{0};
         constexpr uint32_t k_viewOcclusion{1};
-
-        struct ProjectionConstants
-        {
-            float projection[4];
-            float params[4];
-        };
 
         struct BloomConstants
         {
@@ -57,31 +47,11 @@ namespace lockstep::render
             float shadowTint[4]{};
             float highlightTint[4]{};
             float vignette[4]{};
+            float dirt[4]{};
         };
 
-        enum class OutputFilter : uint32_t
-        {
-            None = 0,
-            Fxaa,
-            TemporalSharpen
-        };
-
-        struct OutputConstants
-        {
-            float fade[4];
-            float inverseSize[2];
-            OutputFilter filter;
-            float dither;
-            uint32_t frameIndex;
-            float sharpness;
-            float padding[2];
-            float grain[4];
-        };
-
-        static_assert(sizeof(ProjectionConstants) == 32);
         static_assert(sizeof(BloomConstants) == 16);
-        static_assert(sizeof(TonemapConstants) == 112);
-        static_assert(sizeof(OutputConstants) == 64);
+        static_assert(sizeof(TonemapConstants) == 128);
 
         void store(float (&target)[4], const math::Vec3& xyz, float w)
         {
@@ -113,6 +83,8 @@ namespace lockstep::render
                 math::Vec3{vignette.enabled ? std::clamp(vignette.intensity, 0.0f, 1.0f) : 0.0f, vignette.radius,
                     std::max(vignette.smoothness, 0.01f)},
                 aspectRatio);
+            const bool hasDirt = settings.lensDirt.enabled && settings.bloom.enabled;
+            constants.dirt[0] = hasDirt ? std::clamp(settings.lensDirt.intensity, 0.0f, 2.0f) : 0.0f;
 
             return constants;
         }
@@ -131,42 +103,9 @@ namespace lockstep::render
             return slot;
         }
 
-        OutputFilter outputFilter(AntiAliasingMode mode)
-        {
-            switch (mode)
-            {
-                case AntiAliasingMode::Fxaa:
-                {
-                    return OutputFilter::Fxaa;
-                }
-                case AntiAliasingMode::Taa:
-                {
-                    return OutputFilter::TemporalSharpen;
-                }
-                case AntiAliasingMode::Off:
-                case AntiAliasingMode::Msaa2x:
-                case AntiAliasingMode::Msaa4x:
-                {
-                    return OutputFilter::None;
-                }
-            }
-
-            return OutputFilter::None;
-        }
-
         float bloomScale(uint32_t level)
         {
             return 1.0f / static_cast<float>(2u << level);
-        }
-
-        ProjectionConstants projectionConstants(const RendererState& state)
-        {
-            const math::Mat4& projection = state.projection;
-            const AmbientOcclusionSettings& settings = state.settings.ambientOcclusion;
-
-            return ProjectionConstants{
-                .projection = {projection[0][0], projection[1][1], projection[2][2], projection[3][2]},
-                .params = {settings.radius, settings.intensity, settings.power, 0.0f}};
         }
 
         BloomConstants texelOf(const vela::graphics::PassRecorder& recorder, float relativeScale)
@@ -180,7 +119,7 @@ namespace lockstep::render
 
         Status addPass(vela::graphics::RenderGraph& graph, RendererState& state, std::string_view fragmentShader,
             vela::graphics::AttachmentSlot output, const std::vector<std::string>& inputs,
-            FullscreenPass::Recorder recorder)
+            FullscreenPass::Recorder recorder, const vela::graphics::Texture* materialTexture = nullptr)
         {
             std::vector<vela::graphics::PassInput> sampled;
 
@@ -190,32 +129,7 @@ namespace lockstep::render
             }
 
             return addFullscreenPass(graph, state, fragmentShader, std::move(output), std::move(sampled),
-                std::move(recorder));
-        }
-
-        Status addOcclusionPasses(vela::graphics::RenderGraph& graph, RendererState& state)
-        {
-            const std::string depth(k_sceneDepthAttachment);
-
-            if (auto added = addPass(graph, state, k_ssaoShader,
-                colorSlot(k_occlusionAttachment, k_occlusionFormat, k_occlusionScale, 1.0f), {depth},
-                [&state](vela::graphics::PassRecorder& recorder)
-                {
-                    recorder.setConstants(projectionConstants(state));
-                    return state.settings.ambientOcclusion.enabled;
-                }); !added)
-            {
-                return added;
-            }
-
-            return addPass(graph, state, k_ssaoBlurShader,
-                colorSlot(k_occlusionBlurAttachment, k_occlusionFormat, k_occlusionScale, 1.0f),
-                {std::string(k_occlusionAttachment), depth},
-                [&state](vela::graphics::PassRecorder& recorder)
-                {
-                    recorder.setConstants(projectionConstants(state));
-                    return state.settings.ambientOcclusion.enabled;
-                });
+                std::move(recorder), materialTexture);
         }
 
         Status addBloomPasses(vela::graphics::RenderGraph& graph, RendererState& state)
@@ -288,7 +202,7 @@ namespace lockstep::render
                         ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
                     recorder.setConstants(tonemapConstants(state, aspectRatio));
                     return true;
-                }); !added)
+                }, &state.environment.lensDirt); !added)
             {
                 return added;
             }
@@ -298,34 +212,13 @@ namespace lockstep::render
                 return added;
             }
 
-            return addPass(graph, state, k_fxaaShader, colorSlot(k_displayAttachment, k_displayFormat, 1.0f, 0.0f),
-                {std::string(k_ldrAttachment), std::string(k_taaHistoryAttachment)},
-                [&state](vela::graphics::PassRecorder& recorder)
-                {
-                    const vela::graphics::Extent2D extent = recorder.extent();
-                    const AntiAliasingSettings& antiAliasing = state.settings.antiAliasing;
-
-                    const math::Vec4& fade = state.screenFade;
-                    const FilmGrainSettings& grain = state.settings.filmGrain;
-
-                    recorder.setConstants(OutputConstants{
-                        .fade = {fade.x, fade.y, fade.z, fade.w},
-                        .inverseSize = {1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height)},
-                        .filter = outputFilter(antiAliasing.mode),
-                        .dither = state.settings.tonemap.dither ? k_ditherAmplitude : 0.0f,
-                        .frameIndex = state.frameIndex,
-                        .sharpness = antiAliasing.sharpness,
-                        .padding = {0.0f, 0.0f},
-                        .grain = {grain.enabled ? std::max(grain.intensity, 0.0f) : 0.0f,
-                            std::clamp(grain.response, 0.0f, 1.0f), std::clamp(grain.size, 1.0f, 3.0f), 0.0f}});
-                    return true;
-                });
+            return addLensOutputPass(graph, state);
         }
     } //namespace
 
     Status addFullscreenPass(vela::graphics::RenderGraph& graph, RendererState& state, std::string_view fragmentShader,
         vela::graphics::AttachmentSlot output, std::vector<vela::graphics::PassInput> inputs,
-        FullscreenPass::Recorder recorder)
+        FullscreenPass::Recorder recorder, const vela::graphics::Texture* materialTexture)
     {
         vela::graphics::RenderState renderState{};
         renderState.depthTest = false;
@@ -337,6 +230,14 @@ namespace lockstep::render
         if (!material)
         {
             return material.error();
+        }
+
+        if (materialTexture != nullptr)
+        {
+            if (auto bound = material.value().setTexture(0u, *materialTexture); !bound)
+            {
+                return toError(bound.error());
+            }
         }
 
         const std::string name = output.name;
@@ -387,11 +288,6 @@ namespace lockstep::render
 
     Status addPostPasses(vela::graphics::RenderGraph& graph, RendererState& state)
     {
-        if (auto added = addOcclusionPasses(graph, state); !added)
-        {
-            return added;
-        }
-
         if (auto added = addExposurePasses(graph, state); !added)
         {
             return added;

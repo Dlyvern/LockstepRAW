@@ -10,6 +10,7 @@
 #include "TextPass.hpp"
 #include "VelaConversions.hpp"
 #include "ViewModel.hpp"
+#include "VolumetricFog.hpp"
 
 #include "Platform/WindowState.hpp"
 
@@ -245,6 +246,12 @@ namespace lockstep::render
     void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform,
         RenderLayers layers)
     {
+        submit(mesh, material, transform, layers, 1.0f);
+    }
+
+    void Renderer::submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform,
+        RenderLayers layers, float emissiveScale)
+    {
         if (m_state->meshes.isStale(mesh) || m_state->materials.isStale(material))
         {
             reportStaleHandle(*m_state, m_state->meshes.isStale(mesh) ? "submit: mesh" : "submit: material");
@@ -276,7 +283,8 @@ namespace lockstep::render
             .worldBounds = math::transformBounds(record->bounds, transform),
             .cameraDistance = 0.0f,
             .layers = layers,
-            .isReflector = false});
+            .isReflector = false,
+            .emissiveScale = std::isfinite(emissiveScale) ? std::max(emissiveScale, 0.0f) : 1.0f});
     }
 
     void Renderer::submitDecal(MeshHandle mesh, MaterialHandle material, const math::Transform& transform)
@@ -395,6 +403,11 @@ namespace lockstep::render
         if (frame)
         {
             frame = updateReflectionScale(state);
+        }
+
+        if (frame)
+        {
+            frame = updateVolumetricFogScale(state);
         }
 
         if (frame)

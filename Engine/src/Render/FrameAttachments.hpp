@@ -13,7 +13,15 @@ namespace lockstep::render
     //                tile (layout in shaders/octahedral.glsl), rebuilt every frame.
     // shadowMap:     the shadow atlas: sun cascades and local light tiles (see k_shadowAtlasWidth).
     // color:         HDR direct light, emissive, sky and transparent surfaces (lit scene pass).
-    // ambient:       HDR environment / ambient light of opaque surfaces, darkened later by SSAO.
+    // ambientLit:    HDR environment / ambient light of opaque surfaces as the lit pass wrote it
+    //                (diffuse and environment specular together).
+    // ambient:       ambientLit after the indirect composite (ambient occlusion multi-bounce,
+    //                specular occlusion, screen-space reflections), divided by the occlusion
+    //                visibility that later passes multiply it by (shaders/scene_hdr.glsl).
+    // surfaceNormal: lit pass G-buffer: xy octahedral view-space normal, z roughness, w one minus
+    //                the share of `color` that is direct sunlight (shaders/surface_buffer.glsl).
+    // surfaceSpecular: lit pass G-buffer: rgb the environment specular light inside ambientLit,
+    //                w one minus the signed specular weight (negative for metals).
     // depth:         the scene depth buffer.
     // velocity:      per-pixel motion of the lit scene: xy screen motion since last frame in uv
     //                units (current minus previous), z the surface's view depth last frame (0 when
@@ -23,8 +31,20 @@ namespace lockstep::render
     //                pipelines; reduced resolution.
     // *Msaa:         multisampled colour, ambient, velocity and depth of the lit scene pass when MSAA is on,
     //                resolved into color, ambient and depth (depth takes sample zero).
-    // occlusion:     raw SSAO, half resolution.
-    // occlusionBlur: depth-aware blurred SSAO, half resolution; what composition reads.
+    // fogScatter:    volumetric fog of this frame, reduced resolution: rgb light scattered towards
+    //                the camera, a transmittance, both from the camera to the pixel's surface.
+    // fogResolved:   fogScatter blended with last frame's (persistent, double-buffered by Vela);
+    //                what the fog composite upsamples into color and ambient.
+    // occlusion:     raw ambient occlusion (GTAO) and contact shadows, half resolution: r diffuse
+    //                visibility, g specular visibility, b the multiplier contact shadows leave on
+    //                the colour target.
+    // occlusionBlur: depth-aware blurred occlusion, half resolution; what composition reads.
+    // ssrHit:        screen-space reflection rays, half resolution: xy hit uv, z confidence (0 for
+    //                none), w roughness.
+    // ssrSource:     the lit HDR scene at half resolution, kept across frames; what reflection rays
+    //                fetch (last frame's, reprojected).
+    // ssrResolved:   reflected radiance (rgb, premultiplied by confidence) and confidence (a),
+    //                accumulated over frames (persistent, double-buffered by Vela), half resolution.
     // bloomDown*/bloomUp*: the bloom mip chain; bloomUp1 is the result.
     //                bloomUp1's alpha is the exposure multiplier tonemapping applies (auto
     //                exposure, or 1), written by its pass from the exposure attachment.
@@ -40,6 +60,16 @@ namespace lockstep::render
     inline constexpr std::string_view k_shadowMapAttachment{"shadowMap"};
     inline constexpr std::string_view k_sceneColorAttachment{"color"};
     inline constexpr std::string_view k_sceneAmbientAttachment{"ambient"};
+    inline constexpr std::string_view k_sceneAmbientLitAttachment{"ambientLit"};
+    inline constexpr std::string_view k_surfaceNormalAttachment{"surfaceNormal"};
+    inline constexpr std::string_view k_surfaceSpecularAttachment{"surfaceSpecular"};
+    inline constexpr std::string_view k_surfaceNormalMsaaAttachment{"surfaceNormalMsaa"};
+    inline constexpr std::string_view k_surfaceSpecularMsaaAttachment{"surfaceSpecularMsaa"};
+    inline constexpr std::string_view k_reflectionSurfaceNormalAttachment{"reflectionSurfaceNormal"};
+    inline constexpr std::string_view k_reflectionSurfaceSpecularAttachment{"reflectionSurfaceSpecular"};
+    inline constexpr std::string_view k_ssrHitAttachment{"ssrHit"};
+    inline constexpr std::string_view k_ssrSourceAttachment{"ssrSource"};
+    inline constexpr std::string_view k_ssrResolvedAttachment{"ssrResolved"};
     inline constexpr std::string_view k_sceneDepthAttachment{"depth"};
     inline constexpr std::string_view k_sceneVelocityAttachment{"velocity"};
     inline constexpr std::string_view k_sceneVelocityMsaaAttachment{"velocityMsaa"};
@@ -51,6 +81,8 @@ namespace lockstep::render
     inline constexpr std::string_view k_sceneColorMsaaAttachment{"colorMsaa"};
     inline constexpr std::string_view k_sceneAmbientMsaaAttachment{"ambientMsaa"};
     inline constexpr std::string_view k_sceneDepthMsaaAttachment{"depthMsaa"};
+    inline constexpr std::string_view k_fogScatterAttachment{"fogScatter"};
+    inline constexpr std::string_view k_fogResolvedAttachment{"fogResolved"};
     inline constexpr std::string_view k_occlusionAttachment{"occlusion"};
     inline constexpr std::string_view k_occlusionBlurAttachment{"occlusionBlur"};
     inline constexpr std::string_view k_luminanceAttachment{"luminance"};
@@ -73,7 +105,7 @@ namespace lockstep::render
 
     inline constexpr vela::graphics::TextureFormat k_sceneColorFormat{vela::graphics::TextureFormat::RGBA16Float};
     inline constexpr vela::graphics::TextureFormat k_depthFormat{vela::graphics::TextureFormat::Depth32Float};
-    inline constexpr vela::graphics::TextureFormat k_occlusionFormat{vela::graphics::TextureFormat::R8Unorm};
+    inline constexpr vela::graphics::TextureFormat k_occlusionFormat{vela::graphics::TextureFormat::RGBA8Unorm};
     inline constexpr vela::graphics::TextureFormat k_displayFormat{vela::graphics::TextureFormat::RGBA16Float};
 
     // Shadow atlas layout: the sun's 2x2 cascade tiles of k_shadowTileSize texels fill the left

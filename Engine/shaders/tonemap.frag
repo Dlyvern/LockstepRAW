@@ -13,7 +13,8 @@ const float k_bloomLevels = 5.0;
 
 // Grading (display-referred, in sRGB-encoded space): lift.w 1 to grade, gamma.w contrast, gain.w
 // saturation, shadowTint.w split-tone strength, highlightTint.w split-tone balance, vignette x
-// intensity, y radius, z smoothness, w aspect ratio.
+// intensity, y radius, z smoothness, w aspect ratio. dirt x: how strongly bloom lights the lens dirt
+// (0 off).
 layout(push_constant) uniform TonemapConstants
 {
     float exposure;
@@ -26,7 +27,10 @@ layout(push_constant) uniform TonemapConstants
     vec4 shadowTint;
     vec4 highlightTint;
     vec4 vignette;
+    vec4 dirt;
 } constants;
+
+layout(set = 1, binding = 0) uniform sampler2D lensDirt;
 
 // rgb bloom, a the exposure multiplier (auto exposure).
 layout(set = 2, binding = 3) uniform sampler2D bloom;
@@ -110,6 +114,11 @@ void main()
     if (constants.bloomStrength > 0.0)
     {
         color = mix(color, bloomExposure.rgb / k_bloomLevels, constants.bloomStrength);
+    }
+
+    if (constants.dirt.x > 0.0)
+    {
+        color += bloomExposure.rgb / k_bloomLevels * textureLod(lensDirt, uv, 0.0).rgb * constants.dirt.x;
     }
 
     color *= constants.exposure * bloomExposure.a;

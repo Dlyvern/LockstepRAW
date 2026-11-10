@@ -4,6 +4,7 @@
 #include "Characters/GearLooks.hpp"
 #include "Npcs/Npc.hpp"
 
+#include <Lockstep/Anim/Limbs.hpp>
 #include <Lockstep/World/Entities.hpp>
 
 #include <cstddef>
@@ -21,6 +22,9 @@ namespace game
     // isAlert:    alert or fighting (drawn with the weapon up), else relaxed.
     // shotCount:  shots fired, wrapping; each increase flashes its muzzle.
     // gearLook:   its head gear (from its marker name, so both machines draw the same).
+    // hitHeading: heading the killing shot travelled along, in 256 steps of a full turn
+    //             (seeds the body's ragdoll push); nothing if unknown.
+    // hitLimb:    the limb the killing shot hit (its ragdoll body is pushed); None if unknown.
     struct NpcView
     {
         lockstep::world::EntityId entity{};
@@ -28,6 +32,8 @@ namespace game
         bool isAlert{false};
         uint8_t shotCount{0};
         GearLook gearLook{GearLook::Full};
+        std::optional<uint8_t> hitHeading{};
+        lockstep::anim::Limb hitLimb{lockstep::anim::Limb::None};
 
         friend bool operator==(const NpcView&, const NpcView&) = default;
     };
@@ -52,6 +58,10 @@ namespace game
     // npc:     a host NPC.
     // Returns: what the client sees of it.
     [[nodiscard]] NpcView npcView(const Npc& npc);
+
+    // view:    an NPC's view.
+    // Returns: the horizontal unit direction its killing shot travelled along, or nothing.
+    [[nodiscard]] std::optional<math::Vec3> hitDirection(const NpcView& view);
 
     // Packs the NPC state message (at most 255 NPCs are sent).
     // message: the views.

@@ -73,14 +73,40 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   TAA; default TAA (jitter, per-pixel velocity, variance clipping, sharpening). Planar mirrors:
   Game registers reflector instances (`Renderer::submitReflector`); render layers
   (`Lockstep/Render/Views.hpp`) control what each view sees, e.g. the local pawn is drawn only in
-  mirrors (`k_mirrorOnlyLayer`). First-person arms/weapons use `k_viewModelLayer` (bit 31, Engine
+  mirrors (`k_mirrorOnlyLayer`); `Camera::shadowLayers` picks shadow casters independently (Game:
+  default + mirror-only full body cast, the camera-only first-person body does not). First-person arms/weapons use `k_viewModelLayer` (bit 31, Engine
   reserved; Game layers are bits 1–30): camera view only, own FOV (`Camera::viewModelFov`), depth
-  squeezed so it never clips into walls, no shadow casting. The Engine-internal `RenderPass`
+  squeezed so it never clips into walls, no shadow casting. The lit pass also writes a small
+  G-buffer (`surfaceNormal`: oct view normal, roughness, sun share of colour; `surfaceSpecular`:
+  environment specular inside ambientLit, signed specular weight; layout in
+  `shaders/surface_buffer.glsl`), read right after it by the indirect lighting passes
+  (`IndirectLighting.cpp`, `ScreenSpaceReflections.cpp`): half-res GTAO + sun contact shadows
+  (`AmbientOcclusionSettings`, `ContactShadowSettings`), half-res SSR (GGX-jittered linear
+  raymarch with bisection, hits fetch last frame's half-res lit scene `ssrSource` reprojected,
+  roughness-based neighbour reuse, temporal accumulation; `ScreenSpaceReflectionSettings`), then a
+  full-res composite that rebuilds `ambient` from `ambientLit` (multi-bounce AO, SSR over the
+  environment specular, specular occlusion; divided by the AO visibility every later reader still
+  multiplies in) and darkens colour by the contact shadows. Glass keeps environment reflections.
+  Volumetric fog (`VolumetricFogSettings`) runs after that: half-res jittered raymarch (sun cascades + local light tiles shape
+  the shafts, analytic height-fog transmittance; per-light `volumetric` factor), temporal blend,
+  depth-aware upsample alpha-blended into colour and ambient. The Engine-internal `RenderPass`
   interface is how Engine passes plug in; Game can't add passes yet. Post chain: auto exposure
   (64x64 log-luminance grid -> 8x8 -> persistent 1x1 EV; carried to tonemapping in bloomUp1's
   alpha because tonemap has no free input slot), ACES, colour grading + vignette in the tonemap
-  pass, TAA, then film grain and dither in the output pass. Shadow atlas 4096x2048: sun cascades
-  left half, 16 local light tiles (512) right half.
+  pass (+ procedural lens dirt lit by bloom), TAA, then the output pass: FXAA/TAA sharpening,
+  lens effects (depth of field, per-pixel motion blur from the velocity buffer with viewmodel
+  pixels reduced and not smeared into the world, chromatic aberration; `LensPasses.cpp`,
+  `shaders/lens_effects.glsl`), film grain and dither. Game drives DoF strength from bullet-time
+  (`Game/Presentation/LensEffects`); `LevelLook` sets the lens defaults. Shadow atlas 4096x2048:
+  sun cascades left half, 16 local light tiles (512) right half.
+- **Particles:** `Lockstep/Render/Particles.hpp` `ParticleSystem` (CPU sim, Game-owned, budget
+  20k): effects from a description (atlas frames, blend Alpha/Additive, Lit/Unlit, billboard or
+  velocity-stretched, curves), emitters and `burst()`. Drawn by the `particles` graph pass after
+  the lit scene and volumetric fog: soft against depth, alpha sorted back to front then additive,
+  one instanced draw per texture run, lit per particle (sun + shadows, local lights, IBL, zones).
+  Never in mirrors or shadow maps. Presentation only, like audio: spawn from `frame()`/confirmed
+  events, simulate with the World-domain delta. Game effects in `Game/Effects/` (procedural
+  sprite atlas; impacts come from `CombatAudio::impacts`/`shots`, no second ray).
 - **Characters:** skinned glTF (Mixamo skeleton) cooked into `.model` + skinned `.mesh` (level
   format v3). Animation is presentation-only, derived from replicated movement, never replicated.
   Source in `Content/source/characters/<name>/` (Mixamo FBX clips retargeted in Blender onto the
@@ -88,7 +114,8 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   (`SkinnedModelPart::materialName`, stored in `.model` files); `SkinnedInstance::submit` takes a
   `PartMask` to hide parts (head gear materials `HeadGear_NVG/_Helmet/_Headset`). The current player model is a placeholder (SWAT
   operator, `Game/Characters/PawnCharacters.hpp` names scenes and clips in one place). Run with
-  `--content Content/cooked/characters.pak`.
+  `--content Content/cooked/characters.pak`. Cook `swat_armed` (the NPC body) with `--limbs`:
+  without it the model has no limb regions or wound caps and dismemberment silently turns off.
 - **Audio: FMOD Core 2.03.08** in `external/fmod` (as in Velix; SDK files git-ignored, only our
   CMakeLists tracked; `LOCKSTEP_WITH_FMOD` defaults ON when the SDK exists, else a silent backend).
   FMOD is private to `Engine/src/Audio`. The World bus follows the World time-domain scale (pitch +
@@ -100,7 +127,17 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   tangents, `PbrMaterialDescription`). That header is the contract: Engine/Assets (glTF import)
   fills it, Engine/Render implements it. Test content lives outside the repo (Sponza, Bistro in
   `~/Downloads`) and is loaded with `--scene <path>`. Imported levels are walkable (PhysX
-  triangle-mesh collision).
+  triangle-mesh collision). Two Engine extensions on top of glTF, filled only by the cooker:
+  a height map (`height`/`heightScale`, parallax occlusion mapping in pbr.frag with distance
+  fade and relief self-shadowing; `shaders/surface_detail.glsl`) and a micro-detail layer
+  (`SurfaceDetail` Mineral/Paint/Metal/Fibrous: Engine-generated procedural tiling normal +
+  roughness + albedo variation, faded in near the camera). Toggles in `SurfaceDetailSettings`.
+  Cooker rules (`Tools/Cooker/SurfaceRules`): heights come from `--height-dir <dir>` next to the
+  normal map (Poly Haven `<id>_nor[_gl]_<res>` -> `<dir>/<id>/<id>_disp_<res>.jpg|png`, or
+  `<name>_normal` -> `<dir>/<name>_height.*`), stretched to 0-1, BC4, depth in metres by material
+  name; detail layer by material/texture name words; both scaled by measured metres per UV.
+  `Content/source/scripts/ph_fetch.py` downloads `disp` maps. Hospital cook:
+  `--height-dir Content/source/hospital/ph`.
 - **Shipping content:** source assets (glTF from Blender or packs) are cooked offline by
   `Tools/Cooker` (`LockstepCooker`, built when `LOCKSTEP_BUILD_TOOLS` is ON) into engine-ready
   files: GPU-layout meshes with bounds, BC7 colour / BC5 normal / BC4 mask textures with full
@@ -142,21 +179,33 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   as its parent), or linked instancing duplicates it. Foliage materials must export as glTF MASK
   (Math "Round" node in front of Principled Alpha); the cooker then keeps alpha coverage in mips.
   Shader-node tricks glTF can't express (vertex-colour mixes, non-identity Mapping nodes) must be
-  baked into UVs or split into materials. Cooked levels are format version 3 (v2 still loads);
+  baked into UVs or split into materials. Cooked levels are format version 4 (v2, v3 still load);
   recook after cooker changes. The Echo recorder saves both players' movement and
   interactions (`--echo-play <file>` replays it).
 - **Level lighting and surfaces (authoring):** `Zone_Interior_*` cube empties (display size 1,
   scaled so the cube covers the interior including its outer walls and roof; boxes are made
   axis-aligned) dim the sky's image-based light inside and add a fill light (per pixel; blends in
   over `blendDistance` inside the faces). Point/spot lights whose object name contains `_Shadow`
-  cast shadows (nearest 4 per frame; a point light costs 6 atlas tiles of 16, a spot 1). Objects
+  cast shadows (nearest 4 per frame; a point light costs 6 atlas tiles of 16, a spot 1).
+  Animated lights (tags combine with `_Shadow`, e.g. `L_Ward_Flicker_Shadow`; `Game/Lights/`,
+  presentation only, World time so bullet-time slows them): `_Flicker` a failing fluorescent tube
+  (mostly on, dropouts/stutters, sometimes off 1-2 s, quiet 3D buzz + crackles),
+  `_FlickerHard` a dying tube (mostly off, bursts), `_SirenRed` / `_SirenBlue` a police lightbar
+  colour (double flashes, red then blue; colour is overridden; siren lights within 3 m of each
+  other are one car and share a phase, cars are offset and drift), `_Pulse` slow breathing. Emissive
+  meshes (lamps) whose bounds are within 1 m of an animated light, and nearer to it than to any
+  other light, dim with it (`SceneInstance::emissiveScale`, one frame behind the light). Objects
   named `Decal_*` (or under such a node) are decals: thin meshes 2-5 mm off a surface with an
   Alpha Blend material, drawn right after opaque geometry in scene order. Glass: Principled
   Transmission > 0 (KHR_materials_transmission) or Alpha Blend with low alpha renders as glass
   with Fresnel reflections; an opaque dark "glass" material stays a dark panel. Time of day: one
   empty named `Level_Look_Day|Evening|Night` picks a Game preset (`Game/Presentation/LevelLook`:
   sun, sky, IBL, exposure range, grade); none means Day. Custom properties (glTF extras) are not
-  cooked, so these conventions are all names and materials.
+  cooked, so these conventions are all names and materials. Weather: an empty named
+  `Level_Weather_Rain` makes a level rainy (`Game/Weather/`: streaks, splashes, wet surfaces and
+  puddles outdoors, rain sound, overcast look; presentation only, World time); `--weather rain|clear`
+  overrides it, and the Game dev panel has a Weather section. Particle markers: empties named
+  `Fx_Steam_*`, `Fx_Smoke_*`, `Fx_Dust_*` (ceiling dust trickle) emit along their Blender +Z.
 - **Levels:** `Content/source/apartment/` (the flat) is linked into
   `Content/source/district/district.blend` (building, stairs, street, park, car) at second-floor
   height; export the district by making the linked instances real, exporting, and reloading.
@@ -256,5 +305,9 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
   9. `ComputeRecorder` can't write images and only takes `Mat4` constants.
   10. No RG16F / R16F formats (TAA velocity uses RGBA16F, half wasted).
   11. One camera UBO per graph (the mirror view reads its matrix from the Engine lighting buffer).
-  12. PBR push constants are 192 B, above Vulkan's guaranteed 128 B minimum (fine on current
-      NVIDIA/AMD/Intel, which allow 256 B).
+  12. PBR push constants are 208 B, above Vulkan's guaranteed 128 B minimum (fine on current
+      NVIDIA/AMD/Intel, which allow 256 B). No per-material uniform data, so material
+      parameters ride in push constants.
+  13. One blend mode and write mask per material for all colour outputs (the G-buffer stores data
+      in alpha as "one minus" values so glass/decal blending stays consistent). With gap 4 this
+      also rules out a hierarchical-depth SSR trace (no depth mip chain).

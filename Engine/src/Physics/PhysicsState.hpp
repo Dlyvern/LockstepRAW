@@ -2,9 +2,11 @@
 #define LOCKSTEP_PHYSICS_PHYSICS_STATE_HPP
 
 #include "Lockstep/Physics/PhysicsTypes.hpp"
+#include "Lockstep/Physics/Ragdoll.hpp"
 
 #include "Core/HandlePool.hpp"
 #include "PhysXErrorReporter.hpp"
+#include "RagdollState.hpp"
 
 #include <PxPhysicsAPI.h>
 
@@ -56,7 +58,7 @@ namespace lockstep::physics
     {
         PhysicsState() = default;
 
-        // Releases controllers, bodies, scene, material, dispatcher, physics and foundation, in
+        // Releases controllers, ragdolls, bodies, scene, material, dispatcher, physics and foundation, in
         // that order.
         ~PhysicsState();
 
@@ -77,6 +79,14 @@ namespace lockstep::physics
         // Returns:    the controller's slot, or nullptr for a stale handle.
         [[nodiscard]] const ControllerSlot* findController(ControllerId controller) const noexcept;
 
+        // ragdoll: a public ragdoll handle.
+        // Returns: the ragdoll's slot, or nullptr for a stale handle.
+        [[nodiscard]] RagdollSlot* findRagdoll(RagdollId ragdoll) noexcept;
+
+        // ragdoll: a public ragdoll handle.
+        // Returns: the ragdoll's slot, or nullptr for a stale handle.
+        [[nodiscard]] const RagdollSlot* findRagdoll(RagdollId ragdoll) const noexcept;
+
         physx::PxDefaultAllocator allocator;
         PhysXErrorReporter errors;
         physx::PxFoundation* foundation{nullptr};
@@ -87,6 +97,8 @@ namespace lockstep::physics
         physx::PxControllerManager* controllerManager{nullptr};
         HandlePool<physx::PxRigidActor*> bodies;
         HandlePool<ControllerSlot> controllers;
+        HandlePool<RagdollSlot> ragdolls;
+        uint32_t ragdollBodyCount{0};
         float lastStepSeconds{0.0f};
         uint32_t lastSubsteps{0};
         float lastStepMilliseconds{0.0f};

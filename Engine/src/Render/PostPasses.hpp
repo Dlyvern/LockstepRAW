@@ -23,7 +23,7 @@ namespace lockstep::render
     struct RendererState;
 
     // A pass that draws one fullscreen triangle into one colour attachment, reading earlier
-    // attachments. What it binds and pushes is supplied as a function, so SSAO, bloom, tonemapping
+    // attachments. What it binds and pushes is supplied as a function, so bloom, tonemapping
     // and FXAA share this one class.
     class FullscreenPass final : public vela::graphics::Pass
     {
@@ -62,12 +62,14 @@ namespace lockstep::render
     // output:         the colour attachment the pass writes.
     // inputs:         the attachments it samples, in slot order.
     // recorder:       binds constants and decides whether to draw.
+    // materialTexture: if not null, bound to the material's set-1 slot 0 (must outlive the graph).
     // Returns:        success, or an error if the shader is missing or the graph rejected the pass.
     [[nodiscard]] Status addFullscreenPass(vela::graphics::RenderGraph& graph, RendererState& state,
         std::string_view fragmentShader, vela::graphics::AttachmentSlot output,
-        std::vector<vela::graphics::PassInput> inputs, FullscreenPass::Recorder recorder);
+        std::vector<vela::graphics::PassInput> inputs, FullscreenPass::Recorder recorder,
+        const vela::graphics::Texture* materialTexture = nullptr);
 
-    // Adds the post-processing chain after the lit scene pass: SSAO and its blur, the bloom mip
+    // Adds the post-processing chain after the lit scene pass: the bloom mip
     // chain, tonemapping into the LDR image, the TAA resolve, and the output pass (FXAA, or TAA
     // sharpening, plus dithering) into the display image.
     // graph: the frame graph, already holding the scene passes.

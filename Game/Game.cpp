@@ -3,6 +3,7 @@
 #include "DevPanel.hpp"
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
+#include "Player/MoveDrill.hpp"
 #include "Presentation/Frame.hpp"
 #include "Simulation/HospitalSimulation.hpp"
 #include "Simulation/HostSimulation.hpp"
@@ -104,6 +105,8 @@ namespace game
             tuning.walkStride = strides.walk > 0.0f ? strides.walk : tuning.walkStride;
             tuning.runStride = strides.run > 0.0f ? strides.run : tuning.runStride;
             tuning.crouchStride = strides.crouch > 0.0f ? strides.crouch : tuning.crouchStride;
+            tuning.walkStrideSpeed = strides.walkSpeed > 0.0f ? strides.walkSpeed : tuning.walkStrideSpeed;
+            tuning.runStrideSpeed = strides.runSpeed > strides.walkSpeed ? strides.runSpeed : tuning.runStrideSpeed;
             std::clog << "Game: stride cycles from the character clips (m): walk " << tuning.walkStride << ", run "
                       << tuning.runStride << ", crouch " << tuning.crouchStride << '\n';
         }
@@ -124,12 +127,21 @@ namespace game
                 return launch.error();
             }
 
+            auto weather = parseWeatherFlag(engine.arguments);
+
+            if (!weather)
+            {
+                return weather.error();
+            }
+
             auto state = std::make_unique<GameState>();
             state->visuals = visuals.value();
+            state->weather.forced = weather.value();
             state->settings.startArmed = hasArgument(engine.arguments, k_armedFlag) || !launch.value();
             state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
             matchStridesToCharacters(*state);
             loadFootsteps(state->footsteps, engine.audio, engine.files);
+            state->combatAudio.bank = loadCombatSounds(engine.audio, engine.files);
             applyArenaLook(engine.renderer);
 
             if (auto loaded = startLevel(*state, engine, launch.value()); !loaded)
@@ -163,7 +175,7 @@ namespace game
             {
                 if (receiveLevelMessage(state, engine, message) || receiveRoomMessage(state, message)
                     || receiveStationMessage(state, message) || receiveHospitalMessage(state, message)
-                    || receiveNpcMessage(state, engine, message))
+                    || receiveNpcMessage(state, engine, message) || receiveGoreMessage(state, message))
                 {
                     continue;
                 }
@@ -238,6 +250,19 @@ namespace game
             {
                 restrictDownedCommand(state.local.command, state.settings.downed.crawlScale);
             }
+
+#if LOCKSTEP_DEV_TOOLS
+            if (isMoveDrillRequested(engine.arguments))
+            {
+                const float delta = engine.timeDomains.delta(world::TimeDomain::Player);
+                applyMoveDrill(state.local.command, tick.tick, delta);
+
+                if (engine.session.role() == net::Role::Client)
+                {
+                    logMoveDrill(state.local.prediction, tick.tick, delta);
+                }
+            }
+#endif
 
             if (engine.session.role() == net::Role::Client)
             {

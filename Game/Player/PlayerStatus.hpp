@@ -13,7 +13,7 @@
 namespace game
 {
     // Bytes an encoded StatusMessage takes.
-    inline constexpr std::size_t k_playerStatusBytes{2 + 11 * k_playerCount};
+    inline constexpr std::size_t k_playerStatusBytes{2 + 12 * k_playerCount};
 
     // What a player sees of a pawn's health and weapon. The host sends both players' statuses to
     // the client in a reliable Game message whenever one changes.
@@ -31,6 +31,7 @@ namespace game
     // reviveProgress: how far the partner's revive is, 0 to 1 (in 5% steps).
     // magazine, reserve: rounds in the weapon and carried (reserve capped at 255).
     // damageCount, damageYaw, hitCount, killCount: Pawn's hit counters and newest hit direction.
+    // shotCount: shots fired, wrapping (the partner's machine plays a gunshot for each increase).
     struct PlayerStatus
     {
         int32_t health{0};
@@ -51,6 +52,7 @@ namespace game
         uint8_t damageYaw{0};
         uint8_t hitCount{0};
         uint8_t killCount{0};
+        uint8_t shotCount{0};
 
         friend bool operator==(const PlayerStatus&, const PlayerStatus&) = default;
     };

@@ -117,12 +117,22 @@ namespace game
         const std::optional<physics::RaycastHit> hit = physics.raycast(foot - k_down * k_rayStartAbove, k_down,
             k_rayLength, physics::RaycastIgnore{.controller = controller});
 
-        if (!hit || hit->body.isNull())
+        if (!hit)
         {
             return Surface::Concrete;
         }
 
-        const std::optional<uint32_t> instance = assets::findBodyInstance(level->collision, hit->body);
+        return surfaceOfBody(level, hit->body);
+    }
+
+    Surface surfaceOfBody(const SceneLevel* level, physics::BodyId body)
+    {
+        if (level == nullptr || body.isNull())
+        {
+            return Surface::Concrete;
+        }
+
+        const std::optional<uint32_t> instance = assets::findBodyInstance(level->collision, body);
 
         if (!instance || *instance >= level->scene.instances.size())
         {

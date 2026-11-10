@@ -18,7 +18,7 @@ namespace lockstep::render
 {
     // One point or spot light as pbr.frag reads it (std430, 64 bytes).
     // positionRange:     xyz world position, w range.
-    // color:             rgb colour times intensity.
+    // color:             rgb colour times intensity, w its volumetric fog multiplier.
     // directionCosOuter: xyz spot direction, w cosine of the outer angle.
     // cosInnerKind:      x cosine of the inner angle, y 0 for point or 1 for spot, z its first
     //                    shadow atlas tile (-1 for none; a point light's six faces follow it), w the
@@ -73,6 +73,13 @@ namespace lockstep::render
     // sunDisk:           rgb radiance of the sun's disk, w cosine of its angular radius (0 hides it).
     // sceneDepthParams:  x, y the camera projection's [2][2] and [3][2] (view depth of a depth
     //                    value, as TAA computes it), for viewmodel motion vectors.
+    // surfaceParallax:   x metres where parallax occlusion mapping has faded out (0 off), y its
+    //                    fewest and z most height samples, w 1 for relief self-shadowing.
+    // surfaceDetail:     x metres where the micro-detail layer has faded out (0 off), y its strength.
+    // wetness:           x wetness amount (0 off), y puddle coverage, z puddle noise frequency per
+    //                    metre, w ripple animation seconds.
+    // wetnessShading:    x porous albedo multiplier, y share of roughness removed, z ripple
+    //                    strength, w 1 to tint by wetness.
     // counts:            x local lights, y 1 if specular is on.
     // lights:            the local lights.
     // zoneParams:        x interior ambient zones in use, y blend distance, z normal offset, w 1 to
@@ -114,6 +121,10 @@ namespace lockstep::render
         float skyZenithTint[4];
         float sunDisk[4];
         float sceneDepthParams[4];
+        float surfaceParallax[4];
+        float surfaceDetail[4];
+        float wetness[4];
+        float wetnessShading[4];
         uint32_t counts[4];
         GpuLocalLight lights[k_maxLocalLights];
         float zoneParams[4];
@@ -124,7 +135,7 @@ namespace lockstep::render
 
     static_assert(sizeof(GpuLocalLight) == 64);
     static_assert(sizeof(GpuAmbientZone) == 32);
-    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 6 * 64 + 25 * 16 + k_maxLocalLights * 64
+    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 6 * 64 + 29 * 16 + k_maxLocalLights * 64
         + 3 * 16 + k_maxFrameAmbientZones * 32);
 
     // The lights submitted for one frame.

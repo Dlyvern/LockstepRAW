@@ -158,8 +158,8 @@ namespace game
                 return frame.crouchStride;
             }
 
-            const float runBlend = math::clamp((speed - frame.walkSpeed)
-                    / std::max(frame.runSpeed - frame.walkSpeed, k_minSpeed), 0.0f, 1.0f);
+            const float runBlend = math::clamp((speed - frame.walkStrideSpeed)
+                    / std::max(frame.runStrideSpeed - frame.walkStrideSpeed, k_minSpeed), 0.0f, 1.0f);
 
             return frame.walkStride + (frame.runStride - frame.walkStride) * runBlend;
         }

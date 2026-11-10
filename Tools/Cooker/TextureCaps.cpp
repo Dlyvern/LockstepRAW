@@ -90,6 +90,7 @@ namespace lockstep::cooker
             raise(caps, material.metallicRoughness, request);
             raise(caps, material.occlusion, request);
             raise(caps, material.emissive, request);
+            raise(caps, material.height, std::min(request, k_maxHeightTextureSize));
         }
 
         for (uint32_t& cap : caps)

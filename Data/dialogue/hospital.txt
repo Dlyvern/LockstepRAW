@@ -22,6 +22,13 @@ hospital.cordon.idle.02 | cordon | Nobody's come out since seven. Not a hostage,
 hospital.cordon.idle.03 | cordon | Loading dock's round the back. Keep low past the windows.
 hospital.cordon.idle.04 | cordon | Coffee's in the van. Not for you. For us.
 
+# --- Squad officers holding the cordon (Npc_SquadOutside_*), parking lot ---
+# PLACEHOLDER (game-programmer): the level asks for these ids; narrative-writer, please rewrite.
+hospital.squadoutside.idle.01 | squad | Front team's stacked. We hold here till you call it.
+hospital.squadoutside.idle.02 | squad | Windows on four are dark. Been dark an hour.
+hospital.squadoutside.idle.03 | squad | Check your mags. Then check them again.
+hospital.squadoutside.idle.04 | squad | Radio's clear on our end. Call every floor.
+
 # --- Chief, radio ---
 hospital.chief.radio.arrival.01 | chief | Chief. You're on my channel the whole way in. Nobody else's.
 hospital.chief.radio.arrival.02 | chief | Loading dock's yours. Ground floor, then the stairs. Down.

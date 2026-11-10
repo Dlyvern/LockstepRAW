@@ -44,11 +44,13 @@ namespace lockstep::assets
     // collisionIndices:   triangle list into `collisionPositions`.
     // collisionShape:     index into Scene::collisionShapes for a cooked scene, else
     //                     k_noCollisionShape. Identical meshes share one shape.
+    // isEmissive:         its material emits light (a non-zero emissive factor), e.g. a lamp.
     struct SceneMesh
     {
         render::MeshHandle mesh{};
         render::MaterialHandle material{};
         render::AlphaMode alphaMode{render::AlphaMode::Opaque};
+        bool isEmissive{false};
         math::Aabb localBounds{};
         uint32_t triangleCount{0};
         std::vector<math::Vec3> collisionPositions;
@@ -67,6 +69,8 @@ namespace lockstep::assets
     // isVisible:   submitScene() skips the instance while false. Not stored; starts true.
     // isDecal:     submitScene() draws it with Renderer::submitDecal(). Not stored; starts false
     //              (see markDecalInstances()).
+    // emissiveScale: multiplier on its material's emissive light when submitScene() draws it
+    //              (Game dims lamp meshes with their animated light). Not stored; starts 1.
     struct SceneInstance
     {
         uint32_t mesh{0};
@@ -75,6 +79,7 @@ namespace lockstep::assets
         uint32_t node{k_noNode};
         bool isVisible{true};
         bool isDecal{false};
+        float emissiveScale{1.0f};
     };
 
     // A named glTF node, kept so Game can find markers such as a player start, and objects it
