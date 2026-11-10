@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace lockstep::render
@@ -19,7 +20,9 @@ namespace lockstep::render
     // positionRange:     xyz world position, w range.
     // color:             rgb colour times intensity.
     // directionCosOuter: xyz spot direction, w cosine of the outer angle.
-    // cosInnerKind:      x cosine of the inner angle, y 0 for point or 1 for spot.
+    // cosInnerKind:      x cosine of the inner angle, y 0 for point or 1 for spot, z its first
+    //                    shadow atlas tile (-1 for none; a point light's six faces follow it), w the
+    //                    shadow lookup's normal offset per metre of distance from the light.
     struct GpuLocalLight
     {
         float positionRange[4];
@@ -28,9 +31,17 @@ namespace lockstep::render
         float cosInnerKind[4];
     };
 
+    // One interior ambient zone as pbr.frag reads it: xyz of the box's minimum and maximum corner.
+    struct GpuAmbientZone
+    {
+        float min[4];
+        float max[4];
+    };
+
     // The per-frame lighting block the lit, sky and environment shaders read from their storage
     // buffer (std430). The layout must match shaders/frame_lighting.glsl.
     // shadowTileViewProjection: world to atlas clip space of each shadow atlas tile.
+    // shadowTileRects:   each tile's rectangle in atlas uv (xy corner, zw size).
     // viewProjection:    the camera's world to clip matrix without TAA jitter (motion vectors).
     // previousViewProjection: last frame's viewProjection (equal to it on the first frame).
     // reflectionViewProjection: world to clip of the planar reflection view (mirrored camera,
@@ -48,22 +59,31 @@ namespace lockstep::render
     // sunDirection:      xyz direction sunlight travels, w 1 if there is a sun.
     // sunRadiance:       rgb sun colour times intensity.
     // fogColor:          rgb fog colour, w density.
-    // fogParams:         x start, y 1 if enabled, z max amount.
+    // fogParams:         x start, y 1 if enabled, z max amount, w sky blend (0 if the sky is off).
     // shadowParams:      x sun cascades in use (0 for no sun shadow), y unused, z normal bias in
     //                    texels, w 1 to tint by cascade. Depth bias is rendered into the shadow
     //                    map (hardware depth bias), not applied here.
-    // spotShadowParams:  x index of the shadow-casting spot light among the local lights (-1 for
-    //                    none), y normal bias per metre of distance, z unused, w its atlas tile.
+    // localShadowParams: x PCF radius of local light shadows in texels, yzw unused.
     // iblParams:         x diffuse and y specular intensity, w 1 if image-based lighting is on.
     // skyA..skyE, skyZenith, skyGround: SkyCoefficients (zenith w is the radiance scale, ground w
     //                    is 1 if the sky is on).
+    // skyGlow:           rgb sunset glow radiance at the horizon towards the sun, w glow height.
+    // skyGlowShape:      x glow spread, y glow share opposite the sun, zw unused.
+    // skyZenithTint:     rgb multiplier on the sky overhead, w unused.
     // sunDisk:           rgb radiance of the sun's disk, w cosine of its angular radius (0 hides it).
     // sceneDepthParams:  x, y the camera projection's [2][2] and [3][2] (view depth of a depth
     //                    value, as TAA computes it), for viewmodel motion vectors.
     // counts:            x local lights, y 1 if specular is on.
+    // lights:            the local lights.
+    // zoneParams:        x interior ambient zones in use, y blend distance, z normal offset, w 1 to
+    //                    tint by zone weight.
+    // zoneLight:         x diffuse and y specular image-based light multiplier inside zones.
+    // zoneFill:          rgb fill radiance inside zones.
+    // zones:             the zones, nearest the camera first.
     struct GpuFrameLighting
     {
         math::Mat4 shadowTileViewProjection[k_maxShadowTiles]{};
+        float shadowTileRects[k_maxShadowTiles][4];
         math::Mat4 viewProjection{1.0f};
         math::Mat4 previousViewProjection{1.0f};
         math::Mat4 reflectionViewProjection{1.0f};
@@ -80,7 +100,7 @@ namespace lockstep::render
         float fogColor[4];
         float fogParams[4];
         float shadowParams[4];
-        float spotShadowParams[4];
+        float localShadowParams[4];
         float iblParams[4];
         float skyA[4];
         float skyB[4];
@@ -89,14 +109,23 @@ namespace lockstep::render
         float skyE[4];
         float skyZenith[4];
         float skyGround[4];
+        float skyGlow[4];
+        float skyGlowShape[4];
+        float skyZenithTint[4];
         float sunDisk[4];
         float sceneDepthParams[4];
         uint32_t counts[4];
         GpuLocalLight lights[k_maxLocalLights];
+        float zoneParams[4];
+        float zoneLight[4];
+        float zoneFill[4];
+        GpuAmbientZone zones[k_maxFrameAmbientZones];
     };
 
     static_assert(sizeof(GpuLocalLight) == 64);
-    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 64 + 6 * 64 + 22 * 16 + k_maxLocalLights * 64);
+    static_assert(sizeof(GpuAmbientZone) == 32);
+    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 6 * 64 + 25 * 16 + k_maxLocalLights * 64
+        + 3 * 16 + k_maxFrameAmbientZones * 32);
 
     // The lights submitted for one frame.
     // directional: the directional light, if one was submitted.
@@ -118,32 +147,52 @@ namespace lockstep::render
     };
 
     // Everything the shadow pass and the lit pass need for one frame.
-    // lighting:     the block uploaded to the shaders.
-    // hasSun:       the frame has a sun (submitted, or the sky's).
-    // cascadeCount: sun cascades rendered, in tiles 0..cascadeCount-1.
-    // spotTile:     the tile a spot light's shadow uses, if any.
-    // tiles:        every atlas tile's projection.
+    // lighting:       the block uploaded to the shaders.
+    // hasSun:         the frame has a sun (submitted, or the sky's).
+    // cascadeCount:   sun cascades rendered, in tiles 0..cascadeCount-1.
+    // localTileCount: local light tiles rendered, in tiles k_sunShadowTiles onwards.
+    // shadowedLocalLights: local lights casting a shadow this frame.
+    // tiles:          every atlas tile's projection.
+    // casterSpheres:  per local light tile, xyz the light's position and w its range (casters
+    //                 outside it are skipped).
     struct PreparedLighting
     {
         GpuFrameLighting lighting{};
         bool hasSun{false};
         uint32_t cascadeCount{0};
-        std::optional<uint32_t> spotTile;
+        uint32_t localTileCount{0};
+        uint32_t shadowedLocalLights{0};
         std::array<ShadowTile, k_maxShadowTiles> tiles{};
+        std::array<math::Vec4, k_maxLocalShadowTiles> casterSpheres{};
 
-        // Returns: number of atlas tiles rendered this frame.
-        [[nodiscard]] uint32_t tileCount() const;
+        // tile:    an atlas tile index.
+        // Returns: true if the tile is rendered this frame.
+        [[nodiscard]] bool isTileActive(uint32_t tile) const;
     };
 
-    // Packs a frame's lights, sky and settings into the GPU block and fits the shadow atlas: the
-    // first shadow-casting spot light takes the last tile, the sun's cascades the rest.
-    // lights:      the frame's submitted lights.
-    // settings:    the renderer settings.
-    // camera:      the frame's camera (cascade fitting).
-    // aspectRatio: viewport width / height.
-    // Returns:     the prepared lighting.
+    // What prepareLighting() reads besides the lights and settings.
+    // camera:         the frame's camera (cascade fitting, shadow and zone priority).
+    // aspectRatio:    viewport width / height.
+    // viewProjection: the camera's unjittered world-to-clip matrix (which shadowed local lights
+    //                 reach into the view).
+    // zones:          every interior ambient zone; the nearest are packed.
+    struct LightingView
+    {
+        const Camera& camera;
+        float aspectRatio{1.0f};
+        math::Mat4 viewProjection{1.0f};
+        std::span<const AmbientZone> zones;
+    };
+
+    // Packs a frame's lights, sky, interior zones and settings into the GPU block and fits the
+    // shadow atlas: the sun's cascades in the sun tiles, shadow-casting local lights whose range
+    // reaches into the view, nearest first, in the local tiles while they and the light budget last.
+    // lights:   the frame's submitted lights.
+    // settings: the renderer settings.
+    // view:     camera and zones.
+    // Returns:  the prepared lighting.
     [[nodiscard]] PreparedLighting prepareLighting(const FrameLights& lights, const RenderSettings& settings,
-        const Camera& camera, float aspectRatio);
+        const LightingView& view);
 } //namespace lockstep::render
 
 #endif //LOCKSTEP_RENDER_FRAME_LIGHTING_HPP

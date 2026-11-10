@@ -173,6 +173,8 @@ namespace game
             case Archetype::Enemy:
                 renderer.submit(visuals.cube, visuals.enemy, transform);
                 break;
+            case Archetype::Merc:
+            case Archetype::Squad:
             case Archetype::Toy:
             case Archetype::None:
                 break;
@@ -225,9 +227,10 @@ namespace game
     }
 
     render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction, float zoom,
-        const math::Vec3& up)
+        const math::Vec3& up, float fovOffset)
     {
         render::Camera camera{.position = eye, .target = eye + direction, .up = up};
+        camera.verticalFov += fovOffset;
         camera.verticalFov += (math::radians(k_aimFovDegrees) - camera.verticalFov) * math::clamp(zoom, 0.0f, 1.0f);
 
         return camera;

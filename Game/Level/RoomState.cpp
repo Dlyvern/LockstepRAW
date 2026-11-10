@@ -291,17 +291,17 @@ namespace game
         switch (object)
         {
             case RoomObject::AlarmClock:
-                return state.isAlarmRinging ? "E: Silence the alarm" : "E: Alarm clock";
+                return state.isAlarmRinging ? "F: Silence the alarm" : "F: Alarm clock";
             case RoomObject::CoffeeMachine:
-                return state.coffee == CoffeePhase::Idle ? "E: Brew coffee"
-                    : state.coffee == CoffeePhase::Brewing ? "Brewing..." : "E: Take coffee";
+                return state.coffee == CoffeePhase::Idle ? "F: Brew coffee"
+                    : state.coffee == CoffeePhase::Brewing ? "Brewing..." : "F: Take coffee";
             case RoomObject::MugA:
             case RoomObject::MugB:
-                return state.coffee == CoffeePhase::Ready ? "E: Take coffee" : "E: Mug";
+                return state.coffee == CoffeePhase::Ready ? "F: Take coffee" : "F: Mug";
             case RoomObject::Radio:
-                return state.isRadioOn ? "E: Turn the radio off" : "E: Turn the radio on";
+                return state.isRadioOn ? "F: Turn the radio off" : "F: Turn the radio on";
             case RoomObject::Mirror:
-                return "E: Look in the mirror";
+                return "F: Look in the mirror";
             case RoomObject::Locker1:
             case RoomObject::Locker2:
             {
@@ -310,30 +310,30 @@ namespace game
 
                 if (state.isLockerOpen[owner])
                 {
-                    return isOwn ? "E: Close your locker" : "E: Close your flatmate's locker";
+                    return isOwn ? "F: Close your locker" : "F: Close your flatmate's locker";
                 }
 
-                return isOwn ? "E: Open your locker" : "E: Open your flatmate's locker";
+                return isOwn ? "F: Open your locker" : "F: Open your flatmate's locker";
             }
             case RoomObject::Gear1:
             case RoomObject::Gear2:
             {
                 const std::size_t owner = object == RoomObject::Gear1 ? 0 : 1;
 
-                return owner == player ? "E: Take badge and sidearm" : "Your flatmate's gear";
+                return owner == player ? "F: Take badge and sidearm" : "Your flatmate's gear";
             }
             case RoomObject::FrontDoor:
-                return state.door == DoorPhase::Closed ? "E: Head out" : "";
+                return state.door == DoorPhase::Closed ? "F: Head out" : "";
             case RoomObject::WallClock:
-                return "E: Check the time";
+                return "F: Check the time";
             case RoomObject::StreetDoor:
-                return state.isStreetDoorOpen ? "E: Close the street door" : "E: Open the street door";
+                return state.isStreetDoorOpen ? "F: Close the street door" : "F: Open the street door";
             case RoomObject::Toy:
             case RoomObject::Other:
                 break;
         }
 
-        return "E: Inspect";
+        return "F: Inspect";
     }
 
     std::vector<std::string_view> describeRoomChanges(const RoomState& before, const RoomState& after, std::size_t player)

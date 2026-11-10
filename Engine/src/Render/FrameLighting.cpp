@@ -1,15 +1,18 @@
 #include "FrameLighting.hpp"
 
+#include "FrameCulling.hpp"
 #include "SkyModel.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <utility>
 
 namespace lockstep::render
 {
     namespace
     {
-        constexpr float k_noSpotShadow{-1.0f};
+        constexpr float k_noShadow{-1.0f};
         constexpr float k_pointKind{0.0f};
         constexpr float k_spotKind{1.0f};
         constexpr float k_sunDiskCosine{0.99994f};
@@ -28,7 +31,7 @@ namespace lockstep::render
             store(target.positionRange, light.position, light.range);
             store(target.color, light.color * light.intensity, 0.0f);
             store(target.directionCosOuter, math::Vec3{0.0f, 0.0f, 0.0f}, -1.0f);
-            store(target.cosInnerKind, math::Vec3{1.0f, k_pointKind, 0.0f}, 0.0f);
+            store(target.cosInnerKind, math::Vec3{1.0f, k_pointKind, k_noShadow}, 0.0f);
         }
 
         void packSpot(GpuLocalLight& target, const SpotLight& light)
@@ -36,7 +39,7 @@ namespace lockstep::render
             store(target.positionRange, light.position, light.range);
             store(target.color, light.color * light.intensity, 0.0f);
             store(target.directionCosOuter, math::normalize(light.direction), std::cos(light.outerAngle));
-            store(target.cosInnerKind, math::Vec3{std::cos(light.innerAngle), k_spotKind, 0.0f}, 0.0f);
+            store(target.cosInnerKind, math::Vec3{std::cos(light.innerAngle), k_spotKind, k_noShadow}, 0.0f);
         }
 
         std::optional<DirectionalLight> frameSun(const FrameLights& lights, const RenderSettings& settings)
@@ -75,6 +78,10 @@ namespace lockstep::render
             store(gpu.skyE, sky.perezE, 0.0f);
             store(gpu.skyZenith, sky.zenith, sky.radianceScale);
             store(gpu.skyGround, sky.ground, settings.sky.enabled ? 1.0f : 0.0f);
+            store(gpu.skyGlow, sky.glow, std::max(settings.sky.glowHeight, 0.001f));
+            store(gpu.skyGlowShape, math::Vec3{std::max(settings.sky.glowSpread, 0.0f),
+                std::clamp(settings.sky.glowOpposite, 0.0f, 1.0f), 0.0f}, 0.0f);
+            store(gpu.skyZenithTint, settings.sky.zenithTint, 0.0f);
 
             const bool showDisk = settings.sky.enabled && settings.sky.sunDisk;
             store(gpu.sunDisk, sunRadiance * k_sunDiskBrightness, showDisk ? k_sunDiskCosine : 0.0f);
@@ -84,47 +91,128 @@ namespace lockstep::render
                 ibl.enabled && settings.sky.enabled ? 1.0f : 0.0f);
         }
 
+        struct ShadowCandidate
+        {
+            uint32_t slot{0};
+            float distance{0.0f};
+            const PointLight* point{nullptr};
+            const SpotLight* spot{nullptr};
+        };
+
+        bool reachesView(const Frustum& view, const math::Vec3& position, float range)
+        {
+            const math::Vec3 reach{range, range, range};
+
+            return intersects(view, math::Aabb{.min = position - reach, .max = position + reach});
+        }
+
+        uint32_t gatherShadowCandidates(const FrameLights& lights, const LightingView& view,
+            std::array<ShadowCandidate, k_maxLocalLights>& candidates)
+        {
+            const Frustum frustum = frustumFromMatrix(view.viewProjection);
+            uint32_t count = 0;
+            uint32_t slot = 0;
+
+            for (const PointLight& point : lights.points)
+            {
+                if (point.castsShadows && reachesView(frustum, point.position, point.range))
+                {
+                    const float distance = math::length(point.position - view.camera.position);
+                    candidates[count++] = {.slot = slot, .distance = distance, .point = &point};
+                }
+
+                ++slot;
+            }
+
+            for (const SpotLight& spot : lights.spots)
+            {
+                if (spot.castsShadows && reachesView(frustum, spot.position, spot.range))
+                {
+                    const float distance = math::length(spot.position - view.camera.position);
+                    candidates[count++] = {.slot = slot, .distance = distance, .spot = &spot};
+                }
+
+                ++slot;
+            }
+
+            std::sort(candidates.begin(), candidates.begin() + count,
+                [](const ShadowCandidate& left, const ShadowCandidate& right) { return left.distance < right.distance; });
+
+            return count;
+        }
+
+        void packLocalShadows(PreparedLighting& prepared, const FrameLights& lights, const ShadowSettings& shadows,
+            const LightingView& view)
+        {
+            std::array<ShadowCandidate, k_maxLocalLights> candidates{};
+            const uint32_t count = gatherShadowCandidates(lights, view, candidates);
+            const uint32_t budget = std::min(shadows.maxLocalLights, k_maxShadowedLocalLights);
+            uint32_t tile = k_sunShadowTiles;
+
+            for (uint32_t index = 0; index < count && prepared.shadowedLocalLights < budget; ++index)
+            {
+                const ShadowCandidate& candidate = candidates[index];
+                const uint32_t needed = candidate.point != nullptr ? k_pointShadowFaces : 1;
+
+                if (tile + needed > k_maxShadowTiles)
+                {
+                    continue;
+                }
+
+                const math::Vec3 position = candidate.point != nullptr ? candidate.point->position
+                    : candidate.spot->position;
+                const float range = candidate.point != nullptr ? candidate.point->range : candidate.spot->range;
+
+                for (uint32_t face = 0; face < needed; ++face)
+                {
+                    prepared.tiles[tile + face] = candidate.point != nullptr
+                        ? fitPointShadowFace(*candidate.point, face, tile + face)
+                        : fitSpotShadow(*candidate.spot, tile + face);
+                    prepared.casterSpheres[tile + face - k_sunShadowTiles] = {position.x, position.y, position.z, range};
+                }
+
+                GpuLocalLight& gpu = prepared.lighting.lights[candidate.slot];
+                gpu.cosInnerKind[2] = static_cast<float>(tile);
+                gpu.cosInnerKind[3] = shadows.localNormalBias * prepared.tiles[tile].texelSize;
+                tile += needed;
+                ++prepared.shadowedLocalLights;
+            }
+
+            prepared.localTileCount = tile - k_sunShadowTiles;
+        }
+
         void packShadows(PreparedLighting& prepared, const FrameLights& lights, const RenderSettings& settings,
-            const std::optional<DirectionalLight>& sun, const Camera& camera, float aspectRatio)
+            const std::optional<DirectionalLight>& sun, const LightingView& view)
         {
             GpuFrameLighting& gpu = prepared.lighting;
             const ShadowSettings& shadows = settings.shadows;
             store(gpu.shadowParams, math::Vec3{0.0f, 0.0f, shadows.normalBias},
                 shadows.debugCascades ? 1.0f : 0.0f);
-            store(gpu.spotShadowParams, math::Vec3{k_noSpotShadow, 0.0f, 0.0f}, 0.0f);
+            store(gpu.localShadowParams, math::Vec3{std::clamp(shadows.localFilterRadius, 0.5f, 3.0f), 0.0f, 0.0f},
+                0.0f);
             store(gpu.cascadeTexelSize, math::Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+
+            for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
+            {
+                const math::Vec4 rect = shadowTileRect(tile);
+                store(gpu.shadowTileRects[tile], math::Vec3{rect.x, rect.y, rect.z}, rect.w);
+            }
 
             if (!shadows.enabled)
             {
                 return;
             }
 
-            uint32_t sunTiles = k_maxShadowTiles;
-
-            if (settings.lighting.localLights)
+            if (settings.lighting.localLights && shadows.localLights)
             {
-                const auto caster = std::find_if(lights.spots.begin(), lights.spots.end(),
-                    [](const SpotLight& spot) { return spot.castsShadows; });
-
-                if (caster != lights.spots.end())
-                {
-                    const uint32_t tile = k_maxShadowTiles - 1;
-                    const ShadowTile spotTile = fitSpotShadow(*caster, tile);
-                    const float slot = static_cast<float>(lights.points.size()
-                        + static_cast<std::size_t>(caster - lights.spots.begin()));
-
-                    prepared.spotTile = tile;
-                    prepared.tiles[tile] = spotTile;
-                    sunTiles = tile;
-                    store(gpu.spotShadowParams, math::Vec3{slot, shadows.normalBias * spotTile.texelSize, 0.0f},
-                        static_cast<float>(tile));
-                }
+                packLocalShadows(prepared, lights, shadows, view);
             }
 
             if (sun && sun->castsShadows)
             {
-                const uint32_t count = std::clamp(shadows.cascadeCount, 1u, sunTiles);
-                fitSunCascades(camera, aspectRatio, math::normalize(sun->direction), shadows, count, prepared.tiles);
+                const uint32_t count = std::clamp(shadows.cascadeCount, 1u, k_sunShadowTiles);
+                fitSunCascades(view.camera, view.aspectRatio, math::normalize(sun->direction), shadows, count,
+                    prepared.tiles);
                 prepared.cascadeCount = count;
                 gpu.shadowParams[0] = static_cast<float>(count);
 
@@ -138,6 +226,61 @@ namespace lockstep::render
             {
                 gpu.shadowTileViewProjection[tile] = prepared.tiles[tile].atlasViewProjection;
             }
+        }
+
+        float boxDistance(const math::Aabb& box, const math::Vec3& point)
+        {
+            const math::Vec3 below = box.min - point;
+            const math::Vec3 above = point - box.max;
+            const math::Vec3 outside{std::max({below.x, above.x, 0.0f}), std::max({below.y, above.y, 0.0f}),
+                std::max({below.z, above.z, 0.0f})};
+
+            return math::length(outside);
+        }
+
+        void packZones(GpuFrameLighting& gpu, const InteriorAmbientSettings& settings, const LightingView& view)
+        {
+            store(gpu.zoneParams, math::Vec3{0.0f, std::max(settings.blendDistance, 0.01f), settings.normalOffset},
+                settings.debugView ? 1.0f : 0.0f);
+            store(gpu.zoneLight, math::Vec3{settings.diffuseIntensity, settings.specularIntensity, 0.0f}, 0.0f);
+            store(gpu.zoneFill, settings.fillColor * settings.fillIntensity, 0.0f);
+
+            if (!settings.enabled)
+            {
+                return;
+            }
+
+            std::array<std::pair<float, uint32_t>, k_maxFrameAmbientZones> nearest{};
+            uint32_t count = 0;
+
+            for (uint32_t index = 0; index < view.zones.size(); ++index)
+            {
+                const float distance = boxDistance(view.zones[index].bounds, view.camera.position);
+                const std::pair<float, uint32_t> entry{distance, index};
+
+                if (count < k_maxFrameAmbientZones)
+                {
+                    nearest[count++] = entry;
+                    std::push_heap(nearest.begin(), nearest.begin() + count);
+                }
+                else if (entry < nearest.front())
+                {
+                    std::pop_heap(nearest.begin(), nearest.begin() + count);
+                    nearest[count - 1] = entry;
+                    std::push_heap(nearest.begin(), nearest.begin() + count);
+                }
+            }
+
+            std::sort_heap(nearest.begin(), nearest.begin() + count);
+
+            for (uint32_t index = 0; index < count; ++index)
+            {
+                const math::Aabb& bounds = view.zones[nearest[index].second].bounds;
+                store(gpu.zones[index].min, bounds.min, 0.0f);
+                store(gpu.zones[index].max, bounds.max, 0.0f);
+            }
+
+            gpu.zoneParams[0] = static_cast<float>(count);
         }
     } //namespace
 
@@ -154,13 +297,13 @@ namespace lockstep::render
         dropped = 0;
     }
 
-    uint32_t PreparedLighting::tileCount() const
+    bool PreparedLighting::isTileActive(uint32_t tile) const
     {
-        return cascadeCount + (spotTile ? 1u : 0u);
+        return tile < cascadeCount || (tile >= k_sunShadowTiles && tile < k_sunShadowTiles + localTileCount);
     }
 
-    PreparedLighting prepareLighting(const FrameLights& lights, const RenderSettings& settings, const Camera& camera,
-        float aspectRatio)
+    PreparedLighting prepareLighting(const FrameLights& lights, const RenderSettings& settings,
+        const LightingView& view)
     {
         PreparedLighting prepared{};
         GpuFrameLighting& gpu = prepared.lighting;
@@ -179,7 +322,8 @@ namespace lockstep::render
 
         const FogSettings& fog = settings.fog;
         store(gpu.fogColor, fog.color, fog.density);
-        store(gpu.fogParams, math::Vec3{fog.start, fog.enabled ? 1.0f : 0.0f, fog.maxAmount}, 0.0f);
+        store(gpu.fogParams, math::Vec3{fog.start, fog.enabled ? 1.0f : 0.0f, fog.maxAmount},
+            settings.sky.enabled ? std::clamp(fog.skyBlend, 0.0f, 1.0f) : 0.0f);
 
         uint32_t count = 0;
 
@@ -201,7 +345,8 @@ namespace lockstep::render
         gpu.counts[2] = 0;
         gpu.counts[3] = 0;
 
-        packShadows(prepared, lights, settings, sun, camera, aspectRatio);
+        packShadows(prepared, lights, settings, sun, view);
+        packZones(gpu, settings.interiorAmbient, view);
 
         return prepared;
     }

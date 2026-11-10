@@ -7,15 +7,17 @@
 station.chief.briefing.01 | chief | There they are. Shift started twenty minutes ago, gentlemen.
 station.chief.briefing.02 | chief | Car trouble again? Or did you sell the car?
 station.chief.briefing.03 | chief | Don't answer that. Sit. Or stand, chairs cost money.
-station.chief.briefing.04 | chief | Welfare check. Garland Arms, Carver Street, apartment 4C. Ida Pruitt, seventy-one.
-station.chief.briefing.05 | chief | Her daughter's called three days running. No answer at the door, no answer on the phone.
-station.chief.briefing.06 | chief | Super won't open up. Says it's not his problem. Make it his problem.
-station.chief.briefing.07 | chief | Thing is, the Garland's where the Carver Street boys keep product. Fourth floor, mostly.
-station.chief.briefing.08 | chief | Last two calls to that building, nobody came out to meet us. Nobody.
-station.chief.briefing.09 | chief | So you don't go in wearing what you've got on. You go in dressed.
-station.chief.briefing.10 | chief | Armory first, basement. Range is open if you want a feel for the new V-45s.
-station.chief.briefing.11 | chief | Then the car. Knock, look, bring her daughter good news if you can.
-station.chief.briefing.12 | chief | And come back with the car. It's the only one we've got that starts.
+station.chief.briefing.04 | chief | Armed men walked into Saint Abel Memorial at six this morning. Staff are dead.
+station.chief.briefing.05 | chief | They're holding hostages. City team's stuck on a barricade across the river. So it's us.
+station.chief.briefing.06 | chief | Hostages are in the basement. Don't ask how we know. We know.
+station.chief.briefing.07 | chief | Response team's activated. All six of you. God help the hostages.
+station.chief.briefing.08 | chief | You two go round the back, loading dock. Sergeant holds the front.
+station.chief.briefing.09 | chief | Don't hold floors. You're not there for the floors.
+station.chief.briefing.10 | chief | Overtime's approved, by the way. Don't ask me how. Enjoy it.
+station.chief.briefing.11 | chief | Armory first, basement. Range is open if you want a feel for the new V-45s.
+station.chief.briefing.12 | chief | Whatever you see in there, you keep going down. Basement. That's the job.
+station.chief.briefing.13 | chief | You two look after each other. You're good at that.
+station.chief.briefing.14 | chief | And come back with the car. It's the only one we've got that starts.
 
 # --- Desk sergeant, lobby ---
 station.sergeant.idle.01 | sergeant | Sign the log, officers. In pen. The pencil walked off again.
@@ -60,7 +62,7 @@ station.prisoner.04 | prisoner | My kid's alone at home. Please. Somebody call m
 station.prisoner.05 | prisoner | You two look broker than me. And I'm in here.
 station.prisoner.06 | prisoner | This is a mistake, man. Wrong guy. Wrong street. Wrong everything.
 station.prisoner.07 | prisoner | Bologna again? This is cruel and unusual, I know my rights.
-station.prisoner.08 | prisoner | Carver Street? Don't go up past the third floor. Just don't.
+station.prisoner.08 | prisoner | Saint Abel? My cousin's a porter there. Says nobody's allowed in the basement. Nobody.
 station.prisoner.09 | prisoner | Officer. What time is it? No. No, it was that an hour ago too.
 station.prisoner.10 | prisoner | I'll be out by lunch. You'll still be poor by dinner.
 
@@ -68,7 +70,7 @@ station.prisoner.10 | prisoner | I'll be out by lunch. You'll still be poor by d
 station.npc.idle.01 | officer | Copier's jammed. Again. Somebody kick it, gently.
 station.npc.idle.02 | officer | Who took my stapler? I engraved my name on it. Twice.
 station.npc.idle.03 | officer | Overtime's frozen till spring. Spring of when, they didn't say.
-station.npc.idle.04 | officer | Garland Arms? Better you than me. Take the stairs, the lift's a coffin.
+station.npc.idle.04 | officer | Saint Abel's on every channel. Smoke out of a ward window, they said.
 station.npc.idle.05 | officer | Rodriguez is bringing in cake Friday. It's her kid's birthday.
 station.npc.idle.06 | officer | Radio's been eating calls all morning. Half of dispatch is static.
 station.npc.idle.07 | officer | My car's got a hundred and ninety thousand miles and no heater.
@@ -87,7 +89,7 @@ station.objective.wait_car | hud | Wait at the car for your partner
 station.narration.armory | hud | The armory is in the basement.
 station.narration.partner_geared | hud | Your partner is geared up.
 station.narration.geared | hud | You're both geared up. Car's out back.
-station.narration.drive | hud | You get in the car. Garland Arms, Carver Street.
+station.narration.drive | hud | You get in the car. Saint Abel Memorial, lights on.
 
 # --- Notices (HUD), when E does nothing ---
 station.notice.report_first | hud | Report to the chief first.
@@ -98,7 +100,7 @@ station.notice.nothing | hud | Nothing happens.
 station.notice.wait_partner | hud | The chief won't say it twice. Wait for your partner.
 
 # --- Caption (HUD), over the fade at the end of the station ---
-station.caption.mission | hud | Welfare check. Garland Arms, Carver Street
+station.caption.mission | hud | Saint Abel Memorial Hospital
 
 # --- Tips (HUD) ---
 station.tip.01 | hud | Press X to lower or raise your weapon.

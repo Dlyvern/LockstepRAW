@@ -1,5 +1,7 @@
 #include "GraphicsPanel.hpp"
 
+#include "GraphicsLookPanel.hpp"
+
 #include <imgui.h>
 
 #include <vector>
@@ -24,11 +26,15 @@ namespace lockstep::debug
         constexpr float k_maxIblIntensity{3.0f};
         constexpr float k_minTurbidity{1.7f};
         constexpr float k_maxTurbidity{10.0f};
+        constexpr float k_maxGlowIntensity{2.0f};
+        constexpr float k_minGlowHeight{0.01f};
+        constexpr float k_maxGlowSpread{16.0f};
         constexpr float k_maxOcclusionRadius{3.0f};
         constexpr float k_maxOcclusionIntensity{3.0f};
         constexpr float k_maxOcclusionPower{4.0f};
         constexpr float k_maxBloomStrength{0.3f};
         constexpr int k_maxCascades{static_cast<int>(render::k_maxShadowCascades)};
+        constexpr int k_maxShadowedLights{static_cast<int>(render::k_maxShadowedLocalLights)};
 
         bool header(const char* label)
         {
@@ -108,6 +114,13 @@ namespace lockstep::debug
             ImGui::SliderFloat("Turbidity", &sky.turbidity, k_minTurbidity, k_maxTurbidity, "%.1f");
             ImGui::SliderFloat("Sky intensity", &sky.skyIntensity, 0.0f, k_maxSkyIntensity, "%.2f");
             ImGui::ColorEdit3("Ground albedo", &sky.groundAlbedo.x, ImGuiColorEditFlags_Float);
+            ImGui::ColorEdit3("Sunset glow colour", &sky.glowColor.x, ImGuiColorEditFlags_Float);
+            ImGui::SliderFloat("Sunset glow", &sky.glowIntensity, 0.0f, k_maxGlowIntensity, "%.3f");
+            ImGui::SliderFloat("Glow height", &sky.glowHeight, k_minGlowHeight, 1.0f, "%.3f",
+                ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("Glow spread", &sky.glowSpread, 0.0f, k_maxGlowSpread, "%.1f");
+            ImGui::SliderFloat("Glow opposite sun", &sky.glowOpposite, 0.0f, 1.0f, "%.2f");
+            ImGui::ColorEdit3("Zenith tint", &sky.zenithTint.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
             ImGui::Separator();
             ImGui::Checkbox("Image-based lighting", &ibl.enabled);
             ImGui::SliderFloat("IBL diffuse", &ibl.diffuseIntensity, 0.0f, k_maxIblIntensity, "%.2f");
@@ -142,6 +155,19 @@ namespace lockstep::debug
             {
                 shadows.maskedCasterCascades = static_cast<uint32_t>(maskedCascades);
             }
+
+            ImGui::Separator();
+            ImGui::Checkbox("Point / spot light shadows", &shadows.localLights);
+
+            int localLights = static_cast<int>(shadows.maxLocalLights);
+
+            if (ImGui::SliderInt("Shadowed lights", &localLights, 0, k_maxShadowedLights))
+            {
+                shadows.maxLocalLights = static_cast<uint32_t>(localLights);
+            }
+
+            ImGui::SliderFloat("Local normal bias (texels)", &shadows.localNormalBias, 0.0f, k_maxShadowBias, "%.2f");
+            ImGui::SliderFloat("Local filter radius (texels)", &shadows.localFilterRadius, 0.5f, 3.0f, "%.2f");
         }
 
         void drawFog(render::FogSettings& fog)
@@ -156,6 +182,7 @@ namespace lockstep::debug
             ImGui::SliderFloat("Density", &fog.density, 0.0f, k_maxFogDensity, "%.4f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Start (m)", &fog.start, 0.0f, k_maxFogStart, "%.1f");
             ImGui::SliderFloat("Max amount", &fog.maxAmount, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Sky colour (aerial)", &fog.skyBlend, 0.0f, 1.0f, "%.2f");
         }
 
         void drawAntiAliasing(render::AntiAliasingSettings& antiAliasing)
@@ -231,7 +258,7 @@ namespace lockstep::debug
                 tonemap.tonemapper = static_cast<render::Tonemapper>(tonemapper);
             }
 
-            ImGui::SliderFloat("Exposure", &tonemap.exposure, k_minExposure, k_maxExposure, "%.2f",
+            ImGui::SliderFloat("Manual exposure", &tonemap.exposure, k_minExposure, k_maxExposure, "%.2f",
                 ImGuiSliderFlags_Logarithmic);
             ImGui::Checkbox("Dither", &tonemap.dither);
         }
@@ -266,7 +293,8 @@ namespace lockstep::debug
                 frame.shadowDraws);
             ImGui::Text("Lights: %u local (%u dropped), sun %s", frame.local, frame.dropped,
                 frame.hasDirectional ? "yes" : "no");
-            ImGui::Text("Shadows: %u cascades%s", frame.cascades, frame.spotShadow ? " + spot" : "");
+            ImGui::Text("Shadows: %u cascades, %u local lights (%u tiles)", frame.cascades, frame.shadowedLocalLights,
+                frame.localShadowTiles);
             ImGui::Text("Mirror: %s, %u draws", renderer.reflection.active ? "rendered" : "none",
                 static_cast<uint32_t>(renderer.reflection.opaque.size() + renderer.reflection.blended.size()));
             drawPassTimings(panel, passTimings);
@@ -280,6 +308,7 @@ namespace lockstep::debug
             drawAntiAliasing(settings.antiAliasing);
             drawReflections(settings.reflections);
             drawTonemap(settings.tonemap);
+            drawLookSections(settings, renderer.ambientZones.size());
             drawFog(settings.fog);
         }
 

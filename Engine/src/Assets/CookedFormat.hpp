@@ -120,12 +120,15 @@ namespace lockstep::assets
     };
 
     // One part of a cooked skinned model.
-    // path:     virtual path of its skinned .mesh file.
-    // material: index into CookedLevel::materials (created as a skinned material).
+    // path:         virtual path of its skinned .mesh file.
+    // material:     index into CookedLevel::materials (created as a skinned material).
+    // materialName: the source material's name. Stored after the parts in a trailing section of
+    //               the .model file (files cooked without it load with empty names).
     struct CookedSkinnedPart
     {
         std::string path;
         uint32_t material{0};
+        std::string materialName;
     };
 
     // The contents of a .model file: an anim::SkinnedModel without GPU handles.

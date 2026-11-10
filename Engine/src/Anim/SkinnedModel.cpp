@@ -2,6 +2,7 @@
 
 #include "Lockstep/Render/Renderer.hpp"
 
+#include <limits>
 #include <span>
 
 namespace lockstep::anim
@@ -37,7 +38,7 @@ namespace lockstep::anim
     }
 
     void SkinnedInstance::submit(render::Renderer& renderer, const SkinnedModel& model, const math::Transform& transform,
-        render::RenderLayers layers) const
+        render::RenderLayers layers, PartMask parts) const
     {
         if (m_skin.empty() || m_skin.size() != model.skeleton.joints.size())
         {
@@ -48,9 +49,15 @@ namespace lockstep::anim
             : std::span<const math::Mat4>(m_skin);
         const render::JointPalette palette = renderer.submitJointPalette(m_skin, previous);
 
-        for (const SkinnedModelPart& part : model.parts)
+        for (std::size_t index = 0; index < model.parts.size(); ++index)
         {
-            renderer.submitSkinned(part.mesh, part.material, transform, palette, m_bounds, layers);
+            const bool isDrawn = index >= std::numeric_limits<PartMask>::digits || ((parts >> index) & 1u) != 0;
+
+            if (isDrawn)
+            {
+                renderer.submitSkinned(model.parts[index].mesh, model.parts[index].material, transform, palette,
+                    m_bounds, layers);
+            }
         }
     }
 

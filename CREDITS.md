@@ -28,6 +28,14 @@ Every new asset gets a line here when it's added.
 | Desk lamp | 7ASSAN | https://sketchfab.com/models/b9458e04d30e4b6284d46d35880a9b95 | Station: chief's desk lamp |
 | Persian Malayer Carpet | mfb64 | https://sketchfab.com/models/1120ca810d0c46289d3b7071103067ac | Station: chief's office rug (decimated) |
 | POLICE CAP 2 | alexhanks1 | https://sketchfab.com/models/f6eaa9818b5c4b97a1ebb24c30926ae7 | Apartment: police caps on the coat rack (decimated to ~6%) |
+| Old Apartment Building | jimbogies | https://sketchfab.com/models/a2a27bec2e364496b34ae399ee93cb67 | Hospital A: street buildings (rescaled, ground plate removed) |
+| Apartment Complex Building | jimbogies | https://sketchfab.com/models/fa7c256f511946fea3cd819e0f492741 | Hospital A: street buildings (rescaled, lawn removed) |
+| Low-poly Old American brick building with shop. | Orzechu | https://sketchfab.com/models/3170993b67ee4e58b27d69d5877f71bd | Hospital A: street corner shops |
+| Urban Building | sousinho | https://sketchfab.com/models/1704ecbc09a24f358332fd358c818d18 | Hospital A: street buildings (decimated) |
+| Police car | jeandiz | https://sketchfab.com/models/9166b13b6ae341f4bfc093edb71d74f4 | Hospital A: cordon and road-block cruisers (decimated) |
+| Ambulance | mk2design | https://sketchfab.com/models/b78313c16c9d46a7a67643245cf278d2 | Hospital A: ambulances |
+| Yellow semi-truck with trailer | Chenzoss | https://sketchfab.com/models/ee0a8763bd8941f1bc546b43332d4001 | Hospital A: road blocks (decimated) |
+| MD '84 Armored - Low poly model | DanielZhabotinsky | https://sketchfab.com/models/26e809cce40e4359a3199649f12ef295 | Hospital A: squad truck |
 
 ## CC0 (Poly Haven, no attribution required)
 
@@ -83,6 +91,51 @@ Every new asset gets a line here when it's added.
 | Hangar Concrete Floor (texture) | Dimitrios Savva | https://polyhaven.com/a/hangar_concrete_floor |
 | Concrete Wall 004 (texture) | Charlotte Baglioni, Dario Barresi | https://polyhaven.com/a/concrete_wall_004 |
 | Worn Metal Rack | Luca B | https://polyhaven.com/a/worn_metal_rack |
+| Old Linoleum Flooring 01 (texture) | Poly Haven | https://polyhaven.com/a/old_linoleum_flooring_01 |
+| Terrazzo Tiles (texture) | Poly Haven | https://polyhaven.com/a/terrazzo_tiles |
+| Long White Tiles (texture) | Poly Haven | https://polyhaven.com/a/long_white_tiles |
+| Painted Plaster Wall (texture) | Poly Haven | https://polyhaven.com/a/painted_plaster_wall |
+| Ceiling Interior (texture) | Poly Haven | https://polyhaven.com/a/ceiling_interior |
+| Rectangular Facade Tiles (texture) | Poly Haven | https://polyhaven.com/a/rectangular_facade_tiles |
+| Road Damaged (texture) | Poly Haven | https://polyhaven.com/a/road_damaged |
+| Worn Asphalt (texture) | Poly Haven | https://polyhaven.com/a/worn_asphalt |
+| Concrete Floor Worn 001 (texture) | Poly Haven | https://polyhaven.com/a/concrete_floor_worn_001 |
+| Dark Brick Wall (texture) | Poly Haven | https://polyhaven.com/a/dark_brick_wall |
+| Yellow Bricks (texture) | Poly Haven | https://polyhaven.com/a/yellow_bricks |
+| Painted Metal Shutter (texture) | Poly Haven | https://polyhaven.com/a/painted_metal_shutter |
+| Concrete Road Barrier 02 | Poly Haven | https://polyhaven.com/a/concrete_road_barrier_02 |
+| Fire Hydrant | Poly Haven | https://polyhaven.com/a/fire_hydrant |
+| Portable Generator | Poly Haven | https://polyhaven.com/a/portable_generator |
+| Hand Truck | Poly Haven | https://polyhaven.com/a/hand_truck |
+| Plastic Crate 02 | Poly Haven | https://polyhaven.com/a/plastic_crate_02 |
+| Wooden Crate 02 | Poly Haven | https://polyhaven.com/a/wooden_crate_02 |
+| Metal Trash Can | Poly Haven | https://polyhaven.com/a/metal_trash_can |
+| Portable Searchlight | Poly Haven | https://polyhaven.com/a/portable_searchlight |
+| wheelchair_01 | Poly Haven | https://polyhaven.com/a/wheelchair_01 |
+| vintage_crutches_01 | Poly Haven | https://polyhaven.com/a/vintage_crutches_01 |
+| old_bed_frame | Poly Haven | https://polyhaven.com/a/old_bed_frame |
+| medical_box | Poly Haven | https://polyhaven.com/a/medical_box |
+| drawer_cabinet | Poly Haven | https://polyhaven.com/a/drawer_cabinet |
+| korean_fire_extinguisher_01 | Poly Haven | https://polyhaven.com/a/korean_fire_extinguisher_01 |
+| fire_alarm | Poly Haven | https://polyhaven.com/a/fire_alarm |
+| security_camera_01 | Poly Haven | https://polyhaven.com/a/security_camera_01 |
+| WetFloorSign_01 | Poly Haven | https://polyhaven.com/a/WetFloorSign_01 |
+| korean_public_payphone_01 | Poly Haven | https://polyhaven.com/a/korean_public_payphone_01 |
+| potted_plant_02 | Poly Haven | https://polyhaven.com/a/potted_plant_02 |
+| wall_clock | Poly Haven | https://polyhaven.com/a/wall_clock |
+| plastic_monobloc_chair_01 | Poly Haven | https://polyhaven.com/a/plastic_monobloc_chair_01 |
+| steel_frame_shelves_01 | Poly Haven | https://polyhaven.com/a/steel_frame_shelves_01 |
+| industrial_storage_cart | Poly Haven | https://polyhaven.com/a/industrial_storage_cart |
+| office_notepads | Poly Haven | https://polyhaven.com/a/office_notepads |
+| binder_notebook | Poly Haven | https://polyhaven.com/a/binder_notebook |
+| side_table_01 | Poly Haven | https://polyhaven.com/a/side_table_01 |
+| coffee_table_round_01 | Poly Haven | https://polyhaven.com/a/coffee_table_round_01 |
+| WoodenTable_01 | Poly Haven | https://polyhaven.com/a/WoodenTable_01 |
+| tool_cart | Poly Haven | https://polyhaven.com/a/tool_cart |
+| desk_lamp_arm_01 | Poly Haven | https://polyhaven.com/a/desk_lamp_arm_01 |
+| classic_laptop | Poly Haven | https://polyhaven.com/a/classic_laptop |
+| wooden_military_crate | Poly Haven | https://polyhaven.com/a/wooden_military_crate |
+| painted_wooden_nightstand | Poly Haven | https://polyhaven.com/a/painted_wooden_nightstand |
 
 ## User-provided packs (licence to confirm before shipping)
 

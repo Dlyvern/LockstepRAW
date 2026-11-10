@@ -40,7 +40,7 @@ namespace game
     {
         const PlayerStatus& status = state.local.statuses[ownerPawnIndex(owner)];
 
-        return PawnLook{.isArmed = status.isArmed, .isAiming = status.isArmed && status.isAiming,
+        return PawnLook{.isArmed = status.isArmed && !status.isDowned, .isAiming = status.isArmed && status.isAiming,
             .isLowered = status.isArmed && status.isLowered,
             .crouch = pawnCrouchAmount(transform, state.settings.pawns),
             .isSliding = status.isSliding};
@@ -49,9 +49,11 @@ namespace game
     PawnLook localPawnLook(const GameState& state, const EngineContext& engine,
         const std::optional<math::Transform>& transform)
     {
-        const bool isArmed = state.local.statuses[localPawnIndex(engine)].isArmed;
+        const PlayerStatus& status = state.local.statuses[localPawnIndex(engine)];
+        const bool isArmed = status.isArmed && !status.isDowned;
 
-        return PawnLook{.isArmed = isArmed, .isAiming = isArmed && state.local.command.aim,
+        return PawnLook{.isArmed = isArmed,
+            .isAiming = isArmed && isAimingReady(state.local.command, localPawnMotion(state, engine)),
             .isLowered = isArmed && isWeaponLowered(state.local.command.lower, state.local.weaponZone,
                 isHoldingToy(state, engine)),
             .crouch = transform ? pawnCrouchAmount(*transform, state.settings.pawns) : 0.0f,

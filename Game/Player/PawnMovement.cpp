@@ -1,5 +1,8 @@
 #include "Player/PawnMovement.hpp"
 
+#include "Player/PawnLean.hpp"
+#include "Player/PawnMantle.hpp"
+
 #include <Lockstep/Physics/PhysicsWorld.hpp>
 
 #include <algorithm>
@@ -35,7 +38,37 @@ namespace game
             return 1.0f / std::sqrt(side * side + forward * forward);
         }
 
-        math::Vec3 wantedVelocity(const PlayerCommand& command, const PawnMotion& motion, const PawnSettings& settings)
+        float landingScale(const PawnMotion& motion, const PawnSettings& settings, float delta)
+        {
+            if (motion.landingTicks == 0)
+            {
+                return 1.0f;
+            }
+
+            const float recoverTicks = std::max(static_cast<float>(secondsToTicks(settings.hardLandingMinSeconds, delta)),
+                1.0f);
+            const float hold = std::min(static_cast<float>(motion.landingTicks) / recoverTicks, 1.0f);
+
+            return 1.0f - (1.0f - settings.hardLandingScale) * hold;
+        }
+
+        void landHard(PawnMotion& motion, const PawnSettings& settings, float impactSpeed, float delta)
+        {
+            if (impactSpeed < settings.hardLandingSpeed)
+            {
+                return;
+            }
+
+            const float severity = math::clamp((impactSpeed - settings.hardLandingSpeed)
+                    / std::max(settings.hardLandingFullSpeed - settings.hardLandingSpeed, k_minSpeed), 0.0f, 1.0f);
+            const float seconds = settings.hardLandingMinSeconds
+                + (settings.hardLandingMaxSeconds - settings.hardLandingMinSeconds) * severity;
+            motion.landingTicks = std::max(motion.landingTicks, secondsToTicks(seconds, delta));
+            motion.planarVelocity = motion.planarVelocity * settings.hardLandingScale;
+        }
+
+        math::Vec3 wantedVelocity(const PlayerCommand& command, const PawnMotion& motion, const PawnSettings& settings,
+            float delta)
         {
             math::Vec2 move = command.move;
             const float moveLength = math::length(move);
@@ -46,8 +79,8 @@ namespace game
             }
 
             const bool isCrouched = motion.stance != PawnStance::Stand;
-            const bool isRunning = command.sprint && !command.aim && !isCrouched && move.y > 0.0f;
-            float speedCap = command.aim ? settings.aimSpeed : std::numeric_limits<float>::max();
+            const bool isRunning = isRunningCommand(command, motion);
+            float speedCap = isAimingReady(command, motion) ? settings.aimSpeed : std::numeric_limits<float>::max();
 
             if (isCrouched)
             {
@@ -60,25 +93,64 @@ namespace game
                                                      : (isRunning ? runSpeed : settings.walkSpeed));
             const float sideSpeed = std::min(speedCap, isRunning ? settings.sprintStrafeSpeed : settings.strafeSpeed);
             const math::Vec2 direction = move * (1.0f / moveLength);
-            const float speed = std::min(moveLength, 1.0f) * ellipseSpeed(direction, sideSpeed, forwardSpeed);
+            const float speed = std::min(moveLength, 1.0f) * ellipseSpeed(direction, sideSpeed, forwardSpeed)
+                * landingScale(motion, settings, delta);
 
             return (forwardOf(command.yaw) * direction.y + rightOf(command.yaw) * direction.x) * speed;
         }
 
-        math::Vec3 easeVelocity(const math::Vec3& current, const math::Vec3& wanted, const PawnSettings& settings,
-            float delta)
+        math::Vec3 approach(const math::Vec3& current, const math::Vec3& target, float maxChange)
         {
-            const math::Vec3 difference = wanted - current;
+            const math::Vec3 difference = target - current;
             const float distance = math::length(difference);
-            const bool isSpeedingUp = math::length(wanted) > math::length(current);
-            const float maxChange = (isSpeedingUp ? settings.acceleration : settings.deceleration) * delta;
 
             if (distance <= maxChange)
             {
-                return wanted;
+                return target;
             }
 
             return current + difference * (maxChange / distance);
+        }
+
+        float approach(float current, float target, float maxChange)
+        {
+            return current + math::clamp(target - current, -maxChange, maxChange);
+        }
+
+        math::Vec3 easeGroundVelocity(const math::Vec3& current, const math::Vec3& wanted,
+            const PawnSettings& settings, float delta)
+        {
+            const float speed = math::length(current);
+
+            if (speed < k_minSpeed)
+            {
+                return approach(current, wanted, settings.acceleration * delta);
+            }
+
+            const math::Vec3 along = current * (1.0f / speed);
+            const float wantedAlong = math::dot(wanted, along);
+            const math::Vec3 wantedSide = wanted - along * wantedAlong;
+            const bool isSpeedingUp = wantedAlong > speed;
+            const float speedUpRate = speed < settings.walkSpeed ? settings.acceleration : settings.runAcceleration;
+            const float alongRate = isSpeedingUp ? speedUpRate : settings.deceleration;
+            const float runBlend = math::clamp((speed - settings.walkSpeed)
+                    / std::max(settings.runSpeed - settings.walkSpeed, k_minSpeed), 0.0f, 1.0f);
+            const float sideRate = settings.acceleration
+                + (settings.runTurnAcceleration - settings.acceleration) * runBlend;
+
+            return along * approach(speed, wantedAlong, alongRate * delta)
+                + approach(math::Vec3{0.0f, 0.0f, 0.0f}, wantedSide, sideRate * delta);
+        }
+
+        math::Vec3 easeAirVelocity(const math::Vec3& current, const math::Vec3& wanted, const PawnSettings& settings,
+            float delta)
+        {
+            if (math::length(wanted) < k_minMoveLength)
+            {
+                return current * std::max(1.0f - settings.airDrag * delta, 0.0f);
+            }
+
+            return approach(current, wanted, settings.airAcceleration * delta);
         }
 
         void endSlide(PawnMotion& motion, const PawnSettings& settings)
@@ -162,6 +234,61 @@ namespace game
             }
         }
 
+        void bufferJump(PawnMotion& motion, const PlayerCommand& command, const PawnSettings& settings, float delta)
+        {
+            const bool isJumpPressed = command.jump && !motion.isJumpHeld;
+            motion.isJumpHeld = command.jump;
+
+            if (isJumpPressed)
+            {
+                motion.jumpBufferTicks = secondsToTicks(settings.jumpBufferSeconds, delta);
+            }
+            else if (motion.jumpBufferTicks > 0)
+            {
+                --motion.jumpBufferTicks;
+            }
+
+            if (motion.isGrounded)
+            {
+                motion.coyoteTicks = secondsToTicks(settings.coyoteSeconds, delta);
+            }
+            else if (motion.coyoteTicks > 0)
+            {
+                --motion.coyoteTicks;
+            }
+        }
+
+        bool tryJump(PawnMotion& motion, physics::ControllerId controller, physics::PhysicsWorld& physics,
+            const PawnSettings& settings)
+        {
+            if (motion.jumpBufferTicks == 0 || (!motion.isGrounded && motion.coyoteTicks == 0))
+            {
+                return false;
+            }
+
+            if (motion.stance != PawnStance::Stand)
+            {
+                if (!physics.setControllerHeight(controller, k_pawnStandHeight, physics::ControllerResize::MustFit))
+                {
+                    return false;
+                }
+
+                motion.stance = PawnStance::Stand;
+            }
+
+            if (isSliding(motion))
+            {
+                endSlide(motion, settings);
+            }
+
+            motion.verticalSpeed = std::sqrt(2.0f * settings.gravity * std::max(settings.jumpHeight, 0.0f));
+            motion.isGrounded = false;
+            motion.jumpBufferTicks = 0;
+            motion.coyoteTicks = 0;
+
+            return true;
+        }
+
         math::Vec3 rotateAboutUp(const math::Vec3& vector, float angle)
         {
             const float cosine = std::cos(angle);
@@ -195,51 +322,79 @@ namespace game
 
             return direction * speed;
         }
-    } //namespace
-
-    std::optional<math::Vec3> stepPawn(PawnMotion& motion, physics::ControllerId controller,
-        physics::PhysicsWorld& physics, const PlayerCommand& command, const PawnSettings& settings, float delta)
-    {
-        const std::optional<math::Vec3> start = physics.footPosition(controller);
-
-        if (!start)
+        void updateTimers(PawnMotion& motion, const PlayerCommand& command, const PawnSettings& settings, float delta)
         {
-            return std::nullopt;
+            updateSlideTimers(motion, command, settings, delta);
+            bufferJump(motion, command, settings, delta);
+
+            if (motion.landingTicks > 0)
+            {
+                --motion.landingTicks;
+            }
+
+            if (isRunningCommand(command, motion) && math::length(motion.planarVelocity) > settings.walkSpeed)
+            {
+                motion.sprintRecoverTicks = secondsToTicks(settings.sprintRecoverSeconds, delta);
+            }
+            else if (motion.sprintRecoverTicks > 0)
+            {
+                --motion.sprintRecoverTicks;
+            }
         }
 
-        updateSlideTimers(motion, command, settings, delta);
-        updateStance(motion, controller, physics, command, settings);
-
-        if (motion.stance != PawnStance::Slide && isSliding(motion))
+        std::optional<physics::ControllerMove> moveFreely(PawnMotion& motion, physics::ControllerId controller,
+            physics::PhysicsWorld& physics, const PlayerCommand& command, const PawnSettings& settings, float delta)
         {
-            endSlide(motion, settings);
+            const bool wasGrounded = motion.isGrounded;
+
+            if (!tryJump(motion, controller, physics, settings))
+            {
+                motion.verticalSpeed = motion.isGrounded ? -settings.groundStick
+                                                         : motion.verticalSpeed - settings.gravity * delta;
+            }
+
+            const math::Vec3 wanted = wantedVelocity(command, motion, settings, delta);
+
+            if (isSliding(motion))
+            {
+                motion.planarVelocity = slideVelocity(motion, command, settings, delta);
+            }
+            else if (motion.isGrounded)
+            {
+                motion.planarVelocity = easeGroundVelocity(motion.planarVelocity, wanted, settings, delta);
+            }
+            else
+            {
+                motion.planarVelocity = easeAirVelocity(motion.planarVelocity, wanted, settings, delta);
+            }
+
+            const math::Vec3 velocity = motion.planarVelocity + k_upAxis * motion.verticalSpeed;
+            const std::optional<physics::ControllerMove> moved = physics.move(controller, velocity * delta, delta);
+
+            if (!moved)
+            {
+                return std::nullopt;
+            }
+
+            motion.isGrounded = moved->grounded && motion.verticalSpeed <= 0.0f;
+
+            if (motion.isGrounded && !wasGrounded)
+            {
+                landHard(motion, settings, -motion.verticalSpeed, delta);
+            }
+
+            if (moved->hitCeiling && motion.verticalSpeed > 0.0f)
+            {
+                motion.verticalSpeed = 0.0f;
+            }
+
+            return moved;
         }
 
-        motion.verticalSpeed = motion.isGrounded ? -settings.groundStick : motion.verticalSpeed - settings.gravity * delta;
-        motion.planarVelocity = isSliding(motion)
-            ? slideVelocity(motion, command, settings, delta)
-            : easeVelocity(motion.planarVelocity, wantedVelocity(command, motion, settings), settings, delta);
-
-        const math::Vec3 velocity = motion.planarVelocity + k_upAxis * motion.verticalSpeed;
-        const std::optional<physics::ControllerMove> moved = physics.move(controller, velocity * delta, delta);
-
-        if (!moved)
+        void stopBlockedSlide(PawnMotion& motion, const math::Vec3& start, const math::Vec3& end,
+            const PawnSettings& settings, float delta)
         {
-            return std::nullopt;
-        }
-
-        motion.isGrounded = moved->grounded;
-
-        if (moved->hitCeiling && motion.verticalSpeed > 0.0f)
-        {
-            motion.verticalSpeed = 0.0f;
-        }
-
-        const std::optional<math::Vec3> end = physics.footPosition(controller);
-
-        if (end && isSliding(motion) && moved->hitSides)
-        {
-            math::Vec3 travelled = *end - *start;
+            math::Vec3 travelled = end - start;
             travelled.y = 0.0f;
             const float wanted = math::length(motion.planarVelocity) * delta;
 
@@ -248,6 +403,48 @@ namespace game
                 endSlide(motion, settings);
                 motion.planarVelocity = travelled * (1.0f / std::max(delta, k_minSpeed));
             }
+        }
+    } //namespace
+
+    std::optional<math::Vec3> stepPawn(PawnMotion& motion, physics::ControllerId controller,
+        physics::PhysicsWorld& physics, const PlayerCommand& command, const PawnSettings& settings, float delta,
+        std::span<const physics::BodyId> ignored)
+    {
+        const std::optional<math::Vec3> start = physics.footPosition(controller);
+
+        if (!start)
+        {
+            return std::nullopt;
+        }
+
+        updateTimers(motion, command, settings, delta);
+        updateStance(motion, controller, physics, command, settings);
+
+        if (motion.stance != PawnStance::Slide && isSliding(motion))
+        {
+            endSlide(motion, settings);
+        }
+
+        if (!isMantling(motion))
+        {
+            tryStartMantle(motion, controller, physics, command, settings, delta, ignored);
+        }
+
+        const std::optional<physics::ControllerMove> moved = isMantling(motion)
+            ? stepMantle(motion, controller, physics, settings, delta)
+            : moveFreely(motion, controller, physics, command, settings, delta);
+
+        if (!moved)
+        {
+            return std::nullopt;
+        }
+
+        updateLean(motion, controller, physics, command, settings, delta, ignored);
+        const std::optional<math::Vec3> end = physics.footPosition(controller);
+
+        if (end && isSliding(motion) && moved->hitSides)
+        {
+            stopBlockedSlide(motion, *start, *end, settings, delta);
         }
 
         return end;
@@ -278,6 +475,37 @@ namespace game
         {
             physics.setControllerHeight(controller, height, physics::ControllerResize::Force);
         }
+    }
+
+    bool isRunningCommand(const PlayerCommand& command, const PawnMotion& motion)
+    {
+        return command.sprint && !command.aim && motion.stance == PawnStance::Stand && !isSliding(motion)
+            && command.move.y > 0.0f;
+    }
+
+    bool isWeaponReady(const PawnMotion& motion)
+    {
+        return motion.sprintRecoverTicks == 0;
+    }
+
+    bool isAimingReady(const PlayerCommand& command, const PawnMotion& motion)
+    {
+        return command.aim && isWeaponReady(motion);
+    }
+
+    uint8_t secondsToTicks(float seconds, float delta)
+    {
+        if (delta <= 0.0f || seconds <= 0.0f)
+        {
+            return 0;
+        }
+
+        return static_cast<uint8_t>(std::min(std::lround(seconds / delta), 255l));
+    }
+
+    bool isMantling(const PawnMotion& motion)
+    {
+        return motion.mantleTicks > 0;
     }
 
     bool isSliding(const PawnMotion& motion)

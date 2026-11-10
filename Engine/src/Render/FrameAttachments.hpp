@@ -11,7 +11,7 @@ namespace lockstep::render
     // Names, formats and sizes of the render graph attachments the Renderer's frame passes share.
     // environment:   the sky as an octahedral atlas: prefiltered specular tiles and an irradiance
     //                tile (layout in shaders/octahedral.glsl), rebuilt every frame.
-    // shadowMap:     the 2x2 shadow atlas: sun cascades, the last tile possibly a spot light.
+    // shadowMap:     the shadow atlas: sun cascades and local light tiles (see k_shadowAtlasWidth).
     // color:         HDR direct light, emissive, sky and transparent surfaces (lit scene pass).
     // ambient:       HDR environment / ambient light of opaque surfaces, darkened later by SSAO.
     // depth:         the scene depth buffer.
@@ -26,7 +26,13 @@ namespace lockstep::render
     // occlusion:     raw SSAO, half resolution.
     // occlusionBlur: depth-aware blurred SSAO, half resolution; what composition reads.
     // bloomDown*/bloomUp*: the bloom mip chain; bloomUp1 is the result.
-    // ldr:           the tonemapped image, linear, before anti-aliasing.
+    //                bloomUp1's alpha is the exposure multiplier tonemapping applies (auto
+    //                exposure, or 1), written by its pass from the exposure attachment.
+    // luminance:     auto exposure: weighted log luminance of the scene on a small fixed grid.
+    // luminanceReduced: the same, averaged into a smaller grid.
+    // exposure:      1x1, kept across frames: the adapted exposure in stops (r) and this frame's
+    //                target (g); alpha 0 until the first frame wrote it.
+    // ldr:           the tonemapped and graded image, linear, before anti-aliasing.
     // taaHistory:    the TAA result, kept across frames (persistent, double-buffered by Vela):
     //                rgb the accumulated image, a this pixel's view depth (0 marks invalid).
     // display:       the anti-aliased, dithered image that is presented; Engine overlays draw on it.
@@ -47,6 +53,9 @@ namespace lockstep::render
     inline constexpr std::string_view k_sceneDepthMsaaAttachment{"depthMsaa"};
     inline constexpr std::string_view k_occlusionAttachment{"occlusion"};
     inline constexpr std::string_view k_occlusionBlurAttachment{"occlusionBlur"};
+    inline constexpr std::string_view k_luminanceAttachment{"luminance"};
+    inline constexpr std::string_view k_luminanceReducedAttachment{"luminanceReduced"};
+    inline constexpr std::string_view k_exposureAttachment{"exposure"};
     inline constexpr std::string_view k_ldrAttachment{"ldr"};
     inline constexpr std::string_view k_displayAttachment{"display"};
 
@@ -58,14 +67,21 @@ namespace lockstep::render
     inline constexpr std::string_view k_bloomUpAttachments[k_bloomLevels - 1]{"bloomUp1", "bloomUp2",
         "bloomUp3", "bloomUp4"};
 
+    // Side lengths of the auto exposure luminance grids; the first is a multiple of the second.
+    inline constexpr uint32_t k_luminanceGridSize{64};
+    inline constexpr uint32_t k_luminanceReducedSize{8};
+
     inline constexpr vela::graphics::TextureFormat k_sceneColorFormat{vela::graphics::TextureFormat::RGBA16Float};
     inline constexpr vela::graphics::TextureFormat k_depthFormat{vela::graphics::TextureFormat::Depth32Float};
     inline constexpr vela::graphics::TextureFormat k_occlusionFormat{vela::graphics::TextureFormat::R8Unorm};
     inline constexpr vela::graphics::TextureFormat k_displayFormat{vela::graphics::TextureFormat::RGBA16Float};
 
-    // Side length of one shadow atlas tile, in texels; the atlas is 2x2 tiles.
+    // Shadow atlas layout: the sun's 2x2 cascade tiles of k_shadowTileSize texels fill the left
+    // half, local light tiles of k_localShadowTileSize texels (a 4x4 grid) the right half.
     inline constexpr uint32_t k_shadowTileSize{1024};
-    inline constexpr uint32_t k_shadowAtlasSize{k_shadowTileSize * 2};
+    inline constexpr uint32_t k_localShadowTileSize{512};
+    inline constexpr uint32_t k_shadowAtlasWidth{k_shadowTileSize * 4};
+    inline constexpr uint32_t k_shadowAtlasHeight{k_shadowTileSize * 2};
 
     // Environment atlas layout. Must match shaders/octahedral.glsl.
     inline constexpr uint32_t k_environmentTileSize{64};

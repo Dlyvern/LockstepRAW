@@ -174,7 +174,7 @@ namespace game
     // Returns: its name, for logs.
     [[nodiscard]] const char* toString(RoomObject object);
 
-    // The short prompt shown while a player looks at something ("E: Silence the alarm"). Toys
+    // The short prompt shown while a player looks at something ("F: Silence the alarm"). Toys
     // have their own prompt (see toyPrompt()).
     // state:  the room state.
     // object: what the player looks at.

@@ -3,6 +3,7 @@
 #include "GameState.hpp"
 #include "Level/MorningRoutine.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Simulation/HospitalSimulation.hpp"
 #include "Simulation/StationSimulation.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
@@ -266,6 +267,12 @@ namespace game
             if (state.station)
             {
                 useStation(state, engine, pawnIndex);
+                continue;
+            }
+
+            if (state.hospital)
+            {
+                useHospital(state, engine, pawnIndex);
                 continue;
             }
 

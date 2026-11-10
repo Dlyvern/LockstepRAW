@@ -1,5 +1,6 @@
 #include "Player/Prediction.hpp"
 
+#include "Player/PawnLean.hpp"
 #include "Player/WireBytes.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
@@ -18,6 +19,7 @@ namespace game
         constexpr std::byte k_aliveBit{0x01};
         constexpr std::byte k_groundedBit{0x02};
         constexpr std::byte k_crouchHeldBit{0x04};
+        constexpr std::byte k_jumpHeldBit{0x08};
         constexpr std::size_t k_flagsOffset{0};
         constexpr std::size_t k_lifeOffset{1};
         constexpr std::size_t k_footOffset{2};
@@ -26,6 +28,15 @@ namespace game
         constexpr std::size_t k_stanceOffset{26};
         constexpr std::size_t k_slideSecondsOffset{27};
         constexpr std::size_t k_slideCooldownOffset{31};
+        constexpr std::size_t k_jumpBufferOffset{35};
+        constexpr std::size_t k_coyoteOffset{36};
+        constexpr std::size_t k_landingOffset{37};
+        constexpr std::size_t k_leanOffset{38};
+        constexpr std::size_t k_sprintRecoverOffset{42};
+        constexpr std::size_t k_mantleTicksOffset{43};
+        constexpr std::size_t k_mantleHeightOffset{44};
+        constexpr float k_mantleHeightTolerance{0.01f};
+        constexpr float k_leanTolerance{0.01f};
         constexpr uint8_t k_maxStance{static_cast<uint8_t>(PawnStance::Slide)};
         constexpr float k_slideTimeTolerance{0.02f};
         constexpr std::size_t k_floatBytes{4};
@@ -114,7 +125,8 @@ namespace game
                 return;
             }
 
-            placePawnEntity(*entity, foot, yawOf(prediction), stanceHeight(prediction.motion.stance, settings));
+            placePawnEntity(*entity, foot, yawOf(prediction), stanceHeight(prediction.motion.stance, settings),
+                leanOffset(prediction.motion, settings));
 
             if (isTeleport)
             {
@@ -137,6 +149,14 @@ namespace game
 
             const bool isStanceOff = acked->motion.stance != state.motion.stance
                 || acked->motion.isCrouchHeld != state.motion.isCrouchHeld
+                || acked->motion.isJumpHeld != state.motion.isJumpHeld
+                || acked->motion.jumpBufferTicks != state.motion.jumpBufferTicks
+                || acked->motion.coyoteTicks != state.motion.coyoteTicks
+                || acked->motion.landingTicks != state.motion.landingTicks
+                || std::abs(acked->motion.lean - state.motion.lean) > k_leanTolerance
+                || acked->motion.sprintRecoverTicks != state.motion.sprintRecoverTicks
+                || acked->motion.mantleTicks != state.motion.mantleTicks
+                || std::abs(acked->motion.mantleHeight - state.motion.mantleHeight) > k_mantleHeightTolerance
                 || std::abs(acked->motion.slideSeconds - state.motion.slideSeconds) > k_slideTimeTolerance
                 || std::abs(acked->motion.slideCooldown - state.motion.slideCooldown) > k_slideTimeTolerance;
 
@@ -167,7 +187,8 @@ namespace game
         std::array<std::byte, k_ownPawnStateBytes> bytes{};
         bytes[k_flagsOffset] = (state.isAlive ? k_aliveBit : std::byte{0})
             | (state.motion.isGrounded ? k_groundedBit : std::byte{0})
-            | (state.motion.isCrouchHeld ? k_crouchHeldBit : std::byte{0});
+            | (state.motion.isCrouchHeld ? k_crouchHeldBit : std::byte{0})
+            | (state.motion.isJumpHeld ? k_jumpHeldBit : std::byte{0});
         bytes[k_lifeOffset] = static_cast<std::byte>(state.life);
         writeFloat(bytes, k_footOffset, state.foot.x);
         writeFloat(bytes, k_footOffset + k_floatBytes, state.foot.y);
@@ -178,6 +199,13 @@ namespace game
         bytes[k_stanceOffset] = static_cast<std::byte>(state.motion.stance);
         writeFloat(bytes, k_slideSecondsOffset, state.motion.slideSeconds);
         writeFloat(bytes, k_slideCooldownOffset, state.motion.slideCooldown);
+        bytes[k_jumpBufferOffset] = static_cast<std::byte>(state.motion.jumpBufferTicks);
+        bytes[k_coyoteOffset] = static_cast<std::byte>(state.motion.coyoteTicks);
+        bytes[k_landingOffset] = static_cast<std::byte>(state.motion.landingTicks);
+        writeFloat(bytes, k_leanOffset, state.motion.lean);
+        bytes[k_sprintRecoverOffset] = static_cast<std::byte>(state.motion.sprintRecoverTicks);
+        bytes[k_mantleTicksOffset] = static_cast<std::byte>(state.motion.mantleTicks);
+        writeFloat(bytes, k_mantleHeightOffset, state.motion.mantleHeight);
 
         return bytes;
     }
@@ -201,12 +229,21 @@ namespace game
                 .stance = static_cast<PawnStance>(bytes[k_stanceOffset]),
                 .isCrouchHeld = (bytes[k_flagsOffset] & k_crouchHeldBit) != std::byte{0},
                 .slideSeconds = readFloat(bytes, k_slideSecondsOffset),
-                .slideCooldown = readFloat(bytes, k_slideCooldownOffset)}};
+                .slideCooldown = readFloat(bytes, k_slideCooldownOffset),
+                .isJumpHeld = (bytes[k_flagsOffset] & k_jumpHeldBit) != std::byte{0},
+                .jumpBufferTicks = static_cast<uint8_t>(bytes[k_jumpBufferOffset]),
+                .coyoteTicks = static_cast<uint8_t>(bytes[k_coyoteOffset]),
+                .landingTicks = static_cast<uint8_t>(bytes[k_landingOffset]),
+                .lean = math::clamp(readFloat(bytes, k_leanOffset), -1.0f, 1.0f),
+                .sprintRecoverTicks = static_cast<uint8_t>(bytes[k_sprintRecoverOffset]),
+                .mantleTicks = static_cast<uint8_t>(bytes[k_mantleTicksOffset]),
+                .mantleHeight = readFloat(bytes, k_mantleHeightOffset)}};
 
         const bool isFinite = std::isfinite(state.foot.x) && std::isfinite(state.foot.y) && std::isfinite(state.foot.z)
             && std::isfinite(state.motion.verticalSpeed) && std::isfinite(state.motion.planarVelocity.x)
             && std::isfinite(state.motion.planarVelocity.z) && std::isfinite(state.motion.slideSeconds)
-            && std::isfinite(state.motion.slideCooldown);
+            && std::isfinite(state.motion.slideCooldown) && std::isfinite(readFloat(bytes, k_leanOffset))
+            && std::isfinite(state.motion.mantleHeight);
 
         if (!isFinite)
         {

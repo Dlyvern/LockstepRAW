@@ -193,6 +193,10 @@ namespace game
         {
             pawn.isArmed = true;
         }
+        else if (used == StationObject::Ammo)
+        {
+            refillReserve(pawn.ammo, state.settings.ammo);
+        }
     }
 
     void shootStation(GameState& state, std::size_t pawnIndex, lockstep::physics::BodyId body)
@@ -275,6 +279,7 @@ namespace game
                         giveArmoryItem(mission, player, ArmoryItem::Weapon);
                         giveArmoryItem(mission, player, ArmoryItem::Ammo);
                         state.simulation.pawns[player].isArmed = true;
+                        refillReserve(state.simulation.pawns[player].ammo, state.settings.ammo);
                     }
                 }
 

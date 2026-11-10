@@ -3,6 +3,7 @@
 
 #include "Player/PawnMovement.hpp"
 #include "Player/PlayerCommand.hpp"
+#include "Weapons/Ammo.hpp"
 
 #include <Lockstep/Core/Math.hpp>
 #include <Lockstep/Core/Result.hpp>
@@ -13,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 namespace lockstep::net
 {
@@ -49,6 +51,15 @@ namespace game
     //                 by the host every tick).
     // shots, hits:    shots fired and shots that hit the enemy, for the dev panel.
     // deaths:         times it died, for the dev panel.
+    // isDowned:       health ran out: the player crawls, can't shoot and bleeds out unless the
+    //                 partner revives them (PawnHealth.hpp).
+    // bleedSeconds:   Player seconds left before a downed player bleeds out.
+    // reviveSeconds:  how long the partner has held F next to this downed player.
+    // damageCount:    hits taken, wrapping; each increase flashes the HUD.
+    // damageYaw:      world yaw towards the newest hit's source (quantizeYaw()).
+    // hitCount:       hits this player landed on hostile NPCs, wrapping (hit markers).
+    // killCount:      hostile NPCs this player killed, wrapping (kill markers).
+    // ammo:           magazine, reserve and reload.
     struct Pawn
     {
         lockstep::world::EntityId entity{};
@@ -67,6 +78,14 @@ namespace game
         uint32_t shots{0};
         uint32_t hits{0};
         uint32_t deaths{0};
+        bool isDowned{false};
+        float bleedSeconds{0.0f};
+        float reviveSeconds{0.0f};
+        uint8_t damageCount{0};
+        uint8_t damageYaw{0};
+        uint8_t hitCount{0};
+        uint8_t killCount{0};
+        Ammo ammo{};
     };
 
     // Settings of a pawn's capsule controller.
@@ -97,12 +116,16 @@ namespace game
     void despawnPawn(Pawn& pawn, lockstep::world::Entities& entities, lockstep::physics::PhysicsWorld& physics);
 
     // Places a pawn entity: centre above `footPosition`, turned to `yaw`, sized like its capsule
-    // (the entity scale's y is the capsule height, so the replicated transform carries crouching).
+    // (the entity scale's y is the capsule height, so the replicated transform carries crouching),
+    // and rolled about its feet so its eyes sit `leanOffset` to the side (the replicated rotation
+    // carries the lean; eyePosition() and the partner's drawn body follow it).
     // entity:       the entity.
     // footPosition: the controller's foot position.
     // yaw:          look angle around the up axis.
     // height:       the capsule height (stanceHeight()).
-    void placePawnEntity(lockstep::world::Entity& entity, const math::Vec3& footPosition, float yaw, float height);
+    // leanOffset:   sideways eye offset of the lean, metres (leanOffset() in PawnLean.hpp).
+    void placePawnEntity(lockstep::world::Entity& entity, const math::Vec3& footPosition, float yaw, float height,
+        float leanOffset);
 
     // Host: moves and turns a living pawn by its command for one tick with stepPawn(), then
     // copies the result into its entity.
@@ -111,8 +134,9 @@ namespace game
     // physics:  moves the controller.
     // settings: movement settings.
     // delta:    the Player domain's delta for this tick, in seconds.
+    // ignored:  bodies the pawn's rays pass through (the host's dynamic toys).
     void movePawn(Pawn& pawn, lockstep::world::Entity& entity, lockstep::physics::PhysicsWorld& physics,
-        const PawnSettings& settings, float delta);
+        const PawnSettings& settings, float delta, std::span<const lockstep::physics::BodyId> ignored = {});
 
     // transform: a pawn entity's transform.
     // Returns:   the foot position of its controller.
@@ -120,8 +144,12 @@ namespace game
 
     // transform: a pawn's transform.
     // Returns:   the world position of the pawn's eyes, k_pawnEyeBelowTop under the top of its
-    //            capsule (lower while crouched or sliding).
+    //            capsule (lower while crouched or sliding), moved sideways by its lean.
     [[nodiscard]] math::Vec3 eyePosition(const math::Transform& transform);
+
+    // transform: a pawn's transform.
+    // Returns:   its lean roll about the feet, radians (positive leans right).
+    [[nodiscard]] float pawnLeanRoll(const math::Transform& transform);
 
     // transform: a pawn entity's (interpolated) transform.
     // settings:  movement settings (stand and crouch heights).

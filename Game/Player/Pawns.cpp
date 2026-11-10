@@ -1,6 +1,7 @@
 #include "Player/Pawns.hpp"
 
 #include "Archetypes.hpp"
+#include "Player/PawnLean.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Physics/PhysicsWorld.hpp>
@@ -18,6 +19,8 @@ namespace game
 
         constexpr math::Vec3 k_upAxis{0.0f, 1.0f, 0.0f};
         constexpr float k_minCrouchRange{0.01f};
+        constexpr math::Vec3 k_backAxis{0.0f, 0.0f, 1.0f};
+        constexpr float k_maxLeanSine{0.9f};
 
         math::Quat yawRotation(float yaw)
         {
@@ -78,21 +81,24 @@ namespace game
         pawn.controller = {};
     }
 
-    void placePawnEntity(world::Entity& entity, const math::Vec3& footPosition, float yaw, float height)
+    void placePawnEntity(world::Entity& entity, const math::Vec3& footPosition, float yaw, float height,
+        float leanOffset)
     {
+        const float eyeHeight = std::max(height - k_pawnEyeBelowTop, k_minCrouchRange);
+        const float roll = std::asin(math::clamp(leanOffset / eyeHeight, -k_maxLeanSine, k_maxLeanSine));
         math::Transform& transform = entity.transform();
         transform.position = footPosition + k_upAxis * (0.5f * height);
-        transform.rotation = yawRotation(yaw);
+        transform.rotation = yawRotation(yaw) * math::angleAxis(-roll, k_backAxis);
         transform.scale = pawnScale(height);
     }
 
     void movePawn(Pawn& pawn, world::Entity& entity, physics::PhysicsWorld& physics, const PawnSettings& settings,
-        float delta)
+        float delta, std::span<const physics::BodyId> ignored)
     {
         const std::optional<math::Vec3> foot = stepPawn(pawn.motion, pawn.controller, physics, pawn.command, settings,
-            delta);
+            delta, ignored);
         placePawnEntity(entity, foot.value_or(pawnFootPosition(entity.transform())), pawn.command.yaw,
-            stanceHeight(pawn.motion.stance, settings));
+            stanceHeight(pawn.motion.stance, settings), leanOffset(pawn.motion, settings));
     }
 
     math::Vec3 pawnFootPosition(const math::Transform& transform)
@@ -108,7 +114,17 @@ namespace game
 
     math::Vec3 eyePosition(const math::Transform& transform)
     {
-        return pawnFootPosition(transform) + k_upAxis * (transform.scale.y - k_pawnEyeBelowTop);
+        return pawnFootPosition(transform) + (transform.rotation * k_upAxis) * (transform.scale.y - k_pawnEyeBelowTop);
+    }
+
+    float pawnLeanRoll(const math::Transform& transform)
+    {
+        const math::Vec3 up = transform.rotation * k_upAxis;
+        const math::Vec3 forward = transform.rotation * math::Vec3{0.0f, 0.0f, -1.0f};
+        const float horizontal = std::max(std::sqrt(forward.x * forward.x + forward.z * forward.z), k_minCrouchRange);
+        const math::Vec3 right{-forward.z / horizontal, 0.0f, forward.x / horizontal};
+
+        return std::atan2(math::dot(up, right), up.y);
     }
 
     float pawnCrouchAmount(const math::Transform& transform, const PawnSettings& settings)

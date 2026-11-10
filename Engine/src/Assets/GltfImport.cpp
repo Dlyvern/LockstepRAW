@@ -203,7 +203,8 @@ namespace lockstep::assets
                 }
 
                 context.scene.resources.meshes.push_back(mesh.value());
-                model.parts.push_back(anim::SkinnedModelPart{.mesh = mesh.value(), .material = material.value()});
+                model.parts.push_back(anim::SkinnedModelPart{.mesh = mesh.value(), .material = material.value(),
+                    .materialName = part.material != nullptr && part.material->name != nullptr ? part.material->name : ""});
                 context.scene.stats.triangleCount += part.geometry.indices.size() / 3;
             }
 

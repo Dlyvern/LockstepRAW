@@ -101,9 +101,10 @@ namespace game
     // direction: unit look direction.
     // zoom:      0 for the normal field of view, 1 for the aim-down-sights zoom (blends between).
     // up:        the camera's up vector (tilted for camera roll).
+    // fovOffset: radians added to the field of view before the zoom (running, bullet-time).
     // Returns:   the camera.
     [[nodiscard]] lockstep::render::Camera firstPersonCamera(const math::Vec3& eye, const math::Vec3& direction,
-        float zoom, const math::Vec3& up = math::Vec3{0.0f, 1.0f, 0.0f});
+        float zoom, const math::Vec3& up = math::Vec3{0.0f, 1.0f, 0.0f}, float fovOffset = 0.0f);
 } //namespace game
 
 #endif //LOCKSTEP_GAME_PRESENTATION_VISUALS_HPP

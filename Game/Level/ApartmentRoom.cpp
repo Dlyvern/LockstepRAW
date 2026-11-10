@@ -138,12 +138,12 @@ namespace game
 
             if (held < room.toys.size())
             {
-                return "LMB: Throw the " + room.toys[held].label + "    E: Drop it";
+                return "LMB: Throw the " + room.toys[held].label + "    F: Drop it";
             }
 
             if (room.lookToy)
             {
-                return "E: Pick up the " + room.toys[*room.lookToy].label;
+                return "F: Pick up the " + room.toys[*room.lookToy].label;
             }
 
             return {};

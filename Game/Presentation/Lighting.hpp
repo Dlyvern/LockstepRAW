@@ -25,8 +25,8 @@ namespace game
         bool showcaseFailed{false};
     };
 
-    // Sets the arena's look on the renderer once: a clear afternoon sun and sky lighting the
-    // arena, image-based lighting, no fog, filmic tonemapping. The dev tools can change it
+    // Sets the starting look on the renderer once: the Day preset (see LevelLook.hpp), no fog,
+    // filmic tonemapping. A loaded level then applies its own preset. The dev tools can change it
     // afterwards.
     // renderer: the renderer.
     void applyArenaLook(lockstep::render::Renderer& renderer);

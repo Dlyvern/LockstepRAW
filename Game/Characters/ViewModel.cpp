@@ -78,14 +78,52 @@ namespace game
             return clamped * clamped * (3.0f - 2.0f * clamped);
         }
 
+        math::Vec3 clampLength(const math::Vec3& vector, float maxLength)
+        {
+            const float length = math::length(vector);
+
+            return length > maxLength ? vector * (maxLength / length) : vector;
+        }
+
+        template<typename T>
+        void followSpring(T& value, T& rate, const T& target, float stiffness, float damping, float seconds)
+        {
+            T displacement = value - target;
+            stepSpring(displacement, rate, stiffness, damping, seconds);
+            value = target + displacement;
+        }
+
+        void updateMovementReaction(ViewModelState& state, const ViewModelInput& input, float seconds)
+        {
+            const ViewModelTuning& tuning = state.tuning;
+            const math::Vec2 change = input.velocity - state.lastVelocity;
+            state.lastVelocity = input.velocity;
+            state.moveRate = state.moveRate + math::Vec3{-change.x, -std::abs(change.y) * tuning.moveDip, change.y}
+                * tuning.moveKick;
+
+            const float strafe = math::clamp(input.velocity.x / std::max(input.strafeSpeed, 0.1f), -1.5f, 1.5f);
+            const math::Vec3 strafeTarget{-strafe * tuning.strafeShift, 0.0f, 0.0f};
+            followSpring(state.moveOffset, state.moveRate, strafeTarget, tuning.moveStiffness, tuning.moveDamping,
+                seconds);
+            state.moveOffset = clampLength(state.moveOffset, tuning.moveLimit);
+            followSpring(state.tilt, state.tiltRate, strafe * tuning.strafeTilt, tuning.moveStiffness,
+                tuning.moveDamping, seconds);
+        }
+
         void restart(ViewModelState& state, const FirstPersonModel& model, const ViewModelInput& input)
         {
             state.aimBlend = input.isAiming ? 1.0f : 0.0f;
             state.raiseBlend = input.isLowered ? 0.0f : 1.0f;
+            state.sprintBlend = input.isSprinting ? 1.0f : 0.0f;
             state.sway = math::Vec2{0.0f, 0.0f};
             state.swayRate = math::Vec2{0.0f, 0.0f};
             state.recoil = 0.0f;
             state.recoilRate = 0.0f;
+            state.tilt = 0.0f;
+            state.tiltRate = 0.0f;
+            state.moveOffset = math::Vec3{0.0f, 0.0f, 0.0f};
+            state.moveRate = math::Vec3{0.0f, 0.0f, 0.0f};
+            state.lastVelocity = input.velocity;
             state.shotCount = input.shotCount;
             state.lastYaw = input.yaw;
             state.lastPitch = input.pitch;
@@ -99,6 +137,9 @@ namespace game
             state.aimBlend = std::clamp(state.aimBlend + (input.isAiming ? aimStep : -aimStep), 0.0f, 1.0f);
             const float raiseStep = tuning.raiseSeconds > 0.0f ? seconds / tuning.raiseSeconds : 1.0f;
             state.raiseBlend = std::clamp(state.raiseBlend + (input.isLowered ? -raiseStep : raiseStep), 0.0f, 1.0f);
+            const float sprintStep = tuning.sprintSeconds > 0.0f ? seconds / tuning.sprintSeconds : 1.0f;
+            state.sprintBlend = std::clamp(state.sprintBlend + (input.isSprinting ? sprintStep : -sprintStep), 0.0f,
+                1.0f);
 
             const math::Vec2 look{wrapAngle(input.yaw - state.lastYaw), input.pitch - state.lastPitch};
             state.lastYaw = input.yaw;
@@ -120,6 +161,7 @@ namespace game
 
             stepSpring(state.recoil, state.recoilRate, tuning.recoilStiffness, tuning.recoilDamping, seconds);
             state.recoil = std::clamp(state.recoil, -k_maxRecoil, k_maxRecoil);
+            updateMovementReaction(state, input, seconds);
         }
 
         struct AnchoredPose
@@ -140,22 +182,26 @@ namespace game
                 .anchor = math::lerp(from.anchor, to.anchor, amount)};
         }
 
-        AnchoredPose loweredPose(const ViewModelTuning& tuning)
+        AnchoredPose turnedReadyPose(const ViewModelTuning& tuning, float pitch, float yaw, float roll,
+            const math::Vec3& offset)
         {
             const AnchoredPose ready = anchored(k_fpReadyPlacement);
-            const math::Quat tilt = math::angleAxis(tuning.loweredYaw, k_viewUp)
-                * math::angleAxis(-tuning.loweredPitch, k_viewRight)
-                * math::angleAxis(tuning.loweredRoll, k_viewBack);
+            const math::Quat tilt = math::angleAxis(yaw, k_viewUp) * math::angleAxis(-pitch, k_viewRight)
+                * math::angleAxis(roll, k_viewBack);
 
             return AnchoredPose{.rotation = tilt * ready.rotation,
-                .anchor = tuning.loweredPivot + tilt * (ready.anchor - tuning.loweredPivot) + tuning.loweredOffset};
+                .anchor = tuning.loweredPivot + tilt * (ready.anchor - tuning.loweredPivot) + offset};
         }
 
-        math::Vec3 clampLength(const math::Vec3& vector, float maxLength)
+        AnchoredPose loweredPose(const ViewModelTuning& tuning)
         {
-            const float length = math::length(vector);
+            return turnedReadyPose(tuning, tuning.loweredPitch, tuning.loweredYaw, tuning.loweredRoll,
+                tuning.loweredOffset);
+        }
 
-            return length > maxLength ? vector * (maxLength / length) : vector;
+        AnchoredPose sprintPose(const ViewModelTuning& tuning)
+        {
+            return turnedReadyPose(tuning, tuning.sprintPitch, tuning.sprintYaw, tuning.sprintRoll, tuning.sprintOffset);
         }
 
         math::Transform viewModelTransform(const ViewModelState& state, const ViewModelInput& input)
@@ -166,14 +212,18 @@ namespace game
 
             const float raised = smoothstep(state.raiseBlend);
             const AnchoredPose up = blendPoses(anchored(k_fpReadyPlacement), anchored(k_fpSightsPlacement), aimed);
-            const AnchoredPose pose = blendPoses(loweredPose(tuning), up, raised);
+            const float sprinting = smoothstep(state.sprintBlend);
+            const AnchoredPose pose = blendPoses(blendPoses(loweredPose(tuning), up, raised), sprintPose(tuning),
+                sprinting);
             const math::Vec3 anchor = pose.anchor;
             math::Quat rotation = pose.rotation;
             math::Vec3 origin = anchor - rotation * k_weaponAnchor;
 
             const float bob = tuning.bobAmount * input.bobStrength * motion;
-            const math::Quat kick = math::angleAxis(state.recoil * motion, k_viewRight)
-                * math::angleAxis(std::sin(input.bobPhase) * tuning.bobRoll * input.bobStrength * motion, k_viewBack);
+            const float roll = std::sin(input.bobPhase) * tuning.bobRoll * input.bobStrength - state.tilt;
+            const float swing = std::sin(input.bobPhase) * tuning.sprintSwing * sprinting;
+            const math::Quat kick = math::angleAxis(swing, k_viewUp) * math::angleAxis(state.recoil * motion, k_viewRight)
+                * math::angleAxis(roll * motion, k_viewBack);
             origin = anchor + kick * (origin - anchor);
             rotation = kick * rotation;
 
@@ -181,7 +231,9 @@ namespace game
             const math::Vec3 push{std::sin(input.bobPhase) * bob,
                 -(1.0f - std::cos(2.0f * input.bobPhase)) * 0.5f * bob * k_bobVertical - dip,
                 state.recoil * motion * tuning.recoilBack + dip * 0.5f};
-            origin = origin + math::lerp(tuning.readyOffset, tuning.aimOffset, aimed) + clampLength(push, k_maxPush);
+            origin = origin + math::lerp(tuning.readyOffset, tuning.aimOffset, aimed) + clampLength(push, k_maxPush)
+                + state.moveOffset * motion
+                + k_viewUp * (-(1.0f - std::cos(2.0f * input.bobPhase)) * 0.5f * tuning.sprintBounce * sprinting);
 
             const float breathe = tuning.breatheAmount * motion;
             const math::Vec2 breath{std::sin(state.breathePhase) * breathe * 0.6f,
@@ -253,8 +305,8 @@ namespace game
         }
 
         ViewModelTuning& tuning = state.tuning;
-        ImGui::Text("Aim %.2f  raise %.2f  sway %.3f %.3f  recoil %.3f", state.aimBlend, state.raiseBlend,
-            state.sway.x, state.sway.y, state.recoil);
+        ImGui::Text("Aim %.2f  raise %.2f  sprint %.2f  sway %.3f %.3f  recoil %.3f", state.aimBlend, state.raiseBlend,
+            state.sprintBlend, state.sway.x, state.sway.y, state.recoil);
         ImGui::SliderFloat("Aim time (s)", &tuning.aimSeconds, 0.0f, 0.6f);
         ImGui::SliderFloat("Raise time (s)", &tuning.raiseSeconds, 0.0f, 1.0f);
         ImGui::SliderFloat("Aim dip (m)", &tuning.aimDip, 0.0f, 0.05f);
@@ -271,6 +323,13 @@ namespace game
         ImGui::SliderFloat("Recoil stiffness", &tuning.recoilStiffness, 50.0f, 800.0f);
         ImGui::SliderFloat("Recoil damping", &tuning.recoilDamping, 1.0f, 60.0f);
         ImGui::SliderFloat("Recoil scale, crouched", &tuning.crouchRecoilScale, 0.0f, 1.0f);
+        ImGui::SliderFloat("Strafe tilt (rad)", &tuning.strafeTilt, 0.0f, 0.3f);
+        ImGui::SliderFloat("Strafe shift (m)", &tuning.strafeShift, 0.0f, 0.04f);
+        ImGui::SliderFloat("Move kick (m/s per m/s)", &tuning.moveKick, 0.0f, 0.1f);
+        ImGui::SliderFloat("Move dip", &tuning.moveDip, 0.0f, 2.0f);
+        ImGui::SliderFloat("Move stiffness", &tuning.moveStiffness, 10.0f, 400.0f);
+        ImGui::SliderFloat("Move damping", &tuning.moveDamping, 1.0f, 40.0f);
+        ImGui::SliderFloat("Move limit (m)", &tuning.moveLimit, 0.0f, 0.08f);
         ImGui::SliderFloat("Aim motion scale", &tuning.aimDamping, 0.0f, 1.0f);
         ImGui::DragFloat3("Ready offset (m)", &tuning.readyOffset.x, 0.002f, -0.1f, 0.1f);
         ImGui::DragFloat3("Aim offset (m)", &tuning.aimOffset.x, 0.002f, -0.05f, 0.05f);
@@ -279,6 +338,13 @@ namespace game
         ImGui::SliderFloat("Lowered roll (rad)", &tuning.loweredRoll, -0.8f, 0.8f);
         ImGui::DragFloat3("Lowered pivot (m)", &tuning.loweredPivot.x, 0.005f, -0.6f, 0.6f);
         ImGui::DragFloat3("Lowered offset (m)", &tuning.loweredOffset.x, 0.002f, -0.2f, 0.2f);
+        ImGui::SliderFloat("Sprint pose time (s)", &tuning.sprintSeconds, 0.0f, 0.6f);
+        ImGui::SliderFloat("Sprint pitch (rad)", &tuning.sprintPitch, 0.0f, 1.2f);
+        ImGui::SliderFloat("Sprint yaw (rad)", &tuning.sprintYaw, -1.2f, 1.2f);
+        ImGui::SliderFloat("Sprint roll (rad)", &tuning.sprintRoll, -1.2f, 1.2f);
+        ImGui::DragFloat3("Sprint offset (m)", &tuning.sprintOffset.x, 0.002f, -0.2f, 0.2f);
+        ImGui::SliderFloat("Sprint swing (rad)", &tuning.sprintSwing, 0.0f, 0.2f);
+        ImGui::SliderFloat("Sprint bounce (m)", &tuning.sprintBounce, 0.0f, 0.05f);
         ImGui::TreePop();
     }
 #endif

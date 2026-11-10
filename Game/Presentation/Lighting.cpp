@@ -1,5 +1,7 @@
 #include "Presentation/Lighting.hpp"
 
+#include "Presentation/LevelLook.hpp"
+
 #include <Lockstep/Core/Math.hpp>
 #include <Lockstep/Render/Lighting.hpp>
 #include <Lockstep/Render/RenderSettings.hpp>
@@ -24,9 +26,7 @@ namespace game
     {
         render::RenderSettings& settings = renderer.settings();
 
-        settings.sky.enabled = true;
-        settings.sky.sunAzimuth = math::radians(145.0f);
-        settings.sky.sunElevation = math::radians(38.0f);
+        applyLookPreset(settings, LookPreset::Day);
         settings.lighting.ambientIntensity = 0.0f;
         settings.fog.enabled = false;
         settings.tonemap = {.enabled = true, .tonemapper = render::Tonemapper::Aces, .exposure = 0.85f, .dither = true};

@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_CHARACTERS_NPC_PLACEHOLDERS_HPP
 #define LOCKSTEP_GAME_CHARACTERS_NPC_PLACEHOLDERS_HPP
 
+#include "Characters/GearLooks.hpp"
 #include "Characters/PawnCharacters.hpp"
 #include "Dialogue/Dialogue.hpp"
 
@@ -22,22 +23,44 @@ namespace lockstep::render
 
 namespace game
 {
+    // How a placeholder NPC stands, and so which looping clip it plays.
+    // Idle:   unarmed body, "Idle".
+    // Crouch: unarmed body, "CrouchIdle" (someone hiding).
+    // Armed:  armed body, "RifleIdle" (weapon lowered).
+    // Aim:    armed body, "AimIdle" (weapon up).
+    enum class NpcPose : uint8_t
+    {
+        Idle = 0,
+        Crouch,
+        Armed,
+        Aim
+    };
+
     // A person standing in a level, marked by an "Npc_*" node (position and facing; the node's
-    // -Z, Blender's +Y, is where they look). Drawn as the unarmed pawn character playing its idle;
-    // no physics. Client-only presentation: each machine draws and voices its own copies.
-    // name:       the node's name.
-    // barkPrefix: id prefix of the lines they say when the local player comes close, e.g.
-    //             "station.sergeant.idle."; empty for someone who never speaks.
-    // placement:  where the character stands and which way it faces.
-    // instance:   pose and animator.
-    // cooldown:   Player seconds until they may speak again.
-    // isNear:     the local player stood within reach on the last tick.
+    // -Z, Blender's +Y, is where they look). Drawn with the pawn character playing a looping clip
+    // picked by its pose; no physics. Client-only presentation: each machine draws and voices its
+    // own copies.
+    // name:        the node's name.
+    // barkPrefix:  id prefix of the lines they say when the local player comes close, e.g.
+    //              "station.sergeant.idle."; empty for someone who never speaks.
+    // placement:   where the character stands and which way it faces.
+    // pose:        how they stand (from the role, or a pose suffix of the node name).
+    // gearLook:    their head gear (from the role, or a look suffix of the node name).
+    // phase:       0 to 1: where in its clip the NPC starts, so neighbours don't move in step.
+    // instance:    pose and animator.
+    // isStarted:   the clip was started (at `phase`).
+    // cooldown:    Player seconds until they may speak again.
+    // isNear:      the local player stood within reach on the last tick.
     struct NpcPlaceholder
     {
         std::string name;
         std::string barkPrefix;
         math::Transform placement{};
+        NpcPose pose{NpcPose::Idle};
+        GearLook gearLook{GearLook::Full};
+        float phase{0.0f};
         lockstep::anim::SkinnedInstance instance{};
+        bool isStarted{false};
         float cooldown{0.0f};
         bool isNear{false};
     };
@@ -55,6 +78,12 @@ namespace game
     // ("sergeant"), Npc_Armorer ("armorer"), Npc_RangeOfficer ("range"), Npc_Guard ("guard"),
     // Npc_Officer_* ("npc"), Npc_Prisoner_* (lines "<level>.prisoner.*"); they say
     // "<level>.<role>.idle.*". Npc_Chief stays silent (he speaks through the briefing).
+    // Npc_Squad_<n> markers are skipped: they are the armed squad officers (Npcs/).
+    // Poses by role: Npc_Civilian_* and Npc_Survivor_* crouch (hiding); Npc_SquadOutside_*,
+    // Npc_CordonOfficer and Npc_Guard are armed; the rest idle. A
+    // name part "_Idle", "_Crouch", "_Armed" or "_Aim" (any case, e.g. Npc_Civilian_2_Idle)
+    // overrides the pose. Civilians, survivors and prisoners wear only the balaclava; everyone else
+    // gets squadGearLook() (both honour "_Full", "_NoNVG", "_Balaclava").
     // scene: the loaded level.
     // level: the level's short name ("station"), the first part of line ids.
     // Returns: the placeholders (none without markers).
@@ -70,10 +99,12 @@ namespace game
     void updateNpcBarks(NpcPlaceholders& placeholders, DialogueBook& dialogue, Subtitles& subtitles,
         const std::optional<math::Vec3>& localFoot, float playerDelta);
 
-    // Animates and queues every placeholder for drawing with the unarmed pawn character.
+    // Animates and queues every placeholder for drawing: the unarmed or the armed body, by pose,
+    // each looping its pose's clip from its own phase.
     // renderer:     the renderer.
     // placeholders: the level's placeholders.
-    // characters:   the pawn characters; nothing is drawn without them.
+    // characters:   the pawn characters; nothing is drawn without them. Armed poses use the
+    //               unarmed body when the armed one is missing.
     // frameSeconds: presentation time since the last frame.
     void drawNpcPlaceholders(lockstep::render::Renderer& renderer, NpcPlaceholders& placeholders,
         const PawnCharacters* characters, float frameSeconds);

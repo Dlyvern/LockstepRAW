@@ -4,6 +4,8 @@ namespace lockstep::assets
 {
     namespace
     {
+        constexpr float k_transmissionOpacity{0.9f};
+
         const cgltf_image* sourceImage(const cgltf_texture_view& view)
         {
             if (view.texture == nullptr)
@@ -129,6 +131,12 @@ namespace lockstep::assets
         description.alphaMode = toAlphaMode(material->alpha_mode);
         description.alphaCutoff = material->alpha_cutoff;
         description.doubleSided = material->double_sided != 0;
+
+        if (material->has_transmission && material->transmission.transmission_factor > 0.0f)
+        {
+            description.alphaMode = render::AlphaMode::Blend;
+            description.baseColorFactor.w *= 1.0f - material->transmission.transmission_factor * k_transmissionOpacity;
+        }
 
         return description;
     }

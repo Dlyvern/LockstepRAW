@@ -199,6 +199,17 @@ namespace lockstep::render
         //            ones are ignored, and assert in debug).
         void submit(MeshHandle mesh, MaterialHandle material, const math::Transform& transform, RenderLayers layers);
 
+        // Queues a decal draw on k_defaultRenderLayer for the next render(): a thin mesh (usually a
+        // quad) lying a few millimetres off a surface, drawn with an alpha-blended material over the
+        // opaque scene right after it (before the sky and other transparent draws), in submission
+        // order, so later decals cover earlier ones. Its ambient light goes through SSAO like the
+        // surface below, and it casts no shadow. With an opaque or masked material it is an
+        // ordinary draw. Otherwise like submit().
+        // mesh:      the decal mesh.
+        // material:  its material, usually AlphaMode::Blend.
+        // transform: world placement of the mesh.
+        void submitDecal(MeshHandle mesh, MaterialHandle material, const math::Transform& transform);
+
         // Queues skinning matrices for the next render(), for submitSkinned() draws to share.
         // joints:         per joint, model-space joint matrix times inverse bind matrix. At most
         //                 k_maxPaletteJoints.
@@ -244,6 +255,12 @@ namespace lockstep::render
         // lights are queued.
         // light: the light.
         void submitLight(const SpotLight& light);
+
+        // Replaces the interior ambient zones (see AmbientZone and InteriorAmbientSettings). They stay
+        // until replaced; pass an empty span when a level is unloaded. Any number may be set; each
+        // frame shades with the k_maxFrameAmbientZones nearest the camera.
+        // zones: the zones, copied.
+        void setAmbientZones(std::span<const AmbientZone> zones);
 
         // Queues screen text for the next render() only, like submit(). Text is drawn after
         // tonemapping and anti-aliasing, before the dev tools overlay, in submission order, all in

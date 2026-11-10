@@ -13,6 +13,8 @@ namespace lockstep::render
     // radianceScale: luminance to scene radiance (includes SkySettings::skyIntensity and the fade
     //               to night).
     // ground:       radiance of the ground below the horizon.
+    // glow:         radiance of the sunset glow at the horizon towards the sun (SkySettings glow
+    //               colour and intensity, scaled by skyIntensity and the fade to night).
     struct SkyCoefficients
     {
         math::Vec3 perezA{};
@@ -23,6 +25,7 @@ namespace lockstep::render
         math::Vec3 zenith{};
         float radianceScale{0.0f};
         math::Vec3 ground{};
+        math::Vec3 glow{};
     };
 
     // azimuth:   compass angle in radians, 0 towards -Z, pi/2 towards +X.

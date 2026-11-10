@@ -64,6 +64,8 @@ namespace lockstep::assets
     // material: the material, or nullptr for glTF's default material.
     // textures: the uploaded textures.
     // Returns:  the description; factors are copied as authored, emissive strength is folded in.
+    //           A KHR_materials_transmission material (Blender's Transmission) becomes alpha-blended
+    //           glass: its alpha is scaled by 1 - 0.9 * transmission.
     [[nodiscard]] render::PbrMaterialDescription toPbrDescription(const cgltf_material* material,
         const TextureTable& textures);
 

@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <span>
@@ -29,6 +30,7 @@ namespace lockstep::render
 {
     namespace
     {
+        constexpr float k_maxFrameSeconds{0.25f};
         constexpr std::string_view k_unlitVertexShader{"unlit.vert.spv"};
         constexpr std::string_view k_unlitFragmentShader{"unlit.frag.spv"};
         constexpr std::string_view k_pbrVertexShader{"pbr.vert.spv"};
@@ -85,6 +87,15 @@ namespace lockstep::render
             }
 
             return {};
+        }
+
+        void updateFrameSeconds(RendererState& state)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            const bool hasPrevious = state.lastRender != std::chrono::steady_clock::time_point{};
+            const float seconds = hasPrevious ? std::chrono::duration<float>(now - state.lastRender).count() : 0.0f;
+            state.frameSeconds = std::clamp(seconds, 0.0f, k_maxFrameSeconds);
+            state.lastRender = now;
         }
 
         void writeCameraMotion(RendererState& state)
@@ -268,6 +279,17 @@ namespace lockstep::render
             .isReflector = false});
     }
 
+    void Renderer::submitDecal(MeshHandle mesh, MaterialHandle material, const math::Transform& transform)
+    {
+        const std::size_t before = m_state->draws.size();
+        submit(mesh, material, transform, k_defaultRenderLayer);
+
+        if (m_state->draws.size() > before)
+        {
+            m_state->draws.back().isDecal = true;
+        }
+    }
+
     void Renderer::submitReflector(const PlanarReflector& reflector)
     {
         if (m_state->reflectors.size() < k_maxPlanarReflectors)
@@ -318,6 +340,11 @@ namespace lockstep::render
         return m_state->presentMode;
     }
 
+    void Renderer::setAmbientZones(std::span<const AmbientZone> zones)
+    {
+        m_state->ambientZones.assign(zones.begin(), zones.end());
+    }
+
     RenderSettings& Renderer::settings()
     {
         return m_state->settings;
@@ -331,6 +358,7 @@ namespace lockstep::render
     Status Renderer::render()
     {
         RendererState& state = *m_state;
+        updateFrameSeconds(state);
         const vela::graphics::Extent2D extent = updateAspectRatio(state);
 
         for (RegisteredPass& registered : state.passes)
@@ -342,7 +370,9 @@ namespace lockstep::render
         state.unjitteredProjection = toProjectionMatrix(state.camera, state.aspectRatio);
         state.projection = state.unjitteredProjection;
         state.projection = beginTemporalFrame(state, extent.width, extent.height);
-        state.prepared = prepareLighting(state.lights, state.settings, state.camera, state.aspectRatio);
+        state.prepared = prepareLighting(state.lights, state.settings,
+            LightingView{.camera = state.camera, .aspectRatio = state.aspectRatio,
+                .viewProjection = state.temporal.viewProjection, .zones = state.ambientZones});
         writeCameraMotion(state);
         prepareViewModel(state);
         assignPreviousModels(state);
@@ -386,7 +416,8 @@ namespace lockstep::render
             .local = static_cast<uint32_t>(state.lights.points.size() + state.lights.spots.size()),
             .dropped = state.lights.dropped,
             .hasDirectional = state.prepared.hasSun,
-            .spotShadow = state.prepared.spotTile.has_value(),
+            .shadowedLocalLights = state.prepared.shadowedLocalLights,
+            .localShadowTiles = state.prepared.localTileCount,
             .cascades = state.prepared.cascadeCount,
             .submitted = static_cast<uint32_t>(state.draws.size()),
             .visible = static_cast<uint32_t>(state.drawLists.opaque.size() + state.drawLists.blended.size()

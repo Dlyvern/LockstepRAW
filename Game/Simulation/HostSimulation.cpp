@@ -1,6 +1,9 @@
 #include "Simulation/HostSimulation.hpp"
 
 #include "GameState.hpp"
+#include "Simulation/HospitalSimulation.hpp"
+#include "Simulation/NpcSimulation.hpp"
+#include "Simulation/PlayerCombat.hpp"
 #include "Simulation/RoomSimulation.hpp"
 #include "Simulation/StationSimulation.hpp"
 
@@ -30,14 +33,27 @@ namespace game
             world::EntityOwner::Player2};
         constexpr double k_viewToShotTicks{0.5};
 
-        const char* playerName(std::size_t pawnIndex)
-        {
-            return pawnIndex == k_hostPawn ? "Player1" : "Player2";
-        }
-
         void logError(const char* what, const lockstep::Error& error)
         {
             std::clog << "Game: " << what << ": " << error.message << '\n';
+        }
+
+        std::vector<lockstep::physics::BodyId> dynamicBodies(const GameState& state)
+        {
+            std::vector<lockstep::physics::BodyId> bodies;
+
+            if (state.room)
+            {
+                for (const Toy& toy : state.room->toys)
+                {
+                    if (!toy.body.isNull())
+                    {
+                        bodies.push_back(toy.body);
+                    }
+                }
+            }
+
+            return bodies;
         }
 
         void applyWeaponStance(GameState& state, const EngineContext& engine, std::size_t pawnIndex)
@@ -48,6 +64,12 @@ namespace game
                                                        : WeaponZone::Open;
             const WeaponZone zone = effectiveWeaponZone(place, state.simulation.isCombatActive);
             const bool isHoldingToy = state.room && state.room->state.heldToy[pawnIndex] != k_nobody;
+
+            if (pawn.isDowned)
+            {
+                restrictDownedCommand(pawn.command, state.settings.downed.crawlScale);
+            }
+
             pawn.isLowered = pawn.isArmed && isWeaponLowered(pawn.command.lower, zone, isHoldingToy);
             pawn.command.aim = pawn.command.aim && pawn.isArmed && !pawn.isLowered;
             pawn.command.isWeaponUp = pawn.isArmed && !pawn.isLowered;
@@ -115,11 +137,22 @@ namespace game
             }
 
             const math::Vec3 direction = lookDirection(shooter.command.yaw, shooter.command.pitch);
-            simulation.lastShot = traceShot(engine.physics, eyePosition(shooterEntity->transform()), direction,
-                state.settings.hitscan.range, shooter.controller, simulation.enemy.controller);
+            const math::Vec3 origin = eyePosition(shooterEntity->transform());
+            simulation.lastShot = traceShot(engine.physics, origin, direction, state.settings.hitscan.range,
+                shooter.controller, simulation.enemy.controller);
+            const float reach = simulation.lastShot.outcome == ShotOutcome::Miss ? state.settings.hitscan.range
+                                                                                 : simulation.lastShot.distance;
+            const bool isNpcHit = shootNpcs(state, engine, shooterIndex, origin, origin + direction * reach,
+                simulation.lastShot.outcome == ShotOutcome::Player ? simulation.lastShot.controller
+                                                                   : lockstep::physics::ControllerId{});
             restoreRewind(engine.physics, rewind);
             simulation.lastRewindTicks = rewind.ticks;
             ++shooter.shots;
+
+            if (isNpcHit)
+            {
+                return;
+            }
 
             if (simulation.lastShot.outcome == ShotOutcome::Level)
             {
@@ -134,14 +167,17 @@ namespace game
             }
 
             ++shooter.hits;
+            ++shooter.hitCount;
             const bool killed = damageEnemy(simulation.enemy, engine.entities, engine.physics, state.settings.enemy,
                 direction, engine.timeDomains.delta(world::TimeDomain::World));
             std::clog << "Game: " << playerName(shooterIndex) << " hit the enemy (health "
                       << simulation.enemy.health << ", rewound " << rewind.ticks << " ticks)"
                       << (killed ? ", enemy died" : "") << '\n';
+            shooter.killCount = static_cast<uint8_t>(shooter.killCount + (killed ? 1 : 0));
         }
 
-        void fireShots(GameState& state, EngineContext& engine, std::size_t shooterIndex, std::optional<double> viewTick)
+        void fireShots(GameState& state, EngineContext& engine, std::size_t shooterIndex, std::optional<double> viewTick,
+            bool isReady)
         {
             Pawn& pawn = state.simulation.pawns[shooterIndex];
 
@@ -149,7 +185,8 @@ namespace game
             {
                 ++pawn.processedShots;
 
-                if (!throwHeldToy(state, engine, shooterIndex) && pawn.isArmed && !pawn.isLowered)
+                if (!throwHeldToy(state, engine, shooterIndex) && pawn.isArmed && !pawn.isLowered && isReady
+                    && !pawn.isDowned && !pawn.entity.isNull() && takePawnRound(state, shooterIndex))
                 {
                     fireShot(state, engine, shooterIndex, viewTick);
                 }
@@ -160,6 +197,7 @@ namespace game
         {
             Pawn& pawn = state.simulation.pawns[k_clientPawn];
             const float delta = engine.timeDomains.delta(world::TimeDomain::Player);
+            const std::vector<lockstep::physics::BodyId> ignored = dynamicBodies(state);
 
             for (const net::RemoteInput& input : engine.replication.remoteInputs())
             {
@@ -179,17 +217,20 @@ namespace game
                         pawn.hasCommand = true;
                         pawn.processedShots = command->shotCount;
                         pawn.processedInteracts = command->interactCount;
+                        pawn.ammo.processedReloads = command->reloadCount;
                     }
 
                     applyWeaponStance(state, engine, k_clientPawn);
                 }
 
+                const bool isReady = isWeaponReady(pawn.motion);
+
                 if (world::Entity* entity = engine.entities.find(pawn.entity); entity != nullptr && pawn.hasCommand)
                 {
-                    movePawn(pawn, *entity, engine.physics, state.settings.pawns, delta);
+                    movePawn(pawn, *entity, engine.physics, state.settings.pawns, delta, ignored);
                 }
 
-                fireShots(state, engine, k_clientPawn, input.viewTick);
+                fireShots(state, engine, k_clientPawn, input.viewTick, isReady);
                 interactWithRoom(state, engine, k_clientPawn);
             }
         }
@@ -197,14 +238,15 @@ namespace game
         void moveHostPawn(GameState& state, EngineContext& engine)
         {
             Pawn& pawn = state.simulation.pawns[k_hostPawn];
+            const bool isReady = isWeaponReady(pawn.motion);
 
             if (world::Entity* entity = engine.entities.find(pawn.entity))
             {
                 movePawn(pawn, *entity, engine.physics, state.settings.pawns,
-                    engine.timeDomains.delta(world::TimeDomain::Player));
+                    engine.timeDomains.delta(world::TimeDomain::Player), dynamicBodies(state));
             }
 
-            fireShots(state, engine, k_hostPawn, std::nullopt);
+            fireShots(state, engine, k_hostPawn, std::nullopt, isReady);
             interactWithRoom(state, engine, k_hostPawn);
         }
 
@@ -221,23 +263,6 @@ namespace game
             }
 
             return targets;
-        }
-
-        void damagePawn(GameState& state, EngineContext& engine, std::size_t pawnIndex, int32_t damage)
-        {
-            Pawn& pawn = state.simulation.pawns[pawnIndex];
-            pawn.health = std::max(pawn.health - damage, 0);
-            std::clog << "Game: enemy struck " << playerName(pawnIndex) << " (health " << pawn.health << ")\n";
-
-            if (pawn.health > 0)
-            {
-                return;
-            }
-
-            despawnPawn(pawn, engine.entities, engine.physics);
-            pawn.respawnTimer = state.settings.pawns.respawnDelay;
-            ++pawn.deaths;
-            std::clog << "Game: " << playerName(pawnIndex) << " died\n";
         }
 
         void updateEnemyOnHost(GameState& state, EngineContext& engine)
@@ -261,7 +286,10 @@ namespace game
             if (const std::optional<std::size_t> struck = enemyAttack(enemy, engine.entities, state.settings.enemy,
                     targets, delta))
             {
-                damagePawn(state, engine, *struck, state.settings.enemy.attackDamage);
+                if (const world::Entity* attacker = engine.entities.find(enemy.entity))
+                {
+                    hurtPawn(state, engine, *struck, state.settings.enemy.attackDamage, attacker->transform().position);
+                }
             }
         }
 
@@ -298,9 +326,10 @@ namespace game
         void recordHittables(GameState& state, const EngineContext& engine)
         {
             const GameState::Simulation& simulation = state.simulation;
-            const std::array<lockstep::physics::ControllerId, k_playerCount + 1> controllers{
-                simulation.pawns[k_hostPawn].controller, simulation.pawns[k_clientPawn].controller,
-                simulation.enemy.controller};
+            std::vector<lockstep::physics::ControllerId> controllers = npcControllers(state);
+            controllers.push_back(simulation.pawns[k_hostPawn].controller);
+            controllers.push_back(simulation.pawns[k_clientPawn].controller);
+            controllers.push_back(simulation.enemy.controller);
             recordLagFrame(state.simulation.lagHistory, engine.physics, state.lastTick, controllers);
         }
 
@@ -330,10 +359,11 @@ namespace game
 
             for (std::size_t index = 0; index < simulation.pawns.size(); ++index)
             {
-                state.local.statuses[index] = playerStatus(simulation.pawns[index]);
+                state.local.statuses[index] = playerStatus(simulation.pawns[index], state.settings.downed);
             }
 
             state.local.isCombatActive = simulation.isCombatActive;
+            state.local.isRestarting = simulation.isRestarting;
 
             if (engine.session.state() != net::ConnectionState::Connected)
             {
@@ -341,7 +371,9 @@ namespace game
                 return;
             }
 
-            const StatusMessage status{.players = state.local.statuses, .isCombatActive = simulation.isCombatActive};
+            const StatusMessage status{.players = state.local.statuses,
+                .isCombatActive = simulation.isCombatActive,
+                .isRestarting = simulation.isRestarting};
 
             if (simulation.sentStatuses == status)
             {
@@ -389,22 +421,31 @@ namespace game
         hostPawn.command = state.local.command;
         hostPawn.hasCommand = true;
         applyWeaponStance(state, engine, k_hostPawn);
+        beginNpcTick(state);
 
         syncClientPawn(state, engine);
         applyClientInputs(state, engine);
         updateBulletTime(state, engine);
         moveHostPawn(state, engine);
 
+        for (std::size_t index = 0; index < state.simulation.pawns.size(); ++index)
+        {
+            updatePawnAmmo(state, engine, index);
+        }
+
         if (state.settings.hasEnemy)
         {
             updateEnemyOnHost(state, engine);
         }
 
+        runNpcHostTick(state, engine);
+        updateDownedPawns(state, engine);
         respawnPawns(state, engine);
         recordHittables(state, engine);
         publishStatuses(state, engine);
         publishClientState(state, engine);
         runRoomHostTick(state, engine);
         runStationHostTick(state, engine);
+        runHospitalHostTick(state, engine);
     }
 } //namespace game

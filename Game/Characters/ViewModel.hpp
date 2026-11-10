@@ -61,6 +61,13 @@ namespace game
     // recoilBack:     metres the weapon moves back per radian of climb.
     // recoilStiffness, recoilDamping: the recoil spring.
     // crouchRecoilScale: recoil multiplier while crouched or sliding.
+    // strafeTilt:     roll into a strafe at strafe speed, radians.
+    // strafeShift:    sideways lag at strafe speed, metres (the weapon trails the move).
+    // moveKick:       metres/s of weapon lag per m/s of velocity change (back and down when
+    //                 speeding up, forward when stopping).
+    // moveDip:        vertical part of that lag, relative to its forward part.
+    // moveStiffness, moveDamping: the spring of the movement reaction.
+    // moveLimit:      largest movement offset, metres.
     // aimDamping:     multiplier of sway, bob and recoil while aiming.
     // readyOffset:    extra view-space offset with the weapon up (ready or lowered).
     // aimOffset:      extra view-space offset while aiming down sights.
@@ -68,6 +75,12 @@ namespace game
     //                 (muzzle down, muzzle toward the left, cant).
     // loweredPivot:   view-space point (near the stock) the ready pose turns about when lowered.
     // loweredOffset:  extra view-space offset of the lowered pose.
+    // sprintSeconds:  time to swing into or out of the running pose.
+    // sprintPitch, sprintYaw, sprintRoll: how the running pose turns the ready pose about the
+    //                 lowered pivot, radians (muzzle down, across the body, canted).
+    // sprintOffset:   extra view-space offset of the running pose.
+    // sprintSwing:    sideways swing per step while running, radians.
+    // sprintBounce:   vertical bounce per step while running, metres.
     struct ViewModelTuning
     {
         float aimSeconds{0.15f};
@@ -86,6 +99,13 @@ namespace game
         float recoilStiffness{320.0f};
         float recoilDamping{26.0f};
         float crouchRecoilScale{0.7f};
+        float strafeTilt{0.07f};
+        float strafeShift{0.008f};
+        float moveKick{0.03f};
+        float moveDip{0.6f};
+        float moveStiffness{90.0f};
+        float moveDamping{11.0f};
+        float moveLimit{0.03f};
         float aimDamping{0.35f};
         math::Vec3 readyOffset{0.0f, 0.0f, 0.0f};
         math::Vec3 aimOffset{0.0f, 0.0f, 0.0f};
@@ -94,6 +114,13 @@ namespace game
         float loweredRoll{0.1f};
         math::Vec3 loweredPivot{0.17f, -0.07f, -0.23f};
         math::Vec3 loweredOffset{-0.02f, 0.0f, 0.0f};
+        float sprintSeconds{0.2f};
+        float sprintPitch{0.35f};
+        float sprintYaw{0.6f};
+        float sprintRoll{0.5f};
+        math::Vec3 sprintOffset{0.0f, -0.02f, 0.03f};
+        float sprintSwing{0.05f};
+        float sprintBounce{0.012f};
     };
 
     // The local player's viewmodel: its animated instance and the state of its procedural motion.
@@ -101,10 +128,14 @@ namespace game
     // instance:   the arms' pose and animator.
     // aimBlend:   0 not aiming, 1 aiming down sights, moved linearly by aimSeconds.
     // raiseBlend: 0 lowered, 1 up, moved linearly by raiseSeconds.
+    // sprintBlend: 0 not running, 1 in the running pose, moved linearly by sprintSeconds.
     // sway:       look lag as (yaw, pitch) radians, and its rate.
     // breathePhase: idle breathing cycle, radians.
     // recoil:     muzzle climb in radians, and its rate.
     // shotCount:  the local shot counter last seen, so each new shot kicks once.
+    // tilt, tiltRate: strafe roll in radians, and its rate.
+    // moveOffset, moveRate: view-space lag from velocity changes and strafing, and its rate.
+    // lastVelocity: view-relative planar velocity of the previous frame (x right, y forward).
     // lastYaw, lastPitch: the look of the previous frame.
     // isDrawn:    drawn last frame; false restarts the motion state.
     // tuning:     feel settings.
@@ -113,12 +144,18 @@ namespace game
         lockstep::anim::SkinnedInstance instance{};
         float aimBlend{0.0f};
         float raiseBlend{1.0f};
+        float sprintBlend{0.0f};
         math::Vec2 sway{0.0f, 0.0f};
         math::Vec2 swayRate{0.0f, 0.0f};
         float breathePhase{0.0f};
         float recoil{0.0f};
         float recoilRate{0.0f};
         uint8_t shotCount{0};
+        float tilt{0.0f};
+        float tiltRate{0.0f};
+        math::Vec3 moveOffset{0.0f, 0.0f, 0.0f};
+        math::Vec3 moveRate{0.0f, 0.0f, 0.0f};
+        math::Vec2 lastVelocity{0.0f, 0.0f};
         float lastYaw{0.0f};
         float lastPitch{0.0f};
         bool isDrawn{false};
@@ -132,9 +169,12 @@ namespace game
     //               the weapon stays fixed on screen.
     // bobPhase:     the head's step cycle (HeadPose::bobPhase), so weapon and camera bob together.
     // bobStrength:  bob size relative to walking (HeadPose::bobStrength).
+    // velocity:     the pawn's planar velocity relative to the look yaw, m/s (x right, y forward).
+    // strafeSpeed:  the strafe speed the tilt is scaled by.
     // isCrouched:   crouched or sliding (less recoil).
     // isAiming:     the player aims down sights.
     // isLowered:    the weapon is lowered.
+    // isSprinting:  the player runs (the weapon swings into the running pose).
     // canFire:      a click fires the weapon (false while it throws a held toy); with the weapon
     //               lowered no shot kicks either.
     // shotCount:    the local shot counter; each increase kicks when the weapon fires.
@@ -148,9 +188,12 @@ namespace game
         float cameraRoll{0.0f};
         float bobPhase{0.0f};
         float bobStrength{0.0f};
+        math::Vec2 velocity{0.0f, 0.0f};
+        float strafeSpeed{1.6f};
         bool isCrouched{false};
         bool isAiming{false};
         bool isLowered{false};
+        bool isSprinting{false};
         bool canFire{true};
         uint8_t shotCount{0};
         float deltaSeconds{0.0f};
@@ -164,8 +207,8 @@ namespace game
     [[nodiscard]] lockstep::Result<FirstPersonModel> createFirstPersonModel(CharacterModel&& character,
         std::string_view aimClip);
 
-    // Animates the viewmodel (raise/lower crossfade, look sway, idle breathing, walk bob, aim-in,
-    // recoil) and
+    // Animates the viewmodel (raise/lower crossfade, look sway, idle breathing, walk bob, strafe
+    // tilt, lag when starting and stopping, running pose, aim-in, recoil) and
     // queues it on render::k_viewModelLayer, placed relative to the camera. Sway turns it about the
     // eye; bob, dip and recoil together move it at most a few centimetres, so it never comes near
     // the eye.

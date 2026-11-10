@@ -1,18 +1,26 @@
 #ifndef LOCKSTEP_GAME_GAME_STATE_HPP
 #define LOCKSTEP_GAME_GAME_STATE_HPP
 
+#include "Audio/Footsteps.hpp"
 #include "Characters/NpcPlaceholders.hpp"
 #include "Characters/PawnCharacters.hpp"
 #include "Dialogue/Dialogue.hpp"
 #include "Echo/EchoRecording.hpp"
 #include "Enemies/Enemy.hpp"
+#include "Hospital/HospitalMission.hpp"
 #include "Level/ApartmentRoom.hpp"
 #include "Level/Arena.hpp"
 #include "Level/SceneLevel.hpp"
+#include "Npcs/NavGrid.hpp"
+#include "Npcs/Npc.hpp"
+#include "Npcs/NpcMessages.hpp"
+#include "Npcs/NpcPresentation.hpp"
+#include "Player/PawnHealth.hpp"
 #include "Player/Pawns.hpp"
 #include "Player/PlayerCommand.hpp"
 #include "Player/PlayerStatus.hpp"
 #include "Player/Prediction.hpp"
+#include "Presentation/CombatHud.hpp"
 #include "Presentation/FlyCamera.hpp"
 #include "Presentation/HeadMotion.hpp"
 #include "Presentation/Hud.hpp"
@@ -21,6 +29,7 @@
 #include "Presentation/Visuals.hpp"
 #include "Simulation/LevelFlow.hpp"
 #include "Station/StationMission.hpp"
+#include "Weapons/Ammo.hpp"
 #include "Weapons/Hitscan.hpp"
 #include "Weapons/LagCompensation.hpp"
 #include "Weapons/WeaponStance.hpp"
@@ -53,6 +62,9 @@ namespace lockstep::app
             game::PawnSettings pawns{};
             game::EnemySettings enemy{};
             game::HitscanSettings hitscan{};
+            game::DownedSettings downed{};
+            game::AmmoSettings ammo{};
+            game::NpcSettings npcs{};
         };
 
         // This machine's player.
@@ -65,6 +77,12 @@ namespace lockstep::app
         //             (a safe zone counts as open during combat).
         // isCombatActive: a combat situation runs, as this machine knows it (the client's comes
         //             from the host's status messages).
+        // pendingLook: mouse movement (pixels) of frames since the newest tick, not yet in a
+        //             command; the camera adds it so the view turns every frame (presentation only).
+        // lookTicks:  FrameInfo::ticksCompleted when pendingLook was last reset.
+        // isRestarting: the squad failed and the checkpoint restart is coming (fade out).
+        // npcViews:   the client's newest NPC state message (the host reads its roster instead).
+        // combatHud:  hit feedback, damage indicators and the restart fade.
         struct Local
         {
             game::LocalControls controls{};
@@ -73,6 +91,11 @@ namespace lockstep::app
             game::PlayerStatuses statuses{};
             game::Prediction prediction{};
             bool isCombatActive{false};
+            math::Vec2 pendingLook{0.0f, 0.0f};
+            uint64_t lookTicks{0};
+            bool isRestarting{false};
+            game::NpcStateMessage npcViews{};
+            game::CombatHud combatHud{};
         };
 
         // The host's simulation. Unused on a client.
@@ -84,7 +107,14 @@ namespace lockstep::app
         // lagHistory:         where pawns and the enemy stood on recent ticks, for client shots.
         // lastRewindTicks:    how far back the most recent shot was checked.
         // isCombatActive:     a combat situation runs: safe zones stop lowering weapons. The
-        //                     authority; missions will set it (for now only the dev panel does).
+        //                     authority; missions set it (the hospital does) and the dev panel.
+        // npcs:               the armed NPCs (mercs and squad).
+        // nav:                the level's navigation grid, built when a level has NPC markers.
+        // sentNpcs:           the NPC state message last sent to the client.
+        // checkpoint:         where both players restart after the squad fails, if a mission set
+        //                     it (else the level's spawn points).
+        // restartSeconds:     Player seconds until the checkpoint restart, while isRestarting.
+        // isRestarting:       the squad failed (both down, or one bled out).
         struct Simulation
         {
             std::array<game::Pawn, game::k_playerCount> pawns{};
@@ -95,6 +125,12 @@ namespace lockstep::app
             game::LagHistory lagHistory{};
             double lastRewindTicks{0.0};
             bool isCombatActive{false};
+            game::NpcRoster npcs{};
+            std::optional<game::NavGrid> nav{};
+            std::optional<game::NpcStateMessage> sentNpcs{};
+            std::optional<std::array<math::Vec3, game::k_playerCount>> checkpoint{};
+            float restartSeconds{0.0f};
+            bool isRestarting{false};
         };
 
         game::Visuals visuals{};
@@ -107,13 +143,16 @@ namespace lockstep::app
         std::optional<game::PawnCharacters> pawnCharacters{};
         std::optional<game::ApartmentRoom> room{};
         std::optional<game::StationMission> station{};
+        std::optional<game::HospitalMission> hospital{};
         game::DialogueBook dialogue{};
         game::Subtitles subtitles{};
         game::NpcPlaceholders npcs{};
+        game::NpcLooks npcLooks{};
         game::LevelFlow levelFlow{};
         std::optional<game::EchoPlayback> echo{};
         game::FlyCamera flyCamera{};
         game::HeadMotionState headMotion{};
+        game::Footsteps footsteps{};
         Settings settings{};
         Local local{};
         Simulation simulation{};

@@ -158,6 +158,7 @@ namespace lockstep::render
 
         const float night = std::max(smoothstep(-0.2f, 0.05f, sunHeight), k_nightFloor);
         result.radianceScale = k_luminanceToRadiance * sky.skyIntensity * night;
+        result.glow = sky.glowColor * (std::max(sky.glowIntensity, 0.0f) * sky.skyIntensity * night);
 
         const math::Vec3 zenithRadiance = math::max(xyYToLinearRgb(zenith), math::Vec3{0.0f, 0.0f, 0.0f})
             * result.radianceScale;

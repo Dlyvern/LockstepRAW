@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace game
@@ -18,6 +20,7 @@ namespace game
 
         constexpr float k_reach{12.0f};
         constexpr float k_fadeBand{3.0f};
+        constexpr std::string_view k_shadowNameTag{"_Shadow"};
 
         struct RankedLight
         {
@@ -77,16 +80,20 @@ namespace game
                 continue;
             }
 
+            const bool castsShadows = entry.light->name.find(k_shadowNameTag) != std::string::npos;
+
             if (entry.light->type == assets::SceneLightType::Spot)
             {
                 render::SpotLight spot = assets::toSpotLight(*entry.light);
                 spot.intensity *= fade;
+                spot.castsShadows = castsShadows;
                 renderer.submitLight(spot);
             }
             else
             {
                 render::PointLight point = assets::toPointLight(*entry.light);
                 point.intensity *= fade;
+                point.castsShadows = castsShadows;
                 renderer.submitLight(point);
             }
         }

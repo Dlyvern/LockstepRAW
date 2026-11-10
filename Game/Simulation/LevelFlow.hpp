@@ -30,6 +30,7 @@ namespace game
     // isAutoplay:      dev (`--dev-autoplay`): the host finishes the morning and advances the
     //                  station by itself, for tests without a keyboard.
     // autoplaySeconds: Player seconds since the last autoplay step.
+    // isSwitchRequested: host: a mission asked to go to `next` now (requestLevelSwitch()).
     struct LevelFlow
     {
         std::string launched;
@@ -40,7 +41,14 @@ namespace game
         bool isEntering{false};
         bool isAutoplay{false};
         float autoplaySeconds{0.0f};
+        bool isSwitchRequested{false};
     };
+
+    // Host: asks for a switch to another level at the end of this tick (e.g. the hospital's
+    // service lift), like the end of the morning's drive.
+    // flow:  the level flow.
+    // level: the level's virtual path; it must be mounted.
+    void requestLevelSwitch(LevelFlow& flow, std::string_view level);
 
     // Loads the start level (or builds the arena without one) and sets it up: weapon zones, level
     // characters, spawns, dialogue, NPC placeholders and the station mission or the apartment

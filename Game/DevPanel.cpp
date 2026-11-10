@@ -3,18 +3,22 @@
 #if LOCKSTEP_DEV_TOOLS
 
 #include "GameState.hpp"
+#include "Hospital/HospitalDevPanel.hpp"
 #include "Level/RoomDevPanel.hpp"
+#include "Presentation/LevelLook.hpp"
 #include "Simulation/HostSimulation.hpp"
 #include "Station/StationDevPanel.hpp"
 
 #include <Lockstep/Net/Replication.hpp>
 #include <Lockstep/Net/Session.hpp>
+#include <Lockstep/Render/Renderer.hpp>
 #include <Lockstep/World/Entities.hpp>
 #include <Lockstep/World/TimeDomains.hpp>
 
 #include <imgui.h>
 
 #include <cstddef>
+#include <string>
 
 namespace game
 {
@@ -38,9 +42,16 @@ namespace game
         constexpr float k_minCapsuleHeight{2.0f * k_pawnRadius + 0.05f};
         constexpr float k_maxSlideSeconds{3.0f};
         constexpr float k_maxSlideSteer{6.0f};
+        constexpr float k_minSensitivity{0.0002f};
+        constexpr float k_maxSensitivity{0.01f};
 
         const char* stanceName(const PawnMotion& motion)
         {
+            if (isMantling(motion))
+            {
+                return "mantling";
+            }
+
             if (isSliding(motion))
             {
                 return "sliding";
@@ -88,6 +99,34 @@ namespace game
                 state.local.command.pitch, static_cast<unsigned>(state.local.command.shotCount));
         }
 
+        void controlsSection(GameState& state)
+        {
+            ControlSettings& controls = state.settings.controls;
+            ImGui::SliderFloat("Mouse sensitivity (rad/px)", &controls.mouseSensitivity, k_minSensitivity,
+                k_maxSensitivity, "%.4f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("ADS sensitivity x", &controls.aimSensitivityScale, 0.1f, 1.5f);
+            ImGui::TextDisabled("Raw mouse motion, applied linearly (no smoothing or acceleration)");
+        }
+
+        void lookSection(const EngineContext& engine)
+        {
+            constexpr LookPreset k_presets[] = {LookPreset::Day, LookPreset::Evening, LookPreset::Sunset,
+                LookPreset::Night};
+
+            ImGui::TextUnformatted("Look preset");
+
+            for (const LookPreset preset : k_presets)
+            {
+                const std::string label(lookPresetName(preset));
+                ImGui::SameLine();
+
+                if (ImGui::SmallButton(label.c_str()))
+                {
+                    applyLookPreset(engine.renderer.settings(), preset);
+                }
+            }
+        }
+
         void armedSection(GameState& state)
         {
             const char* labels[] = {"Player1 armed", "Player2 armed"};
@@ -129,8 +168,30 @@ namespace game
             ImGui::SliderFloat("Slide cooldown (s)", &settings.pawns.slideCooldown, 0.0f, k_maxSlideSeconds);
             ImGui::SliderFloat("Slide min speed", &settings.pawns.slideMinSpeed, 0.0f, k_maxMoveSpeed);
             ImGui::SliderFloat("Slide steer (rad/s)", &settings.pawns.slideSteerRate, 0.0f, k_maxSlideSteer);
-            ImGui::SliderFloat("Acceleration", &settings.pawns.acceleration, 0.1f, k_maxAcceleration);
+            ImGui::SliderFloat("Acceleration (to walk)", &settings.pawns.acceleration, 0.1f, k_maxAcceleration);
+            ImGui::SliderFloat("Acceleration (to run)", &settings.pawns.runAcceleration, 0.1f, k_maxAcceleration);
             ImGui::SliderFloat("Deceleration", &settings.pawns.deceleration, 0.1f, k_maxAcceleration);
+            ImGui::SliderFloat("Turn accel. at run", &settings.pawns.runTurnAcceleration, 0.1f, k_maxAcceleration);
+            ImGui::SliderFloat("Jump height (m)", &settings.pawns.jumpHeight, 0.0f, 2.0f);
+            ImGui::SliderFloat("Coyote time (s)", &settings.pawns.coyoteSeconds, 0.0f, 0.5f);
+            ImGui::SliderFloat("Jump buffer (s)", &settings.pawns.jumpBufferSeconds, 0.0f, 0.5f);
+            ImGui::SliderFloat("Hard landing from (m/s)", &settings.pawns.hardLandingSpeed, 0.0f, 20.0f);
+            ImGui::SliderFloat("Hard landing full (m/s)", &settings.pawns.hardLandingFullSpeed, 0.0f, 25.0f);
+            ImGui::SliderFloat("Hard landing min (s)", &settings.pawns.hardLandingMinSeconds, 0.0f, 1.0f);
+            ImGui::SliderFloat("Hard landing max (s)", &settings.pawns.hardLandingMaxSeconds, 0.0f, 2.0f);
+            ImGui::SliderFloat("Hard landing speed x", &settings.pawns.hardLandingScale, 0.0f, 1.0f);
+            ImGui::SliderFloat("Mantle min height (m)", &settings.pawns.mantleMinHeight, 0.0f, 1.0f);
+            ImGui::SliderFloat("Mantle max height (m)", &settings.pawns.mantleMaxHeight, 0.0f, 2.0f);
+            ImGui::SliderFloat("Mantle reach (m)", &settings.pawns.mantleReach, 0.0f, 1.5f);
+            ImGui::SliderFloat("Mantle rise speed", &settings.pawns.mantleRiseSpeed, 0.5f, 10.0f);
+            ImGui::SliderFloat("Mantle forward (m)", &settings.pawns.mantleForwardDistance, 0.0f, 1.5f);
+            ImGui::SliderFloat("Mantle forward time (s)", &settings.pawns.mantleForwardSeconds, 0.02f, 1.0f);
+            ImGui::SliderFloat("Lean distance (m)", &settings.pawns.leanDistance, 0.0f, 0.8f);
+            ImGui::SliderFloat("Lean time (s)", &settings.pawns.leanSeconds, 0.0f, 1.0f);
+            ImGui::SliderFloat("Lean wall clearance (m)", &settings.pawns.leanClearance, 0.0f, 0.5f);
+            ImGui::SliderFloat("Sprint recovery (s)", &settings.pawns.sprintRecoverSeconds, 0.0f, 1.0f);
+            ImGui::SliderFloat("Air control", &settings.pawns.airAcceleration, 0.0f, k_maxAcceleration);
+            ImGui::SliderFloat("Air drag (1/s)", &settings.pawns.airDrag, 0.0f, 2.0f);
             ImGui::SliderInt("Player health", &settings.pawns.maxHealth, 1, k_maxPlayerHealth);
             ImGui::EndDisabled();
 
@@ -223,6 +284,8 @@ namespace game
         if (ImGui::Begin("Game", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             timeDomainSection(state, engine);
+            controlsSection(state);
+            lookSection(engine);
             ImGui::Separator();
 
             if (engine.session.role() == net::Role::Client)
@@ -234,22 +297,26 @@ namespace game
                 hostSection(state, engine);
             }
 
+            combatDevSection(state, engine);
             roomDevSection(state);
             stationDevSection(state, engine);
             pawnCharactersDevSection(state.pawnCharacters ? &*state.pawnCharacters : nullptr);
             headMotionDevSection(state.headMotion);
+            footstepsDevSection(state.footsteps);
 
             if (state.level)
             {
                 sceneCharactersDevSection(state.level->scene, state.characters);
             }
             ImGui::Separator();
-            ImGui::TextDisabled("WASD walk, hold Shift to run, mouse look, left click fire, E use");
+            ImGui::TextDisabled("WASD walk, hold Shift to run, mouse look, left click fire, R reload, F use");
+            ImGui::TextDisabled("Downed: crawl; the partner holds F next to you to revive");
+            ImGui::TextDisabled("Space jump, hold Q / E to lean");
             ImGui::TextDisabled("Hold Ctrl or toggle C to crouch; Ctrl or C while running slides");
             ImGui::TextDisabled("Armed: weapon up by default; hold right mouse to aim down sights (slower)");
             ImGui::TextDisabled("X lowers / raises the weapon (fire or aim raises it); safe zones keep it lowered");
             ImGui::TextDisabled("unless combat is active");
-            ImGui::TextDisabled("Hold Space for bullet-time (either player)");
+            ImGui::TextDisabled("Hold Left Alt or the middle mouse button for bullet-time (either player)");
             ImGui::TextDisabled("Click to capture the mouse, Esc releases it");
         }
 

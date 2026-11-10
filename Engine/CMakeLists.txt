@@ -57,6 +57,7 @@ add_library(LockstepEngine STATIC
     src/Platform/Window.cpp
     src/Render/EnvironmentResources.cpp
     src/Render/FontAtlas.cpp
+    src/Render/ExposurePasses.cpp
     src/Render/FrameCulling.cpp
     src/Render/FrameLighting.cpp
     src/Render/FrameGraph.cpp
@@ -103,6 +104,7 @@ if(LOCKSTEP_DEV_TOOLS)
         src/Debug/DevTools.cpp
         src/Debug/EnginePanel.cpp
         src/Debug/FrameTimeHistory.cpp
+        src/Debug/GraphicsLookPanel.cpp
         src/Debug/GraphicsPanel.cpp
         src/Debug/ImGuiInput.cpp
         src/Debug/ImGuiOverlayPass.cpp
@@ -186,6 +188,9 @@ set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_prefilter.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_down.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_up.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/luminance.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/luminance_reduce.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/exposure.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tonemap.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/taa.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fxaa.frag

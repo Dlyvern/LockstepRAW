@@ -1,0 +1,2 @@
+# Hospital Part A (levels/hospital_a); its lines live in hospital.txt.
+@include hospital

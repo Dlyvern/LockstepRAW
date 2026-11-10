@@ -4,8 +4,10 @@
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
 #include "Presentation/Frame.hpp"
+#include "Simulation/HospitalSimulation.hpp"
 #include "Simulation/HostSimulation.hpp"
 #include "Simulation/LevelFlow.hpp"
+#include "Simulation/NpcSimulation.hpp"
 #include "Simulation/RoomSimulation.hpp"
 #include "Simulation/StationSimulation.hpp"
 
@@ -90,6 +92,22 @@ namespace game
             }
         }
 
+        void matchStridesToCharacters(GameState& state)
+        {
+            if (!state.pawnCharacters)
+            {
+                return;
+            }
+
+            const StrideLengths strides = pawnStrideLengths(*state.pawnCharacters);
+            HeadMotionTuning& tuning = state.headMotion.tuning;
+            tuning.walkStride = strides.walk > 0.0f ? strides.walk : tuning.walkStride;
+            tuning.runStride = strides.run > 0.0f ? strides.run : tuning.runStride;
+            tuning.crouchStride = strides.crouch > 0.0f ? strides.crouch : tuning.crouchStride;
+            std::clog << "Game: stride cycles from the character clips (m): walk " << tuning.walkStride << ", run "
+                      << tuning.runStride << ", crouch " << tuning.crouchStride << '\n';
+        }
+
         lockstep::Result<GameState*> init(EngineContext& engine)
         {
             auto visuals = createVisuals(engine.renderer);
@@ -110,6 +128,8 @@ namespace game
             state->visuals = visuals.value();
             state->settings.startArmed = hasArgument(engine.arguments, k_armedFlag) || !launch.value();
             state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
+            matchStridesToCharacters(*state);
+            loadFootsteps(state->footsteps, engine.audio, engine.files);
             applyArenaLook(engine.renderer);
 
             if (auto loaded = startLevel(*state, engine, launch.value()); !loaded)
@@ -142,7 +162,8 @@ namespace game
             for (const std::vector<std::byte>& message : engine.session.received())
             {
                 if (receiveLevelMessage(state, engine, message) || receiveRoomMessage(state, message)
-                    || receiveStationMessage(state, message))
+                    || receiveStationMessage(state, message) || receiveHospitalMessage(state, message)
+                    || receiveNpcMessage(state, engine, message))
                 {
                     continue;
                 }
@@ -152,9 +173,9 @@ namespace game
                     const PlayerStatus& before = state.local.statuses[k_clientPawn];
                     const PlayerStatus& after = status->players[k_clientPawn];
 
-                    if (after.isDead && !before.isDead)
+                    if (after.isDowned && !before.isDowned)
                     {
-                        std::clog << "Game: you died\n";
+                        std::clog << "Game: you are down\n";
                     }
                     else if (after.health != before.health)
                     {
@@ -168,6 +189,7 @@ namespace game
 
                     state.local.statuses = status->players;
                     state.local.isCombatActive = status->isCombatActive;
+                    state.local.isRestarting = status->isRestarting;
                 }
             }
         }
@@ -203,17 +225,32 @@ namespace game
             const platform::Input idle{};
             const bool isFlying = state.flyCamera.isActive;
             state.local.weaponZone = localWeaponZone(state, engine);
+            const PlayerStatus& own = state.local.statuses[localPawnIndex(engine)];
             state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls,
                 isFlying ? idle : tick.input, !isFlying && engine.window.isCursorCaptured(),
-                WeaponControl{.isArmed = state.local.statuses[localPawnIndex(engine)].isArmed,
+                WeaponControl{.isArmed = own.isArmed && !own.isDowned,
                     .zone = state.local.weaponZone,
-                    .isHoldingToy = isHoldingToy(state, engine)});
+                    .isHoldingToy = isHoldingToy(state, engine),
+                    .isReady = isWeaponReady(localPawnMotion(state, engine)),
+                    .hasRounds = own.magazine > 0 && !own.isReloading});
+
+            if (own.isDowned)
+            {
+                restrictDownedCommand(state.local.command, state.settings.downed.crawlScale);
+            }
 
             if (engine.session.role() == net::Role::Client)
             {
                 receiveStatuses(state, engine);
                 const auto encoded = encodeCommand(state.local.command);
-                predictLocalPawn(state, engine, tick.tick, decodeCommand(encoded).value_or(state.local.command));
+                PlayerCommand predicted = decodeCommand(encoded).value_or(state.local.command);
+
+                if (state.local.statuses[k_clientPawn].isDowned)
+                {
+                    restrictDownedCommand(predicted, state.settings.downed.crawlScale);
+                }
+
+                predictLocalPawn(state, engine, tick.tick, predicted);
 
                 if (auto sent = engine.replication.setLocalInput(encoded); !sent)
                 {
@@ -222,6 +259,7 @@ namespace game
 
                 runRoomClientTick(state, engine);
                 runStationClientTick(state, engine);
+                runHospitalClientTick(state, engine);
                 presentLevel(state, engine);
 
                 return;

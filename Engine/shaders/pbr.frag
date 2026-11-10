@@ -4,6 +4,7 @@
 #define FRAME_LIGHTING_BINDING 5
 #include "frame_lighting.glsl"
 #include "octahedral.glsl"
+#include "sky_model.glsl"
 
 const float k_pi = 3.14159265359;
 const float k_minRoughness = 0.045;
@@ -14,6 +15,9 @@ const float k_reflectionView = 1.0;
 const float k_reflectorSurface = 2.0;
 const float k_viewModelView = 3.0;
 const float k_reflectorAlignment = 0.995;
+const vec3 k_zoneDebugTint = vec3(1.0, 0.1, 0.9);
+const float k_decalBlend = 2.0;
+const float k_minGlassCoverage = 0.02;
 
 layout(push_constant) uniform DrawConstants
 {
@@ -65,11 +69,11 @@ struct Surface
     float nDotV;
 };
 
-// 3x3 bilinear PCF: nine hardware-filtered comparisons (each a 2x2 bilinear PCF), one texel
-// apart, so the kernel covers 4x4 texels with tent weights.
-float filteredShadow(vec2 uv, float depth)
+// 3x3 bilinear PCF: nine hardware-filtered comparisons (each a 2x2 bilinear PCF), `spacing`
+// texels apart; at spacing 1 the kernel covers 4x4 texels with tent weights.
+float filteredShadow(vec2 uv, float depth, float spacing)
 {
-    vec2 texel = 1.0 / vec2(textureSize(shadowAtlas, 0));
+    vec2 texel = spacing / vec2(textureSize(shadowAtlas, 0));
     float sum = 0.0;
 
     for (int y = -1; y <= 1; ++y)
@@ -85,7 +89,7 @@ float filteredShadow(vec2 uv, float depth)
 
 // Looks a world position up in one tile of the shadow atlas. Returns -1 when it falls outside
 // the tile (minus a margin that keeps the PCF footprint inside), else the lit fraction.
-float tileShadow(uint tile, vec3 position)
+float tileShadow(uint tile, vec3 position, float spacing)
 {
     vec4 clip = frame.shadowTileViewProjection[tile] * vec4(position, 1.0);
 
@@ -96,16 +100,16 @@ float tileShadow(uint tile, vec3 position)
 
     vec3 ndc = clip.xyz / clip.w;
     vec2 uv = ndc.xy * 0.5 + 0.5;
-    vec2 tileOrigin = vec2(float(tile & 1u), float(tile >> 1u)) * 0.5;
-    vec2 local = (uv - tileOrigin) * 2.0;
-    float margin = 3.0 / (float(textureSize(shadowAtlas, 0).x) * 0.5);
+    vec4 rect = frame.shadowTileRects[tile];
+    vec2 local = (uv - rect.xy) / rect.zw;
+    float margin = (spacing + 2.0) / (rect.z * float(textureSize(shadowAtlas, 0).x));
 
     if (any(lessThan(local, vec2(margin))) || any(greaterThan(local, vec2(1.0 - margin))) || ndc.z >= 1.0)
     {
         return -1.0;
     }
 
-    return filteredShadow(uv, ndc.z);
+    return filteredShadow(uv, ndc.z, spacing);
 }
 
 float sunShadow(vec3 position, vec3 geometryNormal, out int cascade)
@@ -117,7 +121,7 @@ float sunShadow(vec3 position, vec3 geometryNormal, out int cascade)
     {
         float texel = frame.cascadeTexelSize[index];
         vec3 biased = position + geometryNormal * (texel * frame.shadowParams.z);
-        float lit = tileShadow(index, biased);
+        float lit = tileShadow(index, biased, 1.0);
 
         if (lit >= 0.0)
         {
@@ -129,13 +133,57 @@ float sunShadow(vec3 position, vec3 geometryNormal, out int cascade)
     return 1.0;
 }
 
-float spotShadow(vec3 position, vec3 geometryNormal, float lightDistance)
+// Cube face (+X, -X, +Y, -Y, +Z, -Z) a direction from a point light falls in.
+uint cubeFace(vec3 direction)
 {
-    float normalOffset = frame.spotShadowParams.y * lightDistance;
-    vec3 biased = position + geometryNormal * normalOffset;
-    float lit = tileShadow(uint(frame.spotShadowParams.w), biased);
+    vec3 magnitude = abs(direction);
+
+    if (magnitude.x >= magnitude.y && magnitude.x >= magnitude.z)
+    {
+        return direction.x > 0.0 ? 0u : 1u;
+    }
+
+    if (magnitude.y >= magnitude.z)
+    {
+        return direction.y > 0.0 ? 2u : 3u;
+    }
+
+    return direction.z > 0.0 ? 4u : 5u;
+}
+
+float localShadow(LocalLight light, vec3 position, vec3 geometryNormal, float lightDistance)
+{
+    vec3 biased = position + geometryNormal * (light.cosInnerKind.w * lightDistance);
+    uint tile = uint(light.cosInnerKind.z);
+
+    if (light.cosInnerKind.y != k_spotLight)
+    {
+        tile += cubeFace(biased - light.positionRange.xyz);
+    }
+
+    float lit = tileShadow(tile, biased, frame.localShadowParams.x);
 
     return lit < 0.0 ? 1.0 : lit;
+}
+
+// How far inside the interior ambient zones a surface is: 0 outside every zone, 1 deeper than the
+// blend distance inside one. Looked up off the surface along its normal, so a wall's outer face on
+// a zone's border reads as outdoor and its inner face as indoor.
+float interiorWeight(vec3 position, vec3 geometryNormal)
+{
+    uint count = uint(frame.zoneParams.x);
+    vec3 probe = position + geometryNormal * frame.zoneParams.z;
+    float weight = 0.0;
+
+    for (uint index = 0u; index < count; ++index)
+    {
+        vec3 halfSize = (frame.zones[index].maximum.xyz - frame.zones[index].minimum.xyz) * 0.5;
+        vec3 offset = abs(probe - (frame.zones[index].maximum.xyz + frame.zones[index].minimum.xyz) * 0.5) - halfSize;
+        float depth = -max(offset.x, max(offset.y, offset.z));
+        weight = max(weight, smoothstep(0.0, frame.zoneParams.y, depth));
+    }
+
+    return weight;
 }
 
 float distributionGgx(float nDotH, float alpha)
@@ -161,19 +209,19 @@ vec3 fresnelSchlick(vec3 f0, float cosine)
     return f0 + (1.0 - f0) * factor;
 }
 
-// Outgoing radiance from one light. Light colours are scaled so that a white Lambert surface
-// facing a light of intensity 1 reflects exactly 1 (the pi of the Lambert BRDF is folded in).
-vec3 shadeLight(Surface surface, vec3 toLight, vec3 lightColor)
+// Outgoing radiance from one light, added to `diffuse` and `specular`. Light colours are scaled so
+// that a white Lambert surface facing a light of intensity 1 reflects exactly 1 (the pi of the
+// Lambert BRDF is folded in).
+void shadeLight(Surface surface, vec3 toLight, vec3 lightColor, inout vec3 diffuse, inout vec3 specular)
 {
     float nDotL = dot(surface.normal, toLight);
 
     if (nDotL <= 0.0)
     {
-        return vec3(0.0);
+        return;
     }
 
-    vec3 diffuse = surface.diffuseColor;
-    vec3 specular = vec3(0.0);
+    vec3 diffuseTerm = surface.diffuseColor;
 
     if (frame.counts.y != 0u)
     {
@@ -182,12 +230,12 @@ vec3 shadeLight(Surface surface, vec3 toLight, vec3 lightColor)
         float vDotH = max(dot(surface.toCamera, halfVector), 0.0);
         float alpha = surface.roughness * surface.roughness;
         vec3 fresnel = fresnelSchlick(surface.f0, vDotH);
-        specular = k_pi * distributionGgx(nDotH, alpha) * visibilitySmithGgxCorrelated(surface.nDotV, nDotL, alpha)
-            * fresnel;
-        diffuse *= 1.0 - fresnel;
+        specular += k_pi * distributionGgx(nDotH, alpha) * visibilitySmithGgxCorrelated(surface.nDotV, nDotL, alpha)
+            * fresnel * lightColor * nDotL;
+        diffuseTerm *= 1.0 - fresnel;
     }
 
-    return (diffuse + specular) * lightColor * nDotL;
+    diffuse += diffuseTerm * lightColor * nDotL;
 }
 
 float distanceFalloff(float lightDistance, float range)
@@ -320,13 +368,14 @@ void main()
     surface.nDotV = max(dot(surface.normal, toCamera), 1e-4);
 
     vec3 direct = vec3(0.0);
+    vec3 specular = vec3(0.0);
     int cascade = -1;
 
     if (frame.sunDirection.w > 0.0)
     {
         vec3 toLight = -frame.sunDirection.xyz;
         float shadow = sunShadow(inWorldPosition, geometryNormal, cascade);
-        direct += shadeLight(surface, toLight, frame.sunRadiance.rgb) * shadow;
+        shadeLight(surface, toLight, frame.sunRadiance.rgb * shadow, direct, specular);
     }
 
     for (uint index = 0u; index < frame.counts.x; ++index)
@@ -354,40 +403,56 @@ void main()
             continue;
         }
 
-        if (frame.spotShadowParams.x == float(index))
+        if (light.cosInnerKind.z >= 0.0)
         {
-            attenuation *= spotShadow(inWorldPosition, geometryNormal, lightDistance);
+            attenuation *= localShadow(light, inWorldPosition, geometryNormal, lightDistance);
         }
 
-        direct += shadeLight(surface, toLight, light.color.rgb * attenuation);
+        shadeLight(surface, toLight, light.color.rgb * attenuation, direct, specular);
     }
 
     vec3 ambient = surface.diffuseColor * frame.ambient.rgb * occlusion;
+    vec2 scaleBias = texture(brdfLut, vec2(surface.nDotV, roughness)).rg;
+    vec3 specularColor = surface.f0 * scaleBias.x + scaleBias.y;
+    float specularOcclusion = clamp(pow(surface.nDotV + occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + occlusion,
+        0.0, 1.0);
+    float interior = frame.zoneParams.x > 0.0 ? interiorWeight(inWorldPosition, geometryNormal) : 0.0;
+    vec3 ambientSpecular = vec3(0.0);
 
     if (frame.iblParams.w > 0.0)
     {
-        vec2 scaleBias = texture(brdfLut, vec2(surface.nDotV, roughness)).rg;
-        vec3 specularColor = surface.f0 * scaleBias.x + scaleBias.y;
         vec3 irradiance = textureLod(environmentAtlas, environmentAtlasUv(k_irradianceTile, surface.normal), 0.0).rgb;
         vec3 reflected = reflect(-toCamera, surface.normal);
-        float specularOcclusion = clamp(pow(surface.nDotV + occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + occlusion,
-            0.0, 1.0);
+        float diffuseScale = frame.iblParams.x * mix(1.0, frame.zoneLight.x, interior);
+        float specularScale = frame.iblParams.y * mix(1.0, frame.zoneLight.y, interior);
 
-        ambient += surface.diffuseColor * (1.0 - specularColor) * irradiance * occlusion * frame.iblParams.x;
+        ambient += surface.diffuseColor * (1.0 - specularColor) * irradiance * occlusion * diffuseScale;
 
         if (frame.counts.y != 0u)
         {
-            ambient += environmentSpecular(reflected, roughness) * specularColor * specularOcclusion * frame.iblParams.y;
+            ambientSpecular += environmentSpecular(reflected, roughness) * specularColor * specularOcclusion
+                * specularScale;
         }
     }
 
-    vec3 color = direct + emissive;
+    if (interior > 0.0)
+    {
+        vec3 fill = frame.zoneFill.rgb * interior;
+        ambient += surface.diffuseColor * (1.0 - specularColor) * fill * occlusion;
+
+        if (frame.counts.y != 0u)
+        {
+            ambientSpecular += specularColor * fill * specularOcclusion;
+        }
+    }
+
+    vec3 color = direct + specular + emissive;
+    vec3 reflections = specular + ambientSpecular;
+    ambient += ambientSpecular;
 
     if (draw.flags.z == k_reflectorSurface)
     {
         vec4 planar = planarReflectionAt(inWorldPosition, surface.normal);
-        vec2 scaleBias = texture(brdfLut, vec2(surface.nDotV, roughness)).rg;
-        vec3 specularColor = surface.f0 * scaleBias.x + scaleBias.y;
 
         if (planar.a > 0.0)
         {
@@ -402,21 +467,56 @@ void main()
         ambient *= k_cascadeTints[cascade];
     }
 
+    if (frame.zoneParams.w > 0.5)
+    {
+        color = mix(color, k_zoneDebugTint * (dot(color + ambient, vec3(0.333)) + 0.05), interior);
+        ambient *= 1.0 - interior;
+    }
+
     if (frame.fogParams.y > 0.0)
     {
         float fogDistance = max(cameraDistance - frame.fogParams.x, 0.0) * frame.fogColor.w;
         float fog = min(1.0 - exp(-fogDistance * fogDistance), frame.fogParams.z);
-        color = mix(color, frame.fogColor.rgb, fog);
+        vec3 fogColor = frame.fogColor.rgb;
+
+        if (frame.fogParams.w > 0.0)
+        {
+            vec3 horizon = normalize(vec3(-toCamera.x, max(-toCamera.y, 0.02), -toCamera.z));
+            fogColor = mix(fogColor, skyRadiance(horizon), frame.fogParams.w);
+        }
+
+        color = mix(color, fogColor, fog);
         ambient *= 1.0 - fog;
+        reflections *= 1.0 - fog;
     }
 
     bool isViewModel = draw.flags.z == k_viewModelView;
     outVelocity = motionVector(isViewModel);
 
-    if (isBlended || isReflectionView || isViewModel)
+    if (draw.flags.y > k_decalBlend - 0.5)
     {
-        outColor = vec4(color + ambient, isBlended ? baseColor.a : 1.0);
-        outAmbient = vec4(0.0, 0.0, 0.0, isBlended ? baseColor.a : 1.0);
+        outColor = vec4(color, baseColor.a);
+        outAmbient = vec4(ambient, baseColor.a);
+        return;
+    }
+
+    if (isBlended)
+    {
+        // Glass: reflections are not faded by alpha, and Fresnel makes the surface more opaque at
+        // grazing angles. Blending is src * a + dst * (1 - a), so the colour is pre-divided by the
+        // coverage it gets: diffuse * alpha + reflections over (1 - alpha) * (1 - F) of what is behind.
+        vec3 diffuse = max(color + ambient - reflections, vec3(0.0));
+        float fresnel = clamp(dot(specularColor, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+        float coverage = max(1.0 - (1.0 - baseColor.a) * (1.0 - fresnel), k_minGlassCoverage);
+        outColor = vec4((diffuse * baseColor.a + reflections) / coverage, coverage);
+        outAmbient = vec4(0.0, 0.0, 0.0, coverage);
+        return;
+    }
+
+    if (isReflectionView || isViewModel)
+    {
+        outColor = vec4(color + ambient, 1.0);
+        outAmbient = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
 

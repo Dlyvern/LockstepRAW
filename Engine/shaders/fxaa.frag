@@ -1,7 +1,8 @@
 #version 450
 
 // The output pass: FXAA 3.11 (quality preset 12) after T. Lottes on the tonemapped image, or
-// sharpening of the TAA result, or a plain copy; then the screen fade and output dithering.
+// sharpening of the TAA result, or a plain copy; then film grain (grain x intensity, y highlight
+// response, z size in pixels), the screen fade and output dithering.
 
 const float k_edgeThreshold = 0.125;
 const float k_edgeThresholdMin = 0.0312;
@@ -20,6 +21,8 @@ layout(push_constant) uniform OutputConstants
     float dither;
     uint frameIndex;
     float sharpness;
+    vec2 padding;
+    vec4 grain;
 } constants;
 
 layout(set = 2, binding = 0) uniform sampler2D source;
@@ -211,6 +214,26 @@ vec3 toLinear(vec3 srgb)
     return mix(srgb / 12.92, pow((srgb + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), srgb));
 }
 
+float hash(vec3 point)
+{
+    point = fract(point * vec3(0.1031, 0.1030, 0.0973));
+    point += dot(point, point.yxz + 33.33);
+    return fract((point.x + point.y) * point.z);
+}
+
+// Animated grain in sRGB units: two hashes per grain cell summed into a triangular distribution,
+// fading out in highlights.
+float filmGrain(vec2 fragment, vec3 color)
+{
+    vec2 cell = floor(fragment / max(constants.grain.z, 1.0));
+    float seed = float(constants.frameIndex % 1024u) * 1.618;
+    float noise = hash(vec3(cell, seed)) + hash(vec3(cell, seed + 17.0)) - 1.0;
+    float luma = dot(sqrt(clamp(color, 0.0, 1.0)), vec3(0.2126, 0.7152, 0.0722));
+    float strength = constants.grain.x * (1.0 - constants.grain.y * luma * luma);
+
+    return noise * 2.0 * strength;
+}
+
 // Contrast-limited sharpening of the TAA result: a negative-lobe cross filter whose weight
 // shrinks where the neighbourhood is already contrasty, clamped to the neighbourhood so it never
 // rings.
@@ -250,6 +273,11 @@ void main()
     else
     {
         color = texelFetch(source, pixel, 0).rgb;
+    }
+
+    if (constants.grain.x > 0.0)
+    {
+        color = toLinear(clamp(toSrgb(color) + filmGrain(gl_FragCoord.xy, color), 0.0, 1.0));
     }
 
     color = mix(color, constants.fade.rgb, constants.fade.a);

@@ -11,6 +11,8 @@ namespace lockstep::render
 {
     namespace
     {
+        constexpr float k_minLocalCasterAngle{0.004f};
+
         math::Vec4 row(const math::Mat4& matrix, int index)
         {
             return {matrix[0][index], matrix[1][index], matrix[2][index], matrix[3][index]};
@@ -29,12 +31,32 @@ namespace lockstep::render
             return item.material->shading == Shading::Lit && item.material->alphaMode != AlphaMode::Blend;
         }
 
+        bool castsIntoLocalTile(const math::Aabb& bounds, const math::Vec4& lightSphere)
+        {
+            const math::Vec3 light{lightSphere.x, lightSphere.y, lightSphere.z};
+            const math::Vec3 nearest = math::Vec3{std::clamp(light.x, bounds.min.x, bounds.max.x),
+                std::clamp(light.y, bounds.min.y, bounds.max.y), std::clamp(light.z, bounds.min.z, bounds.max.z)};
+            const float distance = math::length(nearest - light);
+
+            if (distance > lightSphere.w)
+            {
+                return false;
+            }
+
+            const float radius = math::length(bounds.max - bounds.min) * 0.5f;
+
+            return radius >= k_minLocalCasterAngle * math::length((bounds.min + bounds.max) * 0.5f - light);
+        }
+
         bool castsIntoTile(const DrawItem& item, uint32_t tile, const PreparedLighting& prepared,
             const ShadowSettings& settings)
         {
-            const bool isSunCascade = tile < prepared.cascadeCount;
+            if (tile >= k_sunShadowTiles)
+            {
+                return castsIntoLocalTile(item.worldBounds, prepared.casterSpheres[tile - k_sunShadowTiles]);
+            }
 
-            return !isSunCascade || item.material->alphaMode != AlphaMode::Mask || tile < settings.maskedCasterCascades;
+            return item.material->alphaMode != AlphaMode::Mask || tile < settings.maskedCasterCascades;
         }
 
         void sortByDistance(std::vector<uint32_t>& list, const std::vector<DrawItem>& draws, bool isFrontToBack)
@@ -87,6 +109,7 @@ namespace lockstep::render
     void FrameDrawLists::clear()
     {
         opaque.clear();
+        decals.clear();
         blended.clear();
         viewModelOpaque.clear();
         viewModelBlended.clear();
@@ -113,7 +136,7 @@ namespace lockstep::render
 
         for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
         {
-            tileActive[tile] = tile < prepared.cascadeCount || (prepared.spotTile && *prepared.spotTile == tile);
+            tileActive[tile] = prepared.isTileActive(tile);
             tileFrusta[tile] = frustumFromMatrix(prepared.tiles[tile].viewProjection);
         }
 
@@ -140,7 +163,8 @@ namespace lockstep::render
 
             if (!cull || intersects(cameraFrustum, item.worldBounds))
             {
-                (item.material->alphaMode == AlphaMode::Blend ? lists.blended : lists.opaque).push_back(index);
+                const bool isBlended = item.material->alphaMode == AlphaMode::Blend;
+                (isBlended ? (item.isDecal ? lists.decals : lists.blended) : lists.opaque).push_back(index);
             }
 
             if (!castsShadow(item))

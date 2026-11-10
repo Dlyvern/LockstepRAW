@@ -10,6 +10,12 @@ namespace lockstep::render
     // Most shadow cascades the sun can use.
     inline constexpr uint32_t k_maxShadowCascades{4};
 
+    // Shadow atlas tiles shared by shadow-casting point and spot lights (a point light takes six).
+    inline constexpr uint32_t k_maxLocalShadowTiles{16};
+
+    // Most shadow-casting point and spot lights in one frame.
+    inline constexpr uint32_t k_maxShadowedLocalLights{8};
+
     // Which lights and shading terms lit materials use.
     // directional:      use the sun (the submitted directional light, or the sky's sun).
     // localLights:      use point and spot lights.
@@ -40,6 +46,15 @@ namespace lockstep::render
     // skyIntensity: brightness multiplier of the sky radiance.
     // groundAlbedo: linear RGB reflectance of the ground below the horizon (lights from below).
     // sunDisk:      draw the sun's disk in the sky.
+    // glowColor:    linear RGB of a sunset glow added to the sky near the horizon (the analytic model
+    //               alone stays pale at low sun). It also lights the scene through the sky's
+    //               image-based light.
+    // glowIntensity: radiance of the glow at the horizon towards the sun; 0 turns it off.
+    // glowHeight:   how high the glow reaches, as the sine of the elevation where it falls to 1/e.
+    // glowSpread:   how tightly the glow gathers around the sun's azimuth; higher is narrower.
+    // glowOpposite: share of the glow left on the horizon opposite the sun, 0 to 1.
+    // zenithTint:   linear RGB multiplier on the sky overhead, fading to none at the horizon
+    //               (deepens the blue above a sunset); white is neutral.
     struct SkySettings
     {
         bool enabled{true};
@@ -52,6 +67,12 @@ namespace lockstep::render
         float skyIntensity{1.0f};
         math::Vec3 groundAlbedo{0.25f, 0.24f, 0.22f};
         bool sunDisk{true};
+        math::Vec3 glowColor{1.0f, 0.45f, 0.2f};
+        float glowIntensity{0.0f};
+        float glowHeight{0.12f};
+        float glowSpread{3.0f};
+        float glowOpposite{0.2f};
+        math::Vec3 zenithTint{1.0f, 1.0f, 1.0f};
     };
 
     // Image-based lighting from the sky: diffuse irradiance and prefiltered specular reflections,
@@ -66,8 +87,35 @@ namespace lockstep::render
         float specularIntensity{1.0f};
     };
 
-    // Shadows: cascaded shadow maps for the sun in a shared atlas, whose last tile a
-    // shadow-casting spot light takes over (the sun keeps the other cascades).
+    // Interiors inside the AmbientZones set with Renderer::setAmbientZones(): the sky's image-based
+    // light is scaled down there and a flat fill light added, blended per pixel by world position.
+    // enabled:           apply the zones.
+    // diffuseIntensity:  multiplier on the sky's diffuse light fully inside a zone.
+    // specularIntensity: multiplier on the sky's reflections fully inside a zone.
+    // fillColor:         linear RGB of the fill light inside zones (light bounced off walls and
+    //                    ceilings, which the sky-only image-based light lacks).
+    // fillIntensity:     brightness of the fill light; lights diffuse and specular like an even
+    //                    environment of that radiance.
+    // blendDistance:     metres inside a zone's faces over which it fades in from nothing.
+    // normalOffset:      metres the lookup is moved along the surface normal, so the outer face
+    //                    of a wall on the zone's border stays outdoor and its inner face indoor.
+    // debugView:         tint surfaces by zone weight (magenta inside, unchanged outside).
+    struct InteriorAmbientSettings
+    {
+        bool enabled{true};
+        float diffuseIntensity{0.12f};
+        float specularIntensity{0.18f};
+        math::Vec3 fillColor{0.62f, 0.68f, 0.78f};
+        float fillIntensity{0.05f};
+        float blendDistance{0.6f};
+        float normalOffset{0.3f};
+        bool debugView{false};
+    };
+
+    // Shadows: cascaded shadow maps for the sun and perspective maps for shadow-casting point and
+    // spot lights, in one atlas. The sun's cascades take the atlas's left half (1024 texel tiles);
+    // local lights share the right half, cut into k_maxLocalShadowTiles tiles of 512 texels: a spot
+    // light takes one tile, a point light six (cube faces).
     // enabled:       render and sample shadow maps.
     // cascadeCount:  sun cascades, 1 to k_maxShadowCascades.
     // distance:      view distance the cascades cover, in metres. Beyond it the sun casts none.
@@ -81,6 +129,13 @@ namespace lockstep::render
     // maskedCasterCascades: how many of the nearest cascades alpha-masked casters (foliage) render
     //                into; farther cascades skip them, as their alpha-tested shadow draws are the
     //                most expensive part of the shadow pass on foliage-heavy levels.
+    // localLights:   let point and spot lights with castsShadows cast shadows.
+    // maxLocalLights: most shadow-casting local lights per frame, 0 to k_maxShadowedLocalLights.
+    //                Lights whose range reaches into the view are chosen nearest first; one that does
+    //                not fit (over this count, or out of atlas tiles) lights without a shadow.
+    // localNormalBias: normal offset of local light shadow lookups against acne, in shadow texels.
+    // localFilterRadius: PCF kernel radius of local light shadows in tile texels, 0.5 (hard) to 3
+    //                (soft); costs the same at any value.
     struct ShadowSettings
     {
         bool enabled{true};
@@ -91,6 +146,10 @@ namespace lockstep::render
         float normalBias{1.5f};
         bool debugCascades{false};
         uint32_t maskedCasterCascades{2};
+        bool localLights{true};
+        uint32_t maxLocalLights{4};
+        float localNormalBias{2.0f};
+        float localFilterRadius{1.5f};
     };
 
     // Exponential-squared distance fog, applied to lit materials.
@@ -99,6 +158,9 @@ namespace lockstep::render
     // density:   how quickly the fog thickens with distance, per metre.
     // start:     distance from the camera where fog begins, in metres.
     // maxAmount: upper bound of fog coverage in [0, 1], so far surfaces never vanish completely.
+    // skyBlend:  0 fades into `color`; 1 fades into the sky's radiance at the horizon behind the
+    //            surface (aerial perspective: distant buildings fade into the sunset glow towards the
+    //            sun and into blue haze away from it). Needs the sky.
     struct FogSettings
     {
         bool enabled{false};
@@ -106,6 +168,7 @@ namespace lockstep::render
         float density{0.005f};
         float start{20.0f};
         float maxAmount{0.6f};
+        float skyBlend{0.0f};
     };
 
     // Screen-space ambient occlusion from the depth buffer, at half resolution. Darkens only
@@ -145,7 +208,7 @@ namespace lockstep::render
     // HDR to display conversion of the final image.
     // enabled:   apply exposure and the curve; when false the scene colour is shown as is (clipped).
     // tonemapper: the curve.
-    // exposure:  linear multiplier applied before the curve.
+    // exposure:  linear multiplier applied before the curve (on top of auto exposure).
     // dither:    add sub-quantum noise against banding in dark gradients.
     struct TonemapSettings
     {
@@ -153,6 +216,81 @@ namespace lockstep::render
         Tonemapper tonemapper{Tonemapper::Aces};
         float exposure{1.0f};
         bool dither{true};
+    };
+
+    // Eye adaptation: the exposure follows the scene's average log luminance (centre-weighted),
+    // measured on the GPU every frame, so dark interiors brighten and the street outside dims, with
+    // a delay like the eye's. Needs tonemapping on.
+    // enabled:        adapt; when off the exposure is TonemapSettings::exposure alone.
+    // targetLuminance: average scene luminance the adaptation maps to mid-grey; lower is darker.
+    // minEv, maxEv:   limits of the adapted exposure in stops (EV) relative to 1. Keep maxEv low so
+    //                 dark places stay dark.
+    // compensationEv: stops added after adaptation.
+    // brightenSpeed:  adaptation rate towards a brighter exposure (eyes opening in the dark), per
+    //                 second; higher is faster.
+    // darkenSpeed:    adaptation rate towards a darker exposure (stepping into daylight), per second.
+    // centreWeight:   0 meters the whole screen evenly, 1 mostly the centre.
+    struct AutoExposureSettings
+    {
+        bool enabled{true};
+        float targetLuminance{0.12f};
+        float minEv{-2.0f};
+        float maxEv{1.5f};
+        float compensationEv{0.0f};
+        float brightenSpeed{0.8f};
+        float darkenSpeed{2.5f};
+        float centreWeight{0.6f};
+    };
+
+    // Colour grading of the tonemapped image (display-referred, 0 to 1).
+    // enabled:     apply it.
+    // lift:        added to shadows (per channel, around 0; negative crushes blacks).
+    // gamma:       power on midtones (per channel, around 1; above 1 brightens).
+    // gain:        multiplier on highlights (per channel, around 1).
+    // contrast:    S-curve strength around mid-grey, 1 neutral.
+    // saturation:  1 neutral, 0 greyscale.
+    // shadowTint:  linear RGB the shadows are pulled towards (split toning).
+    // highlightTint: linear RGB the highlights are pulled towards.
+    // splitToneStrength: amount of both tints, 0 off.
+    // splitToneBalance: luminance where shadows end and highlights begin, 0 to 1.
+    struct ColorGradingSettings
+    {
+        bool enabled{true};
+        math::Vec3 lift{0.0f, 0.0f, 0.0f};
+        math::Vec3 gamma{1.0f, 1.0f, 1.0f};
+        math::Vec3 gain{1.0f, 1.0f, 1.0f};
+        float contrast{1.0f};
+        float saturation{1.0f};
+        math::Vec3 shadowTint{0.45f, 0.6f, 0.75f};
+        math::Vec3 highlightTint{0.85f, 0.7f, 0.5f};
+        float splitToneStrength{0.0f};
+        float splitToneBalance{0.45f};
+    };
+
+    // Darkening towards the screen corners, applied with grading.
+    // enabled:    apply it.
+    // intensity:  darkness at the corners, 0 to 1.
+    // radius:     distance from the centre (0 centre, 1 corner) where darkening starts.
+    // smoothness: width of the falloff.
+    struct VignetteSettings
+    {
+        bool enabled{true};
+        float intensity{0.0f};
+        float radius{0.45f};
+        float smoothness{0.6f};
+    };
+
+    // Animated film grain added to the final image (after anti-aliasing, so TAA does not smear it).
+    // enabled:   apply it.
+    // intensity: grain amplitude in the darks and mids.
+    // response:  how much it fades out in highlights, 0 (even) to 1 (none in white).
+    // size:      grain size in pixels, 1 to 3.
+    struct FilmGrainSettings
+    {
+        bool enabled{true};
+        float intensity{0.0f};
+        float response{0.7f};
+        float size{1.5f};
     };
 
     // How edges are anti-aliased.
@@ -221,11 +359,16 @@ namespace lockstep::render
         LightingSettings lighting{};
         SkySettings sky{};
         ImageBasedLightingSettings ibl{};
+        InteriorAmbientSettings interiorAmbient{};
         ShadowSettings shadows{};
         FogSettings fog{};
         AmbientOcclusionSettings ambientOcclusion{};
         BloomSettings bloom{};
         TonemapSettings tonemap{};
+        AutoExposureSettings autoExposure{};
+        ColorGradingSettings colorGrading{};
+        VignetteSettings vignette{};
+        FilmGrainSettings filmGrain{};
         AntiAliasingSettings antiAliasing{};
         PlanarReflectionSettings reflections{};
         CullingSettings culling{};

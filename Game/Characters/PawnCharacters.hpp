@@ -160,6 +160,21 @@ namespace game
     [[nodiscard]] std::optional<PawnCharacters> loadPawnCharacters(lockstep::render::Renderer& renderer,
         const lockstep::assets::FileSystem& files);
 
+    // Ground distance of one stride cycle (two steps) of the unarmed character's clips, metres:
+    // each clip's stride speed times its length (playback is scaled to the ground speed, so the
+    // cycle length stays the same). 0 where a clip is missing.
+    // walk, run, crouch: the walk, run and crouched walk clips.
+    struct StrideLengths
+    {
+        float walk{0.0f};
+        float run{0.0f};
+        float crouch{0.0f};
+    };
+
+    // characters: the pawn characters.
+    // Returns:    the stride cycle lengths of their clips.
+    [[nodiscard]] StrideLengths pawnStrideLengths(const PawnCharacters& characters);
+
     // Starts a presentation frame: remembers which pawns were drawn in the previous one.
     // characters: the pawn characters.
     void beginPawnCharacters(PawnCharacters& characters);
@@ -170,7 +185,8 @@ namespace game
     // renderer:     the renderer.
     // visuals:      the boxes and colours of the fallback.
     // characters:   the pawn characters, or null to draw boxes.
-    // owner:        the pawn's player (Player1 or Player2); picks the character and the colour.
+    // owner:        the pawn's player (Player1 or Player2); picks the character, its head gear
+    //               (playerGearLook()) and the colour.
     // transform:    the pawn's interpolated or predicted transform.
     // look:         armed, aiming, lowered, crouch and slide.
     // deltaSeconds: Player time since the previous frame; animates the character.

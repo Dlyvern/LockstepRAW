@@ -112,7 +112,7 @@ namespace lockstep::render
 
     // The forward scene pass: clears the HDR targets and depth, draws visible opaque viewmodel draws
     // (their depth is in front of every world surface, so drawing them first only saves shading),
-    // opaque world draws front to back, the sky behind them, alpha-blended world draws back to
+    // opaque world draws front to back, decals in submission order, the sky behind them, alpha-blended world draws back to
     // front, then alpha-blended viewmodel draws. Lit materials write direct
     // light to the colour target and environment light to the ambient target (so SSAO can darken
     // only the latter); unlit materials and the sky write colour only. Lit materials and the sky

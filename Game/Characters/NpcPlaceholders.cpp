@@ -2,10 +2,12 @@
 
 #include <Lockstep/Render/Renderer.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
 #include <iostream>
+#include <span>
 #include <utility>
 
 namespace game
@@ -16,6 +18,7 @@ namespace game
         namespace assets = lockstep::assets;
 
         constexpr std::string_view k_npcPrefix{"Npc_"};
+        constexpr std::string_view k_armedSquadPrefix{"Npc_Squad_"};
         constexpr std::array<std::pair<std::string_view, std::string_view>, 7> k_roles{{
             {"Npc_Chief", "chief"},
             {"Npc_DeskSergeant", "sergeant"},
@@ -33,6 +36,100 @@ namespace game
         constexpr float k_barkCooldownSeconds{20.0f};
         constexpr float k_idleFadeSeconds{0.0f};
         constexpr float k_idleSpeedSpread{0.15f};
+        constexpr std::array<std::string_view, 2> k_crouchedRoles{"civilian", "survivor"};
+        constexpr std::array<std::string_view, 3> k_civilianRoles{"civilian", "survivor", "prisoner"};
+        constexpr std::array<std::string_view, 3> k_armedRoles{"squadoutside", "cordonofficer", "guard"};
+        constexpr std::array<std::pair<std::string_view, NpcPose>, 4> k_poseSuffixes{{
+            {"idle", NpcPose::Idle},
+            {"crouch", NpcPose::Crouch},
+            {"armed", NpcPose::Armed},
+            {"aim", NpcPose::Aim}}};
+        constexpr std::array<std::string_view, 4> k_poseClips{"Idle", "CrouchIdle", "RifleIdle", "AimIdle"};
+
+        std::string lowered(std::string_view text)
+        {
+            std::string result(text);
+
+            for (char& character : result)
+            {
+                character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+            }
+
+            return result;
+        }
+
+        bool contains(std::span<const std::string_view> roles, std::string_view role)
+        {
+            return std::find(roles.begin(), roles.end(), role) != roles.end();
+        }
+
+        std::optional<NpcPose> poseSuffix(std::string_view name)
+        {
+            std::string_view rest = name.substr(k_npcPrefix.size());
+            rest = rest.substr(0, rest.find('.'));
+
+            while (!rest.empty())
+            {
+                const std::size_t separator = rest.find('_');
+                const std::string part = lowered(rest.substr(0, separator));
+
+                for (const auto& [suffix, pose] : k_poseSuffixes)
+                {
+                    if (part == suffix)
+                    {
+                        return pose;
+                    }
+                }
+
+                rest = separator == std::string_view::npos ? std::string_view{} : rest.substr(separator + 1);
+            }
+
+            return std::nullopt;
+        }
+
+        NpcPose poseOf(std::string_view name, std::string_view role)
+        {
+            if (const std::optional<NpcPose> pose = poseSuffix(name))
+            {
+                return *pose;
+            }
+
+            if (contains(k_crouchedRoles, role))
+            {
+                return NpcPose::Crouch;
+            }
+
+            return contains(k_armedRoles, role) ? NpcPose::Armed : NpcPose::Idle;
+        }
+
+        float startPhase(std::string_view name)
+        {
+            uint32_t hash = 2166136261u;
+
+            for (const char character : name)
+            {
+                hash = (hash ^ static_cast<unsigned char>(character)) * 16777619u;
+            }
+
+            return static_cast<float>(hash % 1000u) / 1000.0f;
+        }
+
+        bool isArmedPose(NpcPose pose)
+        {
+            return pose == NpcPose::Armed || pose == NpcPose::Aim;
+        }
+
+        const CharacterModel& modelFor(NpcPose pose, const PawnCharacters& characters)
+        {
+            return isArmedPose(pose) && characters.armed ? characters.armed->body : characters.unarmed;
+        }
+
+        uint32_t clipFor(const anim::SkinnedModel& model, NpcPose pose, const PawnCharacters& characters)
+        {
+            const std::optional<uint32_t> clip = anim::findClip(model.clips,
+                k_poseClips[static_cast<std::size_t>(pose)]);
+            return clip.value_or(characters.locomotion.idle);
+        }
 
         std::string roleOf(std::string_view name)
         {
@@ -44,15 +141,8 @@ namespace game
                 }
             }
 
-            std::string role(name.substr(k_npcPrefix.size()));
-            role = role.substr(0, role.find('_'));
-
-            for (char& character : role)
-            {
-                character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
-            }
-
-            return role;
+            const std::string_view rest = name.substr(k_npcPrefix.size());
+            return lowered(rest.substr(0, std::min(rest.find('_'), rest.find('.'))));
         }
 
         std::string barkPrefix(std::string_view level, std::string_view role)
@@ -96,7 +186,11 @@ namespace game
 
         for (const assets::SceneNode& node : scene.nodes)
         {
-            if (!std::string_view(node.name).starts_with(k_npcPrefix))
+            const std::string_view name = node.name;
+            const bool isArmedSquad = name.starts_with(k_armedSquadPrefix) && name.size() > k_armedSquadPrefix.size()
+                && std::isdigit(static_cast<unsigned char>(name[k_armedSquadPrefix.size()])) != 0;
+
+            if (!name.starts_with(k_npcPrefix) || isArmedSquad)
             {
                 continue;
             }
@@ -105,7 +199,11 @@ namespace game
             placeholders.npcs.push_back(NpcPlaceholder{.name = node.name,
                 .barkPrefix = barkPrefix(level, role),
                 .placement = math::Transform{.position = node.transform.position,
-                    .rotation = node.transform.rotation * math::angleAxis(math::k_pi, k_upAxis)}});
+                    .rotation = node.transform.rotation * math::angleAxis(math::k_pi, k_upAxis)},
+                .pose = poseOf(name, role),
+                .gearLook = contains(k_civilianRoles, role) ? gearLookSuffix(name).value_or(GearLook::Balaclava)
+                                                            : squadGearLook(name),
+                .phase = startPhase(name)});
         }
 
         if (!placeholders.npcs.empty())
@@ -152,15 +250,25 @@ namespace game
             return;
         }
 
-        const anim::SkinnedModel& model = characters->unarmed.skinned();
-
         for (std::size_t index = 0; index < placeholders.npcs.size(); ++index)
         {
             NpcPlaceholder& npc = placeholders.npcs[index];
-            npc.instance.animator().play(characters->locomotion.idle, k_idleFadeSeconds,
+            const CharacterModel& character = modelFor(npc.pose, *characters);
+            const anim::SkinnedModel& model = character.skinned();
+            const uint32_t clip = clipFor(model, npc.pose, *characters);
+            npc.instance.animator().play(clip, k_idleFadeSeconds,
                 anim::PlaybackOptions{.loop = true, .speed = idleSpeed(index)});
-            npc.instance.update(model, frameSeconds);
-            npc.instance.submit(renderer, model, npc.placement);
+            float seconds = frameSeconds;
+
+            if (!npc.isStarted && clip < model.clips.size())
+            {
+                npc.isStarted = true;
+                seconds = npc.phase * model.clips[clip].duration;
+            }
+
+            npc.instance.update(model, seconds);
+            npc.instance.submit(renderer, model, npc.placement, lockstep::render::k_defaultRenderLayer,
+                gearMask(character.gearMasks, npc.gearLook));
         }
     }
 } //namespace game

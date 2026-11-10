@@ -240,18 +240,18 @@ namespace game
             switch (object)
             {
                 case StationObject::Briefing:
-                    return state.phase == StationPhase::Report ? "E: Report to the chief" : "";
+                    return state.phase == StationPhase::Report ? "F: Report to the chief" : "";
                 case StationObject::Armor:
-                    return hasArmoryItem(state, player, ArmoryItem::Armor) ? "" : "E: Take body armor";
+                    return hasArmoryItem(state, player, ArmoryItem::Armor) ? "" : "F: Take body armor";
                 case StationObject::Weapon:
-                    return hasArmoryItem(state, player, ArmoryItem::Weapon) ? "" : "E: Take a rifle";
+                    return hasArmoryItem(state, player, ArmoryItem::Weapon) ? "" : "F: Take a rifle";
                 case StationObject::Ammo:
-                    return hasArmoryItem(state, player, ArmoryItem::Ammo) ? "" : "E: Take ammunition";
+                    return hasArmoryItem(state, player, ArmoryItem::Ammo) ? "" : "F: Take ammunition";
                 case StationObject::Other:
                     break;
             }
 
-            return "E: Inspect";
+            return "F: Inspect";
         }
     } //namespace
 

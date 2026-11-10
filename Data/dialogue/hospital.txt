@@ -1,0 +1,153 @@
+# Saint Abel Memorial Hospital, level 1 part 3. DRAFT: the level doesn't exist yet.
+# Format: id | speaker | text
+# Speakers: chief (radio), squad_lead, rodriguez, squad (radio), cordon (officer at the
+# cordon), nurse, patient, civilian, gunman, hud. "hud" lines are on-screen text.
+# {P1} / {P2}: the players' character names (OPEN in the bible), substituted by the game.
+# Lines marked [2nd] read differently on a second playthrough; keep them deniable.
+# This level only: NPCs may say "you two". Bullet-time: none until the chair.
+
+# ===== Beat 1: arrival and upper floors =====
+
+# --- Objectives (HUD) ---
+hospital.objective.cordon | hud | Report to the cordon
+hospital.objective.enter | hud | Go in through the loading dock
+hospital.objective.basement | hud | Get to the basement
+hospital.objective.hostages | hud | Find the hostages
+hospital.objective.annex | hud | Go through the East Annex
+hospital.objective.survive | hud | Survive
+
+# --- Cordon officer, parking lot ---
+hospital.cordon.idle.01 | cordon | You the response team? Six of you? Huh.
+hospital.cordon.idle.02 | cordon | Nobody's come out since seven. Not a hostage, not a shooter.
+hospital.cordon.idle.03 | cordon | Loading dock's round the back. Keep low past the windows.
+hospital.cordon.idle.04 | cordon | Coffee's in the van. Not for you. For us.
+
+# --- Chief, radio ---
+hospital.chief.radio.arrival.01 | chief | Chief. You're on my channel the whole way in. Nobody else's.
+hospital.chief.radio.arrival.02 | chief | Loading dock's yours. Ground floor, then the stairs. Down.
+hospital.chief.radio.upper.01 | chief | Don't stop for the wards. Hostages are in the basement.
+hospital.chief.radio.upper.02 | chief | I hear shooting. You alive? Good. Keep moving.
+hospital.chief.radio.upper.03 | chief | Civilians, point them at an exit. You can't carry them.
+hospital.chief.radio.upper.04 | chief | Why are you on a ward floor? Basement. Down.
+
+# --- Squad, radio ---
+hospital.squad_lead.arrival.01 | squad_lead | Lead. Front team's set. Loading dock is you two.
+hospital.squad_lead.arrival.02 | squad_lead | Clock starts now. Call every floor.
+hospital.rodriguez.arrival.01 | rodriguez | My mother had her hip done here. Good nurses.
+hospital.squad.arrival.01 | squad | Smoke on four. Nobody's waving from the windows.
+hospital.squad_lead.upper.01 | squad_lead | Lobby's ours. Two staff down at the desk. Moving to the east stairs.
+hospital.squad.upper.01 | squad | Still no demands. Negotiator's sitting in the van eating a sandwich.
+hospital.rodriguez.upper.01 | rodriguez | {P1}, {P2}, check in. Good. Keep it that way.
+
+# --- Civilians, ER and wards ---
+hospital.nurse.01 | nurse | Don't shoot! I'm staff. I'm staff.
+hospital.nurse.02 | nurse | They came up the stairs. From downstairs. I don't understand.
+hospital.nurse.03 | nurse | Doctor Hale's at the desk. Don't look. Please don't look.
+hospital.patient.01 | patient | Is it over? Nobody tells me anything in here.
+hospital.patient.02 | patient | I can't walk. I'm not being brave, I just can't walk.
+hospital.civilian.01 | civilian | My wife's in surgery. Is surgery still happening?
+hospital.civilian.02 | civilian | I'm not going out there. I'm not walking past them.
+hospital.civilian.03 | civilian | They didn't even look at us. They just walked past.
+
+# --- Gunmen, combat callouts (terse; never explain themselves) ---
+hospital.gunman.callout.01 | gunman | Contact.
+hospital.gunman.callout.02 | gunman | Two. Police.
+hospital.gunman.callout.03 | gunman | Moving.
+hospital.gunman.callout.04 | gunman | Covering.
+hospital.gunman.callout.05 | gunman | Changing.
+hospital.gunman.callout.06 | gunman | Set.
+hospital.gunman.callout.07 | gunman | Fall back. Next floor.
+hospital.gunman.callout.08 | gunman | Man down. Leave him.
+hospital.gunman.callout.09 | gunman | Hold them here. Ninety seconds.
+hospital.gunman.callout.10 | gunman | Clear.
+
+# --- Squad officers (the two who go in with the leads), combat callouts ---
+# PLACEHOLDER (game-programmer): the AI needs these ids; narrative-writer, please rewrite.
+hospital.squad.combat.contact | squad | Contact front!
+hospital.squad.combat.moving | squad | Moving up.
+hospital.squad.combat.covering | squad | Covering.
+hospital.squad.combat.reloading | squad | Reloading!
+hospital.squad.combat.man_down | squad | Officer down!
+hospital.squad.combat.clear | squad | Clear.
+
+# ===== Beat 2: clues on the way down =====
+
+hospital.gunman.overheard.01 | gunman | Last crate goes up on the lift.
+hospital.gunman.overheard.02 | gunman | Clock's running. Up, not down.
+
+hospital.chief.radio.clues.01 | chief | Crates? Leave the crates. Evidence keeps. Hostages don't.
+hospital.chief.radio.clues.02 | chief | Basement cameras are out. That's why I need eyes down there. Yours.
+hospital.chief.radio.clues.03 | chief | Forget the lift. Stairs. Down.
+
+hospital.squad_lead.clues.01 | squad_lead | Why are they carrying crates upstairs? Hostages are down.
+hospital.squad.clues.01 | squad | Service lift's going up on its own. Somebody's got a key.
+
+# --- Notices (HUD), examined things ---
+hospital.notice.crate | hud | Sealed crate. Stencilled "EAST ANNEX". Heavy.
+hospital.notice.lift | hud | Service lift. Keyed. It's going up.
+hospital.notice.monitors | hud | Every feed live. Basement: no signal.
+hospital.notice.fire_plan | hud | The fire plan ends at the morgue.
+
+# ===== Beat 3: descent (service corridors, morgue, East Annex) =====
+
+hospital.chief.radio.descent.01 | chief | Old wing. Plans are old. If there's a door, go through it.
+hospital.chief.radio.descent.02 | chief | Quiet's good. Quiet means they didn't hear you. Keep going.
+hospital.chief.radio.descent.03 | chief | Almost there. Don't stop now.
+
+# [2nd] The squad stays behind, then comes down after them.
+hospital.squad_lead.descent.01 | squad_lead | We're pinned on two. Go on without us. We'll catch up.
+hospital.squad_lead.descent.02 | squad_lead | East Annex isn't on the plans the city gave us. Careful.
+hospital.squad.descent.01 | squad | Radio's thin down there. Say again?
+
+hospital.notice.annex_sign | hud | EAST ANNEX. CLOSED. ASBESTOS. NO ENTRY.
+hospital.notice.annex_clean | hud | Not a speck of dust. For a sealed wing.
+
+# --- Annex guards, combat callouts (fewer words than upstairs) ---
+hospital.annex.callout.01 | gunman | They're in.
+hospital.annex.callout.02 | gunman | Hold the door.
+hospital.annex.callout.03 | gunman | Quiet.
+
+# ===== Beat 4: the lab =====
+
+hospital.chief.radio.lab.01 | chief | Talk to me. What do you see?
+# [2nd] He wants them in that room.
+hospital.chief.radio.lab.02 | chief | No hostages? Look again. Stay in the room.
+hospital.chief.radio.lab.03 | chief | Say again. You're breaking up. Stay where you-
+hospital.radio.static | hud | [static]
+
+hospital.notice.chairs | hud | Two chairs, bolted down. Restraints. Clean.
+hospital.notice.clipboard | hud | A clipboard. Two columns of numbers. No names.
+hospital.notice.no_hostages | hud | No hostages. Nobody at all.
+hospital.notice.vent | hud | Something hisses in the ceiling.
+
+hospital.narration.gas.01 | hud | Your eyes sting. The room tilts.
+hospital.narration.gas.02 | hud | Your partner goes down. Then you do.
+# [2nd] Heard through static as they pass out.
+hospital.squad_lead.lab.01 | squad_lead | Lead to ambulance team. Lost you. We're coming down.
+
+# ===== Beat 5: the chair =====
+
+hospital.narration.wake.01 | hud | You wake strapped down. Your partner's in the next chair.
+hospital.narration.wake.02 | hud | The lights flicker. Somewhere, a generator dies.
+hospital.narration.wake.03 | hud | The restraints go slack.
+
+# Subtitles for the "monsters". No words on screen, ever.
+hospital.chair.shout.01 | hud | [distorted shouting]
+hospital.chair.shout.02 | hud | [something screams]
+hospital.chair.shout.03 | hud | [a voice, almost words]
+hospital.chair.shout.04 | hud | [shouting, closer]
+
+# [2nd] Recording script only: never shown as subtitles. Recorded clean, played only through
+# heavy distortion. The squad, trying to reach them.
+hospital.chair.vo.01 | squad_lead | {P1}! {P2}! Police! Hold fire!
+hospital.chair.vo.02 | rodriguez | It's us! It's Rodriguez! Put it down!
+hospital.chair.vo.03 | squad | Hands where I can see them- {P1}, stop!
+hospital.chair.vo.04 | squad | Don't shoot back! Don't shoot back, they're ours!
+hospital.chair.vo.05 | squad_lead | We came down for you. Easy. Easy.
+# [2nd] The last one, per machine: the other player's character, saying the local player's
+# name. .p1 plays on Player 1's machine (voiced by Player 2's character), .p2 the reverse.
+hospital.chair.vo.last.p1 | p2 | {P1}. Hey. It's me. Look at me.
+hospital.chair.vo.last.p2 | p1 | {P2}. Hey. It's me. Look at me.
+
+hospital.narration.blackout | hud | The lights go out.
+hospital.caption.title | hud | LOCKSTEP

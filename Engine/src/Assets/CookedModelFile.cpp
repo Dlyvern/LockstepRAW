@@ -168,6 +168,11 @@ namespace lockstep::assets
             writer.write(part.material);
         }
 
+        for (const CookedSkinnedPart& part : model.parts)
+        {
+            writer.writeString(part.materialName);
+        }
+
         return writer.take();
     }
 
@@ -218,6 +223,14 @@ namespace lockstep::assets
             source.readString(part.path);
             source.read(part.material);
         });
+
+        if (reader.ok() && !reader.atEnd())
+        {
+            for (CookedSkinnedPart& part : model.parts)
+            {
+                reader.readString(part.materialName);
+            }
+        }
 
         if (!reader.ok() || !reader.atEnd())
         {

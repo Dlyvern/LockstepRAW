@@ -2,6 +2,7 @@
 
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
+#include "Presentation/FirstPerson.hpp"
 #include "Presentation/Hud.hpp"
 #include "Presentation/LevelLights.hpp"
 #include "Presentation/Mirrors.hpp"
@@ -15,9 +16,11 @@
 #include <Lockstep/World/Entities.hpp>
 #include <Lockstep/World/TimeDomains.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace game
 {
@@ -67,8 +70,19 @@ namespace game
             return state.pawnCharacters ? &*state.pawnCharacters : nullptr;
         }
 
+        FootstepPawn remoteFootsteps(const GameState& state, std::size_t index, const math::Transform& transform,
+            lockstep::physics::ControllerId controller, world::EntityOwner owner)
+        {
+            const PawnLook look = remotePawnLook(state, owner, transform);
+
+            return FootstepPawn{.index = index,
+                .foot = pawnFootPosition(transform),
+                .controller = controller,
+                .isCrouched = look.isSliding || look.crouch > 0.5f};
+        }
+
         void presentHost(GameState& state, EngineContext& engine, float alpha, float playerSeconds,
-            std::optional<math::Transform>& localPawn)
+            float worldSeconds, std::optional<math::Transform>& localPawn, std::vector<FootstepPawn>& steps)
         {
             const world::EntityId localEntity = state.simulation.pawns[k_hostPawn].entity;
 
@@ -89,6 +103,8 @@ namespace game
                     continue;
                 }
 
+                steps.push_back(remoteFootsteps(state, ownerPawnIndex(entity->owner()), transform, pawn.controller,
+                    entity->owner()));
                 drawPawn(engine.renderer, state.visuals, pawnCharacters(state), entity->owner(), transform,
                     remotePawnLook(state, entity->owner(), transform), playerSeconds);
             }
@@ -98,10 +114,33 @@ namespace game
                 drawEntity(engine.renderer, state.visuals, Archetype::Enemy, enemy->owner(),
                     enemy->interpolatedTransform(alpha));
             }
+
+            for (const Npc& npc : state.simulation.npcs.npcs)
+            {
+                if (const world::Entity* entity = engine.entities.find(npc.entity))
+                {
+                    drawNpc(engine.renderer, state.npcLooks, pawnCharacters(state), state.visuals,
+                        npc.faction == NpcFaction::Squad ? Archetype::Squad : Archetype::Merc, npc.entity,
+                        entity->interpolatedTransform(alpha), npcView(npc), worldSeconds);
+                }
+            }
+        }
+
+        NpcView mirroredNpcView(const GameState& state, world::EntityId hostEntity)
+        {
+            for (const NpcView& view : state.local.npcViews.npcs)
+            {
+                if (view.entity == hostEntity)
+                {
+                    return view;
+                }
+            }
+
+            return NpcView{.entity = hostEntity};
         }
 
         void presentClient(GameState& state, EngineContext& engine, float alpha, float playerSeconds,
-            std::optional<math::Transform>& localPawn)
+            float worldSeconds, std::optional<math::Transform>& localPawn, std::vector<FootstepPawn>& steps)
         {
             localPawn = predictedTransform(state.local.prediction, engine.entities, alpha);
 
@@ -121,6 +160,8 @@ namespace game
                 {
                     if (entity->owner() != world::EntityOwner::Player2)
                     {
+                        steps.push_back(remoteFootsteps(state, ownerPawnIndex(entity->owner()), transform, {},
+                            entity->owner()));
                         drawPawn(engine.renderer, state.visuals, pawnCharacters(state), entity->owner(), transform,
                             remotePawnLook(state, entity->owner(), transform), playerSeconds);
                     }
@@ -128,8 +169,47 @@ namespace game
                     continue;
                 }
 
+                if (archetype == Archetype::Merc || archetype == Archetype::Squad)
+                {
+                    drawNpc(engine.renderer, state.npcLooks, pawnCharacters(state), state.visuals, archetype,
+                        mirrored.entity, transform, mirroredNpcView(state, mirrored.hostEntity), worldSeconds);
+                    continue;
+                }
+
                 drawEntity(engine.renderer, state.visuals, archetype, entity->owner(), transform);
             }
+        }
+
+        void presentCombat(GameState& state, EngineContext& engine, const std::vector<FootstepPawn>& steps,
+            const std::optional<math::Transform>& localPawn, float lookYaw, const math::Vec3& eye,
+            const math::Vec3& direction, float seconds)
+        {
+            const std::size_t local = localPawnIndex(engine);
+            const std::size_t partner = local == k_hostPawn ? k_clientPawn : k_hostPawn;
+            const PlayerStatus& own = state.local.statuses[local];
+            const PlayerStatus& other = state.local.statuses[partner];
+            bool canRevive = false;
+
+            if (localPawn && other.isDowned && !own.isDowned)
+            {
+                for (const FootstepPawn& step : steps)
+                {
+                    canRevive = canRevive || (!step.isLocal && step.index == partner
+                        && math::length(step.foot - pawnFootPosition(*localPawn)) <= state.settings.downed.reviveRange);
+                }
+            }
+
+            presentCombatHud(engine.renderer, state.visuals, state.local.combatHud,
+                CombatHudFrame{.own = own,
+                    .partner = other,
+                    .isRestarting = state.local.isRestarting,
+                    .canRevive = canRevive,
+                    .isArmed = own.isArmed && localPawn.has_value(),
+                    .eye = eye,
+                    .direction = direction,
+                    .lookYaw = lookYaw,
+                    .hudFade = state.hud.fade,
+                    .seconds = seconds});
         }
 
         View lobbyView(const GameState& state)
@@ -182,64 +262,36 @@ namespace game
             drawToys(engine.renderer, state.level->scene, room.toys, engine.entities, alpha, localHeld);
         }
 
-        HeadPose presentHead(GameState& state, const EngineContext& engine, const math::Transform& localPawn,
-            float playerSeconds)
+        void presentFootsteps(GameState& state, EngineContext& engine, std::vector<FootstepPawn>& steps,
+            const std::optional<math::Transform>& localPawn, const HeadPose& head, float playerSeconds)
         {
-            const PawnMotion& motion = localPawnMotion(state, engine);
-            const PawnLook look = localPawnLook(state, engine);
-            const math::Vec3 foot = pawnFootPosition(localPawn);
-            const PawnSettings& pawns = state.settings.pawns;
+            if (localPawn)
+            {
+                const PawnMotion& motion = localPawnMotion(state, engine);
+                steps.push_back(FootstepPawn{.index = localPawnIndex(engine),
+                    .foot = pawnFootPosition(*localPawn),
+                    .controller = localController(state, engine),
+                    .isLocal = true,
+                    .footfalls = head.footfalls,
+                    .landings = head.landings,
+                    .landSpeed = head.landSpeed,
+                    .speed = math::length(motion.planarVelocity),
+                    .isCrouched = motion.stance != PawnStance::Stand});
+            }
 
-            return updateHeadMotion(state.headMotion,
-                HeadMotionInput{.foot = foot,
-                    .eyeHeight = eyePosition(localPawn).y - foot.y,
-                    .yaw = state.local.command.yaw,
-                    .planarVelocity = motion.planarVelocity,
-                    .verticalSpeed = motion.verticalSpeed,
-                    .isGrounded = motion.isGrounded,
-                    .isCrouched = motion.stance != PawnStance::Stand,
-                    .isSliding = isSliding(motion),
-                    .isAiming = look.isAiming,
+            const PawnSettings& pawns = state.settings.pawns;
+            const HeadMotionTuning& strides = state.headMotion.tuning;
+            updateFootsteps(state.footsteps, engine.audio,
+                FootstepFrame{.level = state.level ? &*state.level : nullptr,
+                    .physics = &engine.physics,
                     .walkSpeed = pawns.walkSpeed,
                     .runSpeed = pawns.runSpeed,
-                    .strafeSpeed = pawns.strafeSpeed,
-                    .shotCount = state.local.command.shotCount,
-                    .canKick = look.isArmed && !look.isLowered && !isHoldingToy(state, engine),
-                    .deltaSeconds = playerSeconds});
-        }
-
-        void presentViewModel(GameState& state, EngineContext& engine, const std::optional<math::Vec3>& eye,
-            const HeadPose& head, float playerSeconds)
-        {
-            if (!state.pawnCharacters || !state.pawnCharacters->firstPerson)
-            {
-                return;
-            }
-
-            PawnCharacters& characters = *state.pawnCharacters;
-            const PawnLook look = localPawnLook(state, engine);
-
-            if (!eye || !look.isArmed || state.flyCamera.isActive)
-            {
-                hideViewModel(characters.viewModel);
-                return;
-            }
-
-            const PlayerCommand& command = state.local.command;
-            drawViewModel(engine.renderer, *characters.firstPerson, characters.viewModel,
-                ViewModelInput{.eye = *eye,
-                    .yaw = command.yaw,
-                    .pitch = command.pitch,
-                    .cameraPitchOffset = head.pitchOffset,
-                    .cameraRoll = head.roll,
-                    .bobPhase = head.bobPhase,
-                    .bobStrength = head.bobStrength,
-                    .isCrouched = localPawnMotion(state, engine).stance != PawnStance::Stand,
-                    .isAiming = look.isAiming,
-                    .isLowered = look.isLowered,
-                    .canFire = !isHoldingToy(state, engine),
-                    .shotCount = command.shotCount,
-                    .deltaSeconds = playerSeconds});
+                    .walkStride = strides.walkStride,
+                    .runStride = strides.runStride,
+                    .crouchStride = strides.crouchStride,
+                    .worldScale = engine.timeDomains.scale(world::TimeDomain::World),
+                    .seconds = playerSeconds},
+                steps);
         }
     } //namespace
 
@@ -280,14 +332,20 @@ namespace game
             beginPawnCharacters(*state.pawnCharacters);
         }
 
+        std::vector<FootstepPawn> steps;
+        const float worldSeconds = frameInfo.frameSeconds * engine.timeDomains.scale(world::TimeDomain::World);
+        beginNpcLooks(state.npcLooks);
+
         if (isClient)
         {
-            presentClient(state, engine, frameInfo.alpha, playerSeconds, localPawn);
+            presentClient(state, engine, frameInfo.alpha, playerSeconds, worldSeconds, localPawn, steps);
         }
         else
         {
-            presentHost(state, engine, frameInfo.alpha, playerSeconds, localPawn);
+            presentHost(state, engine, frameInfo.alpha, playerSeconds, worldSeconds, localPawn, steps);
         }
+
+        endNpcLooks(state.npcLooks);
 
         const PlayerStatus& status = state.local.statuses[isClient ? k_clientPawn : k_hostPawn];
         presentMirrors(engine.renderer, state.level ? &state.level->scene : nullptr);
@@ -300,12 +358,13 @@ namespace game
 
         HeadPose head{};
         View view = lobbyView(state);
+        const FirstPersonLook look = presentedLook(state, engine, frameInfo);
 
         if (localPawn)
         {
-            const float yaw = state.local.command.yaw;
-            const float pitch = state.local.command.pitch;
-            head = presentHead(state, engine, *localPawn, playerSeconds);
+            const float yaw = look.yaw;
+            const float pitch = look.pitch;
+            head = presentHead(state, engine, *localPawn, look, playerSeconds);
             view = View{.eye = head.eye,
                 .direction = lookDirection(yaw, pitch),
                 .cameraDirection = lookDirection(yaw, pitch + head.pitchOffset),
@@ -316,8 +375,9 @@ namespace game
             resetHeadMotion(state.headMotion);
         }
 
+        presentFootsteps(state, engine, steps, localPawn, head, playerSeconds);
         presentToys(state, engine, frameInfo.alpha, localPawn ? std::optional<View>(view) : std::nullopt);
-        presentViewModel(state, engine, localPawn ? std::optional<math::Vec3>(view.eye) : std::nullopt, head,
+        presentViewModel(state, engine, localPawn ? std::optional<math::Vec3>(view.eye) : std::nullopt, head, look,
             playerSeconds);
 
         if (state.level)
@@ -328,6 +388,7 @@ namespace game
         }
 
         drawHud(engine.renderer, state.hud);
+        presentCombat(state, engine, steps, localPawn, look.yaw, view.eye, view.direction, frameInfo.frameSeconds);
 
         if (state.level)
         {
@@ -341,7 +402,8 @@ namespace game
         }
 
         engine.renderer.setCamera(firstPersonCamera(view.eye, view.cameraDirection,
-            state.pawnCharacters ? viewModelZoom(state.pawnCharacters->viewModel) : 0.0f, view.up));
+            state.pawnCharacters ? viewModelZoom(state.pawnCharacters->viewModel) : 0.0f, view.up,
+            localPawn ? head.fovOffset : 0.0f));
 
         if (localPawn)
         {

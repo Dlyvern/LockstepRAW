@@ -69,8 +69,9 @@ namespace game
     //            missing value or a scale that is not a positive number.
     [[nodiscard]] lockstep::Result<std::optional<SceneLaunch>> parseSceneLaunch(std::span<const char* const> arguments);
 
-    // Loads the cooked level or imports the glTF scene, builds its colliders and logs load time,
-    // triangles, texture memory and import warnings.
+    // Loads the cooked level or imports the glTF scene, builds its colliders, applies its look
+    // (interior ambient zones, decal instances, time-of-day preset; see LevelAmbience.hpp and
+    // LevelLook.hpp) and logs load time, triangles, texture memory and import warnings.
     // launch:   the level or file, and scale.
     // renderer: uploads the scene.
     // physics:  receives the colliders.

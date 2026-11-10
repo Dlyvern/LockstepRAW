@@ -1,5 +1,6 @@
 #include "PostPasses.hpp"
 
+#include "ExposurePasses.hpp"
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
 #include "RendererState.hpp"
@@ -9,6 +10,7 @@
 #include <Vela/Graphics/RenderGraph.hpp>
 #include <Vela/Graphics/VertexLayout.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -49,6 +51,12 @@ namespace lockstep::render
             uint32_t tonemapper;
             float bloomStrength;
             uint32_t view;
+            float lift[4]{};
+            float gamma[4]{};
+            float gain[4]{};
+            float shadowTint[4]{};
+            float highlightTint[4]{};
+            float vignette[4]{};
         };
 
         enum class OutputFilter : uint32_t
@@ -66,12 +74,48 @@ namespace lockstep::render
             float dither;
             uint32_t frameIndex;
             float sharpness;
+            float padding[2];
+            float grain[4];
         };
 
         static_assert(sizeof(ProjectionConstants) == 32);
         static_assert(sizeof(BloomConstants) == 16);
-        static_assert(sizeof(TonemapConstants) == 16);
-        static_assert(sizeof(OutputConstants) == 40);
+        static_assert(sizeof(TonemapConstants) == 112);
+        static_assert(sizeof(OutputConstants) == 64);
+
+        void store(float (&target)[4], const math::Vec3& xyz, float w)
+        {
+            target[0] = xyz.x;
+            target[1] = xyz.y;
+            target[2] = xyz.z;
+            target[3] = w;
+        }
+
+        TonemapConstants tonemapConstants(const RendererState& state, float aspectRatio)
+        {
+            const RenderSettings& settings = state.settings;
+            const TonemapSettings& tonemap = settings.tonemap;
+            const ColorGradingSettings& grading = settings.colorGrading;
+            const VignetteSettings& vignette = settings.vignette;
+            const bool showOcclusion = settings.ambientOcclusion.enabled && settings.ambientOcclusion.showOnly;
+
+            TonemapConstants constants{
+                .exposure = tonemap.enabled ? tonemap.exposure : 1.0f,
+                .tonemapper = static_cast<uint32_t>(tonemap.enabled ? tonemap.tonemapper : Tonemapper::Clamp),
+                .bloomStrength = settings.bloom.enabled ? settings.bloom.strength : 0.0f,
+                .view = showOcclusion ? k_viewOcclusion : k_viewScene};
+            store(constants.lift, grading.lift, grading.enabled ? 1.0f : 0.0f);
+            store(constants.gamma, grading.gamma, std::clamp(grading.contrast, 0.0f, 2.0f));
+            store(constants.gain, grading.gain, std::max(grading.saturation, 0.0f));
+            store(constants.shadowTint, grading.shadowTint, std::clamp(grading.splitToneStrength, 0.0f, 1.0f));
+            store(constants.highlightTint, grading.highlightTint, grading.splitToneBalance);
+            store(constants.vignette,
+                math::Vec3{vignette.enabled ? std::clamp(vignette.intensity, 0.0f, 1.0f) : 0.0f, vignette.radius,
+                    std::max(vignette.smoothness, 0.01f)},
+                aspectRatio);
+
+            return constants;
+        }
 
         vela::graphics::AttachmentSlot colorSlot(std::string_view name, vela::graphics::TextureFormat format,
             float scale, float clearValue)
@@ -209,14 +253,19 @@ namespace lockstep::render
             {
                 const std::string_view lower = level + 1 == k_bloomLevels - 1 ? k_bloomDownAttachments[level + 1]
                     : k_bloomUpAttachments[level + 1];
+                const bool carriesExposure = level == 0;
 
                 if (auto added = addPass(graph, state, k_bloomUpShader,
                     colorSlot(k_bloomUpAttachments[level], k_sceneColorFormat, bloomScale(level), 0.0f),
-                    {std::string(lower), std::string(k_bloomDownAttachments[level])},
-                    [&state](vela::graphics::PassRecorder& recorder)
+                    {std::string(lower), std::string(k_bloomDownAttachments[level]), std::string(k_exposureAttachment)},
+                    [&state, carriesExposure](vela::graphics::PassRecorder& recorder)
                     {
-                        recorder.setConstants(texelOf(recorder, 0.5f));
-                        return state.settings.bloom.enabled;
+                        const AutoExposureSettings& exposure = state.settings.autoExposure;
+                        BloomConstants constants = texelOf(recorder, 0.5f);
+                        constants.sourceTexel[2] = carriesExposure && exposure.enabled ? 1.0f : 0.0f;
+                        constants.sourceTexel[3] = exposure.compensationEv;
+                        recorder.setConstants(constants);
+                        return state.settings.bloom.enabled || carriesExposure;
                     }); !added)
                 {
                     return added;
@@ -234,15 +283,10 @@ namespace lockstep::render
                     std::string(k_occlusionBlurAttachment), std::string(k_bloomUpAttachments[0])},
                 [&state](vela::graphics::PassRecorder& recorder)
                 {
-                    const RenderSettings& settings = state.settings;
-                    const TonemapSettings& tonemap = settings.tonemap;
-                    const bool showOcclusion = settings.ambientOcclusion.enabled && settings.ambientOcclusion.showOnly;
-
-                    recorder.setConstants(TonemapConstants{
-                        .exposure = tonemap.enabled ? tonemap.exposure : 1.0f,
-                        .tonemapper = static_cast<uint32_t>(tonemap.enabled ? tonemap.tonemapper : Tonemapper::Clamp),
-                        .bloomStrength = settings.bloom.enabled ? settings.bloom.strength : 0.0f,
-                        .view = showOcclusion ? k_viewOcclusion : k_viewScene});
+                    const vela::graphics::Extent2D extent = recorder.extent();
+                    const float aspectRatio = extent.height > 0
+                        ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
+                    recorder.setConstants(tonemapConstants(state, aspectRatio));
                     return true;
                 }); !added)
             {
@@ -262,6 +306,7 @@ namespace lockstep::render
                     const AntiAliasingSettings& antiAliasing = state.settings.antiAliasing;
 
                     const math::Vec4& fade = state.screenFade;
+                    const FilmGrainSettings& grain = state.settings.filmGrain;
 
                     recorder.setConstants(OutputConstants{
                         .fade = {fade.x, fade.y, fade.z, fade.w},
@@ -269,7 +314,10 @@ namespace lockstep::render
                         .filter = outputFilter(antiAliasing.mode),
                         .dither = state.settings.tonemap.dither ? k_ditherAmplitude : 0.0f,
                         .frameIndex = state.frameIndex,
-                        .sharpness = antiAliasing.sharpness});
+                        .sharpness = antiAliasing.sharpness,
+                        .padding = {0.0f, 0.0f},
+                        .grain = {grain.enabled ? std::max(grain.intensity, 0.0f) : 0.0f,
+                            std::clamp(grain.response, 0.0f, 1.0f), std::clamp(grain.size, 1.0f, 3.0f), 0.0f}});
                     return true;
                 });
         }
@@ -340,6 +388,11 @@ namespace lockstep::render
     Status addPostPasses(vela::graphics::RenderGraph& graph, RendererState& state)
     {
         if (auto added = addOcclusionPasses(graph, state); !added)
+        {
+            return added;
+        }
+
+        if (auto added = addExposurePasses(graph, state); !added)
         {
             return added;
         }

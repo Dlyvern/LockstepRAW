@@ -50,6 +50,7 @@ namespace game
             return std::nullopt;
         }
 
-        return CharacterModel{.scene = std::move(loaded).value(), .model = *index};
+        const GearMasks masks = findGearMasks(loaded.value().skinnedModels[*index]);
+        return CharacterModel{.scene = std::move(loaded).value(), .model = *index, .gearMasks = masks};
     }
 } //namespace game

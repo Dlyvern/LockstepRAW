@@ -65,6 +65,8 @@ namespace lockstep::assets
     //              named ancestor when that node has no name; k_noNode if there is none (also for
     //              levels cooked before the format kept the hierarchy).
     // isVisible:   submitScene() skips the instance while false. Not stored; starts true.
+    // isDecal:     submitScene() draws it with Renderer::submitDecal(). Not stored; starts false
+    //              (see markDecalInstances()).
     struct SceneInstance
     {
         uint32_t mesh{0};
@@ -72,6 +74,7 @@ namespace lockstep::assets
         math::Aabb worldBounds{};
         uint32_t node{k_noNode};
         bool isVisible{true};
+        bool isDecal{false};
     };
 
     // A named glTF node, kept so Game can find markers such as a player start, and objects it
@@ -112,7 +115,7 @@ namespace lockstep::assets
     // spot intensity in candela, directional in lux. SceneLights.hpp converts them into render
     // lights; Game decides which ones to use.
     // type:       directional, point or spot.
-    // name:       the light's name, or its node's name.
+    // name:       its node's name (the Blender object name), or the light's own name when the node has none.
     // color:      linear RGB.
     // intensity:  see above.
     // range:      distance where the light ends, 0 for unlimited.
@@ -303,8 +306,16 @@ namespace lockstep::assets
     // scene:    the scene; empty afterwards.
     void releaseScene(render::Renderer& renderer, Scene& scene);
 
-    // Submits every visible static instance of the scene for the next render(). Skinned
-    // instances are drawn by Game through anim::SkinnedInstance.
+    // Marks as decals the instances whose node, or a named ancestor of it, has a name starting with
+    // `prefix` (case-sensitive), e.g. "Decal_".
+    // scene:   the scene.
+    // prefix:  the node name prefix.
+    // Returns: the number of instances marked.
+    uint32_t markDecalInstances(Scene& scene, std::string_view prefix);
+
+    // Submits every visible static instance of the scene for the next render() (decals, see
+    // SceneInstance::isDecal, with Renderer::submitDecal()). Skinned instances are drawn by Game
+    // through anim::SkinnedInstance.
     // renderer: the renderer the scene was imported with.
     // scene:    the scene.
     void submitScene(render::Renderer& renderer, const Scene& scene);

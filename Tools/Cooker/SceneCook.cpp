@@ -138,7 +138,9 @@ namespace lockstep::cooker
                         return written;
                     }
 
-                    cooked.parts.push_back(assets::CookedSkinnedPart{.path = path, .material = source.materials[part]});
+                    const cgltf_material* material = model.parts[part].material;
+                    cooked.parts.push_back(assets::CookedSkinnedPart{.path = path, .material = source.materials[part],
+                        .materialName = material != nullptr && material->name != nullptr ? material->name : ""});
                 }
 
                 const std::string path = filePath(context, "models", index, ".model");

@@ -131,7 +131,7 @@ namespace lockstep::assets
     {
         SceneLight result{};
         result.type = toLightType(light.type);
-        result.name = light.name != nullptr ? light.name : placed.node->name != nullptr ? placed.node->name : "";
+        result.name = placed.node->name != nullptr ? placed.node->name : light.name != nullptr ? light.name : "";
         result.color = math::Vec3{light.color[0], light.color[1], light.color[2]};
         result.intensity = light.intensity;
         result.range = light.range;

@@ -1,5 +1,8 @@
 #include "Level/SceneLevel.hpp"
 
+#include "Presentation/LevelAmbience.hpp"
+#include "Presentation/LevelLook.hpp"
+
 #include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Physics/PhysicsWorld.hpp>
 
@@ -20,6 +23,7 @@ namespace game
         namespace physics = lockstep::physics;
 
         constexpr std::string_view k_levelFlag{"--level"};
+        constexpr std::string_view k_decalPrefix{"Decal_"};
         constexpr std::string_view k_sceneFlag{"--scene"};
         constexpr std::string_view k_scaleFlag{"--scene-scale"};
         constexpr std::array<std::string_view, 2> k_spawnNodeNames{"PlayerStart", "Spawn"};
@@ -254,6 +258,9 @@ namespace game
 
         level.collision = std::move(collision).value();
         logLevel(launch, level);
+        std::clog << "Game: " << applyLevelAmbientZones(renderer, level.scene) << " interior ambient zones, "
+            << assets::markDecalInstances(level.scene, k_decalPrefix) << " decal instances, look '"
+            << lookPresetName(applyLevelLook(renderer, level.scene)) << "'\n";
 
         return level;
     }

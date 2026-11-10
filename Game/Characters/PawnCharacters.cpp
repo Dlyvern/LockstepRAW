@@ -12,6 +12,7 @@
 #include <iostream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace game
 {
@@ -24,11 +25,12 @@ namespace game
 
         constexpr math::Vec3 k_upAxis{0.0f, 1.0f, 0.0f};
         constexpr math::Vec3 k_pawnForward{0.0f, 0.0f, -1.0f};
+        constexpr math::Vec3 k_pawnBack{0.0f, 0.0f, 1.0f};
         constexpr math::Vec3 k_modelRight{1.0f, 0.0f, 0.0f};
         constexpr float k_minSquash{0.3f};
 
         math::Transform posedTransform(PawnCharacter& pawn, const PawnPoseTuning& tuning, const math::Vec3& foot,
-            float yaw, const PawnLook& look, bool hasCrouchClips, float deltaSeconds)
+            float yaw, float leanRoll, const PawnLook& look, bool hasCrouchClips, float deltaSeconds)
         {
             const float slideTarget = look.isSliding ? 1.0f : 0.0f;
             pawn.slideBlend += (slideTarget - pawn.slideBlend) * (1.0f - std::exp(-tuning.slideBlendRate * deltaSeconds));
@@ -36,8 +38,11 @@ namespace game
             const float squash = std::max(1.0f - tuning.crouchSquash * crouch - tuning.slideSquash * pawn.slideBlend,
                 k_minSquash);
 
+            const math::Quat facing = math::angleAxis(yaw, k_upAxis);
+
             return math::Transform{.position = foot,
-                .rotation = math::angleAxis(yaw + math::k_pi, k_upAxis)
+                .rotation = math::angleAxis(-leanRoll, facing * k_pawnBack)
+                    * math::angleAxis(yaw + math::k_pi, k_upAxis)
                     * math::angleAxis(-tuning.slideLean * pawn.slideBlend, k_modelRight),
                 .scale = math::Vec3{1.0f, squash, 1.0f}};
         }
@@ -163,6 +168,19 @@ namespace game
         return characters;
     }
 
+    StrideLengths pawnStrideLengths(const PawnCharacters& characters)
+    {
+        const std::vector<anim::AnimationClip>& clips = characters.unarmed.skinned().clips;
+        const auto cycle = [&clips](const StrideClip& stride)
+        {
+            return stride.clip < clips.size() ? stride.strideSpeed * clips[stride.clip].duration : 0.0f;
+        };
+
+        return StrideLengths{.walk = cycle(characters.locomotion.walk),
+            .run = cycle(characters.locomotion.run),
+            .crouch = characters.crouch ? cycle(characters.crouch->walk) : 0.0f};
+    }
+
     void beginPawnCharacters(PawnCharacters& characters)
     {
         for (PawnCharacter& pawn : characters.pawns)
@@ -201,9 +219,11 @@ namespace game
         pawn.isArmedModel = armed != nullptr;
         updateLocomotion(pawn.locomotion, set, pawn.instance.animator(), foot, yaw, deltaSeconds);
         pawn.instance.update(model, deltaSeconds);
-        pawn.instance.submit(renderer, model, posedTransform(pawn, characters->pose, foot, yaw, look,
+        pawn.instance.submit(renderer, model, posedTransform(pawn, characters->pose, foot, yaw,
+            pawnLeanRoll(transform), look,
             armed == nullptr && characters->crouch.has_value(), deltaSeconds),
-            layers);
+            layers, gearMask(armed != nullptr ? armed->body.gearMasks : characters->unarmed.gearMasks,
+                playerGearLook(owner)));
     }
 
     float pawnCharacterSpeed(const PawnCharacters& characters, world::EntityOwner owner)

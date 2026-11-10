@@ -76,11 +76,17 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   mirrors (`k_mirrorOnlyLayer`). First-person arms/weapons use `k_viewModelLayer` (bit 31, Engine
   reserved; Game layers are bits 1–30): camera view only, own FOV (`Camera::viewModelFov`), depth
   squeezed so it never clips into walls, no shadow casting. The Engine-internal `RenderPass`
-  interface is how Engine passes plug in; Game can't add passes yet.
+  interface is how Engine passes plug in; Game can't add passes yet. Post chain: auto exposure
+  (64x64 log-luminance grid -> 8x8 -> persistent 1x1 EV; carried to tonemapping in bloomUp1's
+  alpha because tonemap has no free input slot), ACES, colour grading + vignette in the tonemap
+  pass, TAA, then film grain and dither in the output pass. Shadow atlas 4096x2048: sun cascades
+  left half, 16 local light tiles (512) right half.
 - **Characters:** skinned glTF (Mixamo skeleton) cooked into `.model` + skinned `.mesh` (level
   format v3). Animation is presentation-only, derived from replicated movement, never replicated.
   Source in `Content/source/characters/<name>/` (Mixamo FBX clips retargeted in Blender onto the
-  model; arm offsets keep hands out of bulky gear). The current player model is a placeholder (SWAT
+  model; arm offsets keep hands out of bulky gear). Skinned parts keep their material names
+  (`SkinnedModelPart::materialName`, stored in `.model` files); `SkinnedInstance::submit` takes a
+  `PartMask` to hide parts (head gear materials `HeadGear_NVG/_Helmet/_Headset`). The current player model is a placeholder (SWAT
   operator, `Game/Characters/PawnCharacters.hpp` names scenes and clips in one place). Run with
   `--content Content/cooked/characters.pak`.
 - **Audio: FMOD Core 2.03.08** in `external/fmod` (as in Velix; SDK files git-ignored, only our
@@ -124,13 +130,33 @@ buses, 3D voices, listener). Create a module folder only when there is code for 
   physics toys (names containing "ball" are throwable balls), `CarSpot` marks the car,
   `Interact_Locker_1/2` are each player's locker door and `Interact_Gear_1/2` the gear inside
   (top-level nodes, not under the door). Moving parts are child objects of an `Interact_*` empty
-  placed on the hinge/pivot. In Blender, every object belongs to exactly one collection (the same
+  placed on the hinge/pivot. `Npc_*` empties are client-only placeholder people (facing the
+  empty's Blender +Y), looping an idle by role (`Npc_Civilian_*`/`Npc_Survivor_*` crouch,
+  `Npc_SquadOutside_*`/`Npc_CordonOfficer`/`Npc_Guard` armed, the rest idle); a name part
+  `_Idle`, `_Crouch`, `_Armed` or `_Aim` picks the pose (`Npc_Civilian_2_Idle`), and `_Full`,
+  `_NoNVG` or `_Balaclava` the head gear (`Npc_SquadOutside_3_Armed_Balaclava`; also on
+  `Npc_Squad_<n>` and `Spawn_Merc_*`). Default gear: civilians, survivors, prisoners balaclava
+  only; police and squad a mix by marker number; mercs mostly balaclava; Player1 full, Player2
+  without NVG (`Game/Characters/GearLooks.hpp`).
+  `Npc_Squad_<n>` are the armed squad AI, not placeholders. In Blender, every object belongs to exactly one collection (the same
   as its parent), or linked instancing duplicates it. Foliage materials must export as glTF MASK
   (Math "Round" node in front of Principled Alpha); the cooker then keeps alpha coverage in mips.
   Shader-node tricks glTF can't express (vertex-colour mixes, non-identity Mapping nodes) must be
   baked into UVs or split into materials. Cooked levels are format version 3 (v2 still loads);
   recook after cooker changes. The Echo recorder saves both players' movement and
   interactions (`--echo-play <file>` replays it).
+- **Level lighting and surfaces (authoring):** `Zone_Interior_*` cube empties (display size 1,
+  scaled so the cube covers the interior including its outer walls and roof; boxes are made
+  axis-aligned) dim the sky's image-based light inside and add a fill light (per pixel; blends in
+  over `blendDistance` inside the faces). Point/spot lights whose object name contains `_Shadow`
+  cast shadows (nearest 4 per frame; a point light costs 6 atlas tiles of 16, a spot 1). Objects
+  named `Decal_*` (or under such a node) are decals: thin meshes 2-5 mm off a surface with an
+  Alpha Blend material, drawn right after opaque geometry in scene order. Glass: Principled
+  Transmission > 0 (KHR_materials_transmission) or Alpha Blend with low alpha renders as glass
+  with Fresnel reflections; an opaque dark "glass" material stays a dark panel. Time of day: one
+  empty named `Level_Look_Day|Evening|Night` picks a Game preset (`Game/Presentation/LevelLook`:
+  sun, sky, IBL, exposure range, grade); none means Day. Custom properties (glTF extras) are not
+  cooked, so these conventions are all names and materials.
 - **Levels:** `Content/source/apartment/` (the flat) is linked into
   `Content/source/district/district.blend` (building, stairs, street, park, car) at second-floor
   height; export the district by making the linked instances real, exporting, and reloading.
@@ -223,7 +249,7 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
      frame). Persistent attachments + `InputUsage::History` exist since a601b8d (used by TAA).
   4. No cubemap, array or per-mip attachments.
   5. No `PassRecorder::setViewport` (only scissor).
-  6. Only 4 pass-input slots.
+  6. Only 4 pass-input slots (auto exposure reaches tonemapping through bloomUp1's alpha).
   7. No pre-record upload hook (may be moot: `DynamicBuffer::update` before `execute()` now
      lands in that frame; check before asking).
   8. A depth prepass read by SSAO and then loaded by the lit pass forms a graph cycle.

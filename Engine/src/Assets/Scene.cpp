@@ -86,6 +86,31 @@ namespace lockstep::assets
         return instances;
     }
 
+    uint32_t markDecalInstances(Scene& scene, std::string_view prefix)
+    {
+        uint32_t marked = 0;
+
+        for (SceneInstance& instance : scene.instances)
+        {
+            for (uint32_t node = instance.node; node < scene.nodes.size(); node = scene.nodes[node].parent)
+            {
+                if (std::string_view(scene.nodes[node].name).starts_with(prefix))
+                {
+                    instance.isDecal = true;
+                    ++marked;
+                    break;
+                }
+
+                if (scene.nodes[node].parent >= node)
+                {
+                    break;
+                }
+            }
+        }
+
+        return marked;
+    }
+
     void releaseScene(render::Renderer& renderer, Scene& scene)
     {
         for (const render::MeshHandle mesh : scene.resources.meshes)
@@ -116,6 +141,13 @@ namespace lockstep::assets
             }
 
             const SceneMesh& mesh = scene.meshes[instance.mesh];
+
+            if (instance.isDecal)
+            {
+                renderer.submitDecal(mesh.mesh, mesh.material, instance.transform);
+                continue;
+            }
+
             renderer.submit(mesh.mesh, mesh.material, instance.transform);
         }
     }

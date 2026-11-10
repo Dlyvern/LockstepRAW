@@ -29,6 +29,7 @@ namespace lockstep::render
         constexpr uint32_t k_brdfLutSlot{2};
         constexpr uint32_t k_planarReflectionSlot{3};
         constexpr uint32_t k_fullscreenTriangleVertices{3};
+        constexpr float k_decalBlend{2.0f};
 
         struct PbrDrawConstants
         {
@@ -98,6 +99,12 @@ namespace lockstep::render
         PbrDrawConstants constants{.model = item.model, .previousModel = item.previousModel,
             .factors = item.material->factors};
         constants.factors.flags[2] = static_cast<float>(view);
+
+        if (item.isDecal && view == PbrView::Camera && item.material->alphaMode == AlphaMode::Blend)
+        {
+            constants.factors.flags[1] = k_decalBlend;
+        }
+
         constants.factors.flags[3] = static_cast<float>(item.jointBase);
         recorder.draw(*item.mesh, item.material->material, constants);
     }
@@ -204,7 +211,7 @@ namespace lockstep::render
     vela::graphics::PassDescription ShadowPass::describe() const
     {
         vela::graphics::AttachmentSlot depth = clearedSlot(k_shadowMapAttachment, k_depthFormat);
-        depth.size = {k_shadowAtlasSize, k_shadowAtlasSize};
+        depth.size = {k_shadowAtlasWidth, k_shadowAtlasHeight};
         depth.clear.depth = 1.0f;
 
         vela::graphics::PassDescription description{};
@@ -226,8 +233,10 @@ namespace lockstep::render
                 continue;
             }
 
-            recorder.setScissor(static_cast<int32_t>((tile % 2) * k_shadowTileSize),
-                static_cast<int32_t>((tile / 2) * k_shadowTileSize), k_shadowTileSize, k_shadowTileSize);
+            const math::Vec4 rect = shadowTileRect(tile);
+            const uint32_t texels = shadowTileTexels(tile);
+            recorder.setScissor(static_cast<int32_t>(rect.x * static_cast<float>(k_shadowAtlasWidth)),
+                static_cast<int32_t>(rect.y * static_cast<float>(k_shadowAtlasHeight)), texels, texels);
 
             const math::Mat4& tileViewProjection = prepared.tiles[tile].atlasViewProjection;
 
@@ -344,6 +353,7 @@ namespace lockstep::render
 
         viewModelList(m_state->drawLists.viewModelOpaque);
         drawList(m_state->drawLists.opaque);
+        drawList(m_state->drawLists.decals);
 
         if (m_state->prepared.lighting.skyGround[3] > 0.0f)
         {

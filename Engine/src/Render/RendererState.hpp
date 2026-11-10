@@ -28,6 +28,7 @@
 #include <Vela/Graphics/Texture.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -71,7 +72,8 @@ namespace lockstep::render
     // emissiveNormalScale: rgb emissive factor, w normal scale.
     // surface:             x metallic, y roughness, z occlusion strength, w alpha cutoff (-1 when
     //                      not masked).
-    // flags:               x 1 if double-sided, y 1 if alpha-blended.
+    // flags:               x 1 if double-sided, y 1 if alpha-blended (2 for a decal draw, set when
+    //                      recorded), z the PbrView, w the joint palette base.
     struct PbrFactors
     {
         float baseColorFactor[4]{1.0f, 1.0f, 1.0f, 1.0f};
@@ -120,6 +122,7 @@ namespace lockstep::render
     // cameraDistance: distance from the camera to the bounds' centre, for sorting.
     // layers:         the render layers it is on.
     // isReflector:    it is the surface of this frame's rendered planar reflection.
+    // isDecal:        submitted with submitDecal().
     // jointBase:      skinned draws: index in RendererState::jointData of the palette's first
     //                 matrix (current and previous matrices interleaved per joint).
     struct DrawItem
@@ -132,11 +135,13 @@ namespace lockstep::render
         float cameraDistance{0.0f};
         RenderLayers layers{k_defaultRenderLayer};
         bool isReflector{false};
+        bool isDecal{false};
         uint32_t jointBase{0};
     };
 
     // Indices into RendererState::draws chosen for one frame.
     // opaque:           visible opaque, masked and unlit world draws, front to back.
+    // decals:           visible alpha-blended decal draws, in submission order.
     // blended:          visible alpha-blended world draws, back to front.
     // viewModelOpaque:  visible opaque and masked viewmodel draws, front to back.
     // viewModelBlended: visible alpha-blended viewmodel draws, back to front.
@@ -144,6 +149,7 @@ namespace lockstep::render
     struct FrameDrawLists
     {
         std::vector<uint32_t> opaque;
+        std::vector<uint32_t> decals;
         std::vector<uint32_t> blended;
         std::vector<uint32_t> viewModelOpaque;
         std::vector<uint32_t> viewModelBlended;
@@ -157,7 +163,8 @@ namespace lockstep::render
     // local:          point and spot lights used.
     // dropped:        lights rejected over k_maxLocalLights.
     // hasDirectional: the frame had a sun (submitted or from the sky).
-    // spotShadow:     a spot light cast a shadow.
+    // shadowedLocalLights: point and spot lights that cast a shadow.
+    // localShadowTiles: shadow atlas tiles those lights rendered.
     // cascades:       sun shadow cascades rendered.
     // submitted:      draws submitted.
     // visible:        draws that passed frustum culling.
@@ -167,7 +174,8 @@ namespace lockstep::render
         uint32_t local{0};
         uint32_t dropped{0};
         bool hasDirectional{false};
-        bool spotShadow{false};
+        uint32_t shadowedLocalLights{0};
+        uint32_t localShadowTiles{0};
         uint32_t cascades{0};
         uint32_t submitted{0};
         uint32_t visible{0};
@@ -257,6 +265,7 @@ namespace lockstep::render
         FrameDrawLists drawLists;
         FrameLights lights;
         std::vector<PlanarReflector> reflectors;
+        std::vector<AmbientZone> ambientZones;
         PreparedLighting prepared;
         PreparedReflection reflection;
         TemporalState temporal;
@@ -264,6 +273,8 @@ namespace lockstep::render
         math::Vec4 screenFade{0.0f, 0.0f, 0.0f, 0.0f};
         FrameStats lastFrame{};
         uint32_t frameIndex{0};
+        float frameSeconds{0.0f};
+        std::chrono::steady_clock::time_point lastRender{};
         bool hasLoggedStaleHandle{false};
 
         std::optional<vela::graphics::RenderGraph> graph;

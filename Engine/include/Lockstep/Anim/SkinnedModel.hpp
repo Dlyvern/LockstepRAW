@@ -9,6 +9,7 @@
 #include "Lockstep/Render/Resources.hpp"
 #include "Lockstep/Render/Views.hpp"
 
+#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
@@ -21,11 +22,24 @@ namespace lockstep::render
 namespace lockstep::anim
 {
     // One drawable part of a skinned model: a skinned GPU mesh and its skinned material.
+    // mesh:         the GPU mesh.
+    // material:     the GPU material.
+    // materialName: the source material's name (e.g. "HeadGear_Helmet"), so Game can pick parts
+    //               to hide; empty when the source had none (or a model cooked before names
+    //               were kept).
     struct SkinnedModelPart
     {
         render::MeshHandle mesh{};
         render::MaterialHandle material{};
+        std::string materialName;
     };
+
+    // A set of a model's parts for SkinnedInstance::submit(): bit i stands for parts[i]. Parts
+    // past the 64th are always drawn.
+    using PartMask = uint64_t;
+
+    // Every part of a model.
+    inline constexpr PartMask k_allParts{~PartMask{0}};
 
     // A loaded skinned model (a glTF skin with the meshes it deforms and the clips that animate
     // it). GPU resources are owned by the Renderer; this holds handles. Shared by every instance.
@@ -64,14 +78,15 @@ namespace lockstep::anim
         // deltaSeconds: elapsed presentation time.
         void update(const SkinnedModel& model, float deltaSeconds);
 
-        // Queues every part of the model for the next render() with this instance's pose.
+        // Queues the model's parts for the next render() with this instance's pose.
         // Does nothing before the first update().
         // renderer:  the renderer the model was loaded with.
         // model:     the model passed to update().
         // transform: world placement of the model.
         // layers:    render layers the draws are on.
+        // parts:     which parts to draw (e.g. without a helmet); all by default.
         void submit(render::Renderer& renderer, const SkinnedModel& model, const math::Transform& transform,
-            render::RenderLayers layers = render::k_defaultRenderLayer) const;
+            render::RenderLayers layers = render::k_defaultRenderLayer, PartMask parts = k_allParts) const;
 
         // Returns: the current pose (local joint transforms).
         [[nodiscard]] const Pose& pose() const noexcept;

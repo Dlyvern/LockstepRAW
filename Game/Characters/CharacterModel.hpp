@@ -1,6 +1,8 @@
 #ifndef LOCKSTEP_GAME_CHARACTERS_CHARACTER_MODEL_HPP
 #define LOCKSTEP_GAME_CHARACTERS_CHARACTER_MODEL_HPP
 
+#include "Characters/GearLooks.hpp"
+
 #include <Lockstep/Anim/SkinnedModel.hpp>
 #include <Lockstep/Assets/Scene.hpp>
 
@@ -21,12 +23,14 @@ namespace lockstep::render
 namespace game
 {
     // One skinned character model loaded from a cooked scene.
-    // scene: the loaded scene (owns the model's GPU handles).
-    // model: index of the model in scene.skinnedModels.
+    // scene:     the loaded scene (owns the model's GPU handles).
+    // model:     index of the model in scene.skinnedModels.
+    // gearMasks: the parts drawn for each head gear look.
     struct CharacterModel
     {
         lockstep::assets::Scene scene;
         uint32_t model{0};
+        GearMasks gearMasks{};
 
         // Returns: the skinned model.
         [[nodiscard]] const lockstep::anim::SkinnedModel& skinned() const

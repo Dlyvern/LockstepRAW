@@ -3,7 +3,9 @@
 #include "GameState.hpp"
 #include "Level/MorningRoutine.hpp"
 #include "Player/LocalPlayer.hpp"
+#include "Simulation/HospitalSimulation.hpp"
 #include "Simulation/HostSimulation.hpp"
+#include "Simulation/NpcSimulation.hpp"
 #include "Simulation/RoomSimulation.hpp"
 #include "Simulation/StationSimulation.hpp"
 
@@ -159,6 +161,17 @@ namespace game
             state.dialogue = loadDialogue(engine.files, shortName);
             state.npcs = findNpcPlaceholders(scene, shortName);
             state.hud.localPlayer = engine.session.role() == net::Role::Client ? k_clientPawn : k_hostPawn;
+
+            if (engine.session.role() != net::Role::Client)
+            {
+                clearLevelNpcs(state, engine);
+                state.simulation.checkpoint.reset();
+            }
+
+            if (startHospital(state, engine))
+            {
+                return {};
+            }
 
             if (startStation(state))
             {
@@ -459,10 +472,17 @@ namespace game
             autoplay(state, engine, engine.timeDomains.delta(world::TimeDomain::Player));
         }
 
-        if (!flow.next.empty() && isDriveOver(state))
+        if (!flow.next.empty() && (isDriveOver(state) || flow.isSwitchRequested))
         {
+            flow.isSwitchRequested = false;
             switchLevelAsHost(state, engine);
         }
+    }
+
+    void requestLevelSwitch(LevelFlow& flow, std::string_view level)
+    {
+        flow.next = std::string(level);
+        flow.isSwitchRequested = true;
     }
 
     bool receiveLevelMessage(GameState& state, EngineContext& engine, std::span<const std::byte> message)

@@ -17,7 +17,7 @@ namespace game
     namespace math = lockstep::math;
 
     // Bytes an encoded PlayerCommand takes.
-    inline constexpr std::size_t k_playerCommandBytes{13};
+    inline constexpr std::size_t k_playerCommandBytes{15};
 
     // What one player wants to do this tick. The client sends it to the host every tick; the host
     // builds its own player's from local input. The host simulates both players from these.
@@ -26,8 +26,8 @@ namespace game
     // pitch:      look direction up (positive) or down, in radians.
     // shotCount:  shots fired so far, wrapping at 256. The host fires once per increase, so a lost
     //             or repeated message neither drops nor doubles a shot (up to 255 at a time).
-    // bulletTime: true while the player holds bullet-time.
-    // interactCount: interact presses (E) so far, wrapping at 256; counted like `shotCount`.
+    // bulletTime: true while the player holds bullet-time (Left Alt or the middle mouse button).
+    // interactCount: interact presses (F) so far, wrapping at 256; counted like `shotCount`.
     // sprint:     true while the player holds run (Shift); only speeds up forward moves.
     // aim:        true while the armed player aims down sights (right mouse button, not while the
     //             weapon must stay lowered); no running then.
@@ -37,6 +37,10 @@ namespace game
     //             host overwrites it from its own armed and lowered state.
     // crouch:     the player wants to crouch (Ctrl held or the C toggle on). A fresh crouch while
     //             running starts a slide (see stepPawn()).
+    // jump:       the player holds jump (Space). A fresh press jumps (or mantles, see stepPawn()).
+    // lean:       -1 while leaning left (Q), 1 right (E), 0 upright.
+    // reloadCount: reload presses (R) so far, wrapping at 256; counted like `shotCount`.
+    // isInteractHeld: the player holds interact (F), e.g. to revive a downed partner.
     struct PlayerCommand
     {
         math::Vec2 move{0.0f, 0.0f};
@@ -50,6 +54,10 @@ namespace game
         bool lower{false};
         bool isWeaponUp{false};
         bool crouch{false};
+        bool jump{false};
+        int8_t lean{0};
+        uint8_t reloadCount{0};
+        bool isInteractHeld{false};
     };
 
     // The local player's look, shot and interact counters, kept between ticks to build
@@ -58,7 +66,8 @@ namespace game
     // shotCount:     shots fired so far, wrapping at 256.
     // interactCount: interact presses so far, wrapping at 256.
     // wantsLowered:  the lower toggle; fire or aim clears it to raise the weapon.
-    // isCrouchToggled: the crouch toggle (C); a fresh press of run (Shift) clears it.
+    // isCrouchToggled: the crouch toggle (C); a fresh press of run (Shift) or jump (Space) clears it.
+    // reloadCount:   reload presses so far, wrapping at 256.
     struct LocalControls
     {
         float yaw{0.0f};
@@ -67,6 +76,7 @@ namespace game
         uint8_t interactCount{0};
         bool wantsLowered{false};
         bool isCrouchToggled{false};
+        uint8_t reloadCount{0};
     };
 
     // The key that lowers or raises the weapon.
@@ -77,28 +87,46 @@ namespace game
     // zone:         the weapon zone the local pawn stands in.
     // isHoldingToy: the player carries a toy: the weapon is lowered (as in a safe zone), a click
     //               throws the toy, aim and the lower key do nothing.
+    // isReady:      the weapon may fire (not running or just stopped, isWeaponReady() of the
+    //               local pawn as last simulated or predicted); a click while not ready is ignored,
+    //               as the host would ignore the shot.
+    // hasRounds:    the magazine has rounds and no reload runs (as last replicated); a click on an
+    //               empty magazine asks for a reload instead of firing.
     struct WeaponControl
     {
         bool isArmed{false};
         WeaponZone zone{WeaponZone::Open};
         bool isHoldingToy{false};
+        bool isReady{true};
+        bool hasRounds{true};
     };
 
-    // Settings for turning device input into commands.
+    // Settings for turning device input into commands. Mouse movement is the raw relative motion
+    // (the window enables raw mouse motion while the cursor is captured), applied linearly: no
+    // smoothing, no acceleration.
     // mouseSensitivity: radians of look per pixel of mouse movement.
+    // aimSensitivityScale: sensitivity multiplier while aiming down sights.
     // maxPitch:         largest look angle up or down, in radians.
     struct ControlSettings
     {
         float mouseSensitivity{0.0025f};
+        float aimSensitivityScale{0.7f};
         float maxPitch{1.45f};
     };
 
+    // settings: sensitivity settings.
+    // isAiming: the player aims down sights.
+    // Returns:  radians of look per pixel of mouse movement.
+    [[nodiscard]] float lookSensitivity(const ControlSettings& settings, bool isAiming);
+
     // Builds this tick's command from local input: WASD to move, Shift to run, hold Ctrl or toggle
-    // C to crouch (Ctrl or C while running slides), mouse to look,
-    // left mouse to fire, right mouse to aim down sights, X (k_lowerWeaponKey) to lower or raise
-    // the weapon, E to interact, Space for bullet-time. Look, fire, aim, lower and interact only
-    // count while the cursor is captured. With the weapon lowered, a click or aim raises it
-    // instead of firing (where raising is allowed; a click still throws a held toy).
+    // C to crouch (Ctrl or C while running slides), Space to jump (a press also clears the crouch
+    // toggle), hold Q / E to lean, mouse to look, left mouse to fire, right mouse to aim down
+    // sights, R to reload, X (k_lowerWeaponKey) to lower or raise the weapon, F to interact (held
+    // too, for reviving), hold Left Alt or
+    // the middle mouse button for bullet-time. Look, fire, aim, lower and interact only count
+    // while the cursor is captured. With the weapon lowered, a click or aim raises it instead of
+    // firing (where raising is allowed; a click still throws a held toy).
     // controls:        the local look and shot counter, updated in place.
     // settings:        sensitivity and pitch limit.
     // input:           this tick's input.
@@ -107,6 +135,13 @@ namespace game
     // Returns:         the command.
     [[nodiscard]] PlayerCommand sampleLocalCommand(LocalControls& controls, const ControlSettings& settings,
         const lockstep::platform::Input& input, bool isCursorCaptured, const WeaponControl& weapon);
+
+    // Limits a downed player's command to a crawl: crouched, slower, no running, jumping, leaning,
+    // aiming or bullet-time. Host and client apply it alike, so the client's prediction matches;
+    // applying it twice changes nothing.
+    // command:    the command, changed in place.
+    // crawlScale: longest move input allowed, 0 to 1 (DownedSettings::crawlScale).
+    void restrictDownedCommand(PlayerCommand& command, float crawlScale);
 
     // Packs a command into the bytes sent to the host.
     // command: the command.
