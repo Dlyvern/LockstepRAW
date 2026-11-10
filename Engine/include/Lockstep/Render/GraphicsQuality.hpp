@@ -31,6 +31,10 @@ namespace lockstep::render
     inline constexpr uint32_t k_minShadowAtlasSize{1024};
     inline constexpr uint32_t k_maxShadowAtlasSize{8192};
 
+    // Range of a set frame rate limit or cap, in frames per second.
+    inline constexpr uint32_t k_minFrameRateLimit{20};
+    inline constexpr uint32_t k_maxFrameRateLimit{1000};
+
     // How much rendering quality the GPU is asked for, separate from the look Game sets in
     // RenderSettings (colours, densities, grading). The Renderer renders RenderSettings limited by
     // this: a feature switched off here stays off whatever RenderSettings says, and step counts
@@ -69,6 +73,8 @@ namespace lockstep::render
     // scopeResolution:     most texels per side of the scope view, 256 to 1024.
     // particleBudget:      particles Game should allow alive at once (read by Game when it creates
     //                      its ParticleSystem).
+    // frameRateLimit:      most frames per second the run loop renders, 0 for no limit, else 20 to
+    //                      1000 (on top of the present mode; see Renderer::frameRateLimit()).
     struct GraphicsQuality
     {
         GraphicsPreset preset{GraphicsPreset::High};
@@ -94,6 +100,7 @@ namespace lockstep::render
         float reflectionResolution{1.0f};
         uint32_t scopeResolution{512};
         uint32_t particleBudget{20000};
+        uint32_t frameRateLimit{0};
     };
 
     // preset:  a preset other than Custom.

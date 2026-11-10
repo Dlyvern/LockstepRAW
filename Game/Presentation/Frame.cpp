@@ -56,25 +56,14 @@ namespace game
             math::Vec3 up{0.0f, 1.0f, 0.0f};
         };
 
-        void updateCursorCapture(platform::Window& window, const platform::Input& input)
+        void updateCursorCapture(platform::Window& window, const platform::Input& input, bool canCapture)
         {
             if (input.wasKeyPressed(platform::Key::F12))
             {
                 window.setFullscreen(!window.isFullscreen());
             }
 
-            if (input.wasKeyPressed(platform::Key::Escape))
-            {
-                if (window.isCursorCaptured())
-                {
-                    window.setCursorCaptured(false);
-                }
-                else
-                {
-                    window.close();
-                }
-            }
-            else if (input.wasMouseButtonPressed(platform::MouseButton::Left))
+            if (canCapture && input.wasMouseButtonPressed(platform::MouseButton::Left))
             {
                 window.setCursorCaptured(true);
             }
@@ -398,7 +387,7 @@ namespace game
 
     void presentFrame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
     {
-        updateCursorCapture(engine.window, frameInfo.input);
+        updateCursorCapture(engine.window, frameInfo.input, !isShellBlockingInput(state.shell));
         updateDevCapture(state.devCapture, engine.renderer,
             DevCaptureEvents{.isReloading = state.local.statuses[localPawnIndex(engine)].isReloading,
                 .isSwitching = shownWeapon(state).isSwitching});

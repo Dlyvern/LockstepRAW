@@ -24,6 +24,11 @@ namespace lockstep::platform
             return offsetKey(Key::Num0, key, VelaKey::Num0);
         }
 
+        if (key >= VelaKey::Numpad0 && key <= VelaKey::Numpad9)
+        {
+            return offsetKey(Key::Num0, key, VelaKey::Numpad0);
+        }
+
         if (key >= VelaKey::F1 && key <= VelaKey::F12)
         {
             return offsetKey(Key::F1, key, VelaKey::F1);
@@ -91,6 +96,86 @@ namespace lockstep::platform
             {
                 return Key::RightAlt;
             }
+            case VelaKey::Delete:
+            {
+                return Key::Delete;
+            }
+            case VelaKey::Insert:
+            {
+                return Key::Insert;
+            }
+            case VelaKey::Home:
+            {
+                return Key::Home;
+            }
+            case VelaKey::End:
+            {
+                return Key::End;
+            }
+            case VelaKey::PageUp:
+            {
+                return Key::PageUp;
+            }
+            case VelaKey::PageDown:
+            {
+                return Key::PageDown;
+            }
+            case VelaKey::CapsLock:
+            {
+                return Key::CapsLock;
+            }
+            case VelaKey::Minus:
+            {
+                return Key::Minus;
+            }
+            case VelaKey::Equal:
+            {
+                return Key::Equal;
+            }
+            case VelaKey::LeftBracket:
+            {
+                return Key::LeftBracket;
+            }
+            case VelaKey::RightBracket:
+            {
+                return Key::RightBracket;
+            }
+            case VelaKey::Backslash:
+            {
+                return Key::Backslash;
+            }
+            case VelaKey::Semicolon:
+            {
+                return Key::Semicolon;
+            }
+            case VelaKey::Apostrophe:
+            {
+                return Key::Apostrophe;
+            }
+            case VelaKey::Comma:
+            {
+                return Key::Comma;
+            }
+            case VelaKey::Period:
+            {
+                return Key::Period;
+            }
+            case VelaKey::Slash:
+            {
+                return Key::Slash;
+            }
+            case VelaKey::GraveAccent:
+            {
+                return Key::GraveAccent;
+            }
+            case VelaKey::NumpadEnter:
+            {
+                return Key::Enter;
+            }
+            case VelaKey::NumpadDecimal:
+            {
+                return Key::Period;
+            }
             default:
             {
                 return std::nullopt;
@@ -113,6 +198,14 @@ namespace lockstep::platform
             case vela::core::MouseButton::Middle:
             {
                 return MouseButton::Middle;
+            }
+            case vela::core::MouseButton::Extra1:
+            {
+                return MouseButton::Back;
+            }
+            case vela::core::MouseButton::Extra2:
+            {
+                return MouseButton::Forward;
             }
             default:
             {

@@ -45,7 +45,8 @@ namespace lockstep::app
     // replication, pumping the network session and applying what arrived), draw
     // dev panels, call GameApi::frame with
     // the interpolation alpha, update audio (listener on the camera, World bus at the World time
-    // scale), then render. While the dev tools want the keyboard or mouse, Game
+    // scale), then render, then sleep if needed so frames stay within Renderer::frameRateLimit().
+    // While the dev tools want the keyboard or mouse, Game
     // sees that part of the input as idle (except the mouse while the cursor is captured).
     // description: window, renderer and tick settings.
     // game:        Game's callbacks.

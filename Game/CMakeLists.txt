@@ -49,6 +49,11 @@ add_executable(LockstepGame
     Hospital/HospitalDevPanel.cpp
     Hospital/HospitalMission.cpp
     Interaction/Interactables.cpp
+    Intro/DustLogoScene.cpp
+    Intro/Intro.cpp
+    Intro/IntroCards.cpp
+    Intro/IntroLaunch.cpp
+    Intro/Wordmark.cpp
     Interaction/NodeMotion.cpp
     Interaction/ToyPhysics.cpp
     Interaction/Toys.cpp
@@ -79,6 +84,7 @@ add_executable(LockstepGame
     Npcs/NpcRoster.cpp
     Npcs/NpcSenses.cpp
     Npcs/NpcTactics.cpp
+    Npcs/NpcWatch.cpp
     Player/FireDrill.cpp
     Player/WeaponDrill.cpp
     Player/LocalPlayer.cpp
@@ -91,6 +97,7 @@ add_executable(LockstepGame
     Player/PawnMovement.cpp
     Player/PawnRays.cpp
     Player/Pawns.cpp
+    Player/KeyBindings.cpp
     Player/PlayerCommand.cpp
     Player/PlayerStatus.cpp
     Player/Prediction.cpp
@@ -112,6 +119,18 @@ add_executable(LockstepGame
     Presentation/Mirrors.cpp
     Presentation/Visuals.cpp
     Presentation/WeaponPresentation.cpp
+    Shell/Credits.cpp
+    Shell/GameSession.cpp
+    Shell/Lobby.cpp
+    Shell/LobbyScreen.cpp
+    Shell/MenuBackdrop.cpp
+    Shell/MenuScreens.cpp
+    Shell/MenuStyle.cpp
+    Shell/OptionsScreen.cpp
+    Shell/Shell.cpp
+    Shell/ShellDevTools.cpp
+    Shell/ShellLaunch.cpp
+    Shell/UserSettings.cpp
     Simulation/HospitalSimulation.cpp
     Simulation/HostSimulation.cpp
     Simulation/LevelFlow.cpp
@@ -151,6 +170,11 @@ target_include_directories(LockstepGame PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Game text data (dialogue) lives in the repository's Data/ folder and is mounted as the
 # lowest-priority content by default (main.cpp; `--data <dir>` overrides the folder).
 target_compile_definitions(LockstepGame PRIVATE LOCKSTEP_DATA_DIR="${CMAKE_SOURCE_DIR}/Data")
+
+# The main menu mounts the cooked paks from Content/cooked when no `--content` is given, and its
+# credits screen reads the repository's CREDITS.md.
+target_compile_definitions(LockstepGame PRIVATE LOCKSTEP_CONTENT_DIR="${CMAKE_SOURCE_DIR}/Content/cooked"
+    LOCKSTEP_CREDITS_FILE="${CMAKE_SOURCE_DIR}/CREDITS.md")
 
 if(MSVC)
     target_compile_options(LockstepGame PRIVATE /W4)

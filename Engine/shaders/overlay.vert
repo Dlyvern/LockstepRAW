@@ -1,19 +1,21 @@
 #version 450
 
-layout(push_constant) uniform TextConstants
+layout(push_constant) uniform OverlayConstants
 {
     vec2 pixelToClip;
     vec2 padding;
-} textConstants;
+} overlayConstants;
 
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec2 inUv;
 layout(location = 2) in vec4 inColor;
 layout(location = 3) in float inSoftness;
+layout(location = 4) in float inShade;
 
 layout(location = 0) out vec2 outUv;
 layout(location = 1) out vec4 outColor;
 layout(location = 2) out float outSoftness;
+layout(location = 3) out float outShade;
 
 vec3 srgbToLinear(vec3 srgb)
 {
@@ -27,5 +29,6 @@ void main()
     outUv = inUv;
     outColor = vec4(srgbToLinear(inColor.rgb), inColor.a);
     outSoftness = inSoftness;
-    gl_Position = vec4(inPosition * textConstants.pixelToClip - 1.0, 0.0, 1.0);
+    outShade = inShade;
+    gl_Position = vec4(inPosition * overlayConstants.pixelToClip - 1.0, 0.0, 1.0);
 }

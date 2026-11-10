@@ -76,7 +76,7 @@ namespace game
         }
         else
         {
-            local.pendingLook = local.pendingLook + frameInfo.input.mouseDelta();
+            local.pendingLook = local.pendingLook + lookDelta(state.settings.controls, frameInfo.input.mouseDelta());
         }
 
         const ControlSettings& controls = state.settings.controls;

@@ -79,7 +79,8 @@ namespace lockstep::render
     // flags:               x 1 if double-sided, y 1 if alpha-blended (2 for a decal draw, set when
     //                      recorded), z the PbrView, w the joint palette base.
     // detail:              x parallax height scale (0 without a height map), y the SurfaceDetail
-    //                      layer (0 none), z detail repeats per UV unit, w unused.
+    //                      layer (0 none), z detail repeats per UV unit, w the draw's local light
+    //                      mask (DrawItem::lightMask, bit pattern, set when recorded).
     struct PbrFactors
     {
         float baseColorFactor[4]{1.0f, 1.0f, 1.0f, 1.0f};
@@ -135,6 +136,8 @@ namespace lockstep::render
     // jointBase:      skinned draws: index in RendererState::jointData of the palette's first
     //                 matrix (current and previous matrices interleaved per joint).
     // emissiveScale:  multiplier on the material's emissive factor for this draw.
+    // lightMask:      bit i set when local light i of the frame's lighting block can reach the
+    //                 draw's bounds (set by buildDrawLists(); the lit shader only visits those).
     struct DrawItem
     {
         const vela::graphics::Mesh* mesh{nullptr};
@@ -150,6 +153,7 @@ namespace lockstep::render
         bool isDecal{false};
         uint32_t jointBase{0};
         float emissiveScale{1.0f};
+        uint32_t lightMask{0xFFFFFFFFu};
     };
 
     // Indices into RendererState::draws chosen for one frame.
@@ -195,7 +199,7 @@ namespace lockstep::render
         uint32_t shadowDraws{0};
     };
 
-    class TextPass;
+    class OverlayPass;
 
     // An Engine pass added to the render graph, and the name its graph-owned adapter was added
     // under.
@@ -260,6 +264,7 @@ namespace lockstep::render
         vela::core::Window& window;
         vela::core::Context context;
         PresentMode presentMode{k_defaultPresentMode};
+        uint32_t frameRateCap{0};
 
         MaterialShaders shaders;
 
@@ -282,7 +287,7 @@ namespace lockstep::render
 
         std::vector<RegisteredPass> passes;
         uint32_t passNameCounter{0};
-        TextPass* textPass{nullptr};
+        OverlayPass* overlayPass{nullptr};
 
         std::vector<DrawItem> draws;
         std::vector<math::Mat4> jointData;
@@ -312,6 +317,7 @@ namespace lockstep::render
 
         Camera camera{};
         float aspectRatio{1.0f};
+        uint32_t frameWidth{0};
         uint32_t frameHeight{0};
         math::Mat4 view{1.0f};
         math::Mat4 projection{1.0f};

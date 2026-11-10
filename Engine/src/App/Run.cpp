@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 namespace lockstep::app
@@ -178,10 +179,31 @@ namespace lockstep::app
             }
         }
 
+        void waitForFrameSlot(Clock::time_point& deadline, uint32_t framesPerSecond)
+        {
+            const Clock::time_point now = Clock::now();
+
+            if (framesPerSecond == 0)
+            {
+                deadline = now;
+                return;
+            }
+
+            const auto period = std::chrono::duration_cast<Clock::duration>(
+                std::chrono::duration<double>(1.0 / static_cast<double>(framesPerSecond)));
+            deadline = std::max(deadline + period, now - period);
+
+            if (deadline > now)
+            {
+                std::this_thread::sleep_until(deadline);
+            }
+        }
+
         Status runFrames(Loop& loop)
         {
             platform::Window& window = loop.engine.window;
             Clock::time_point previousTime = Clock::now();
+            Clock::time_point frameDeadline = previousTime;
             uint64_t framesRendered = 0;
 
             while (window.isOpen())
@@ -228,6 +250,7 @@ namespace lockstep::app
                 loop.devTools.recordFrameTiming(debug::FrameTiming{
                     .workMilliseconds = toMilliseconds(renderStart - now),
                     .renderMilliseconds = toMilliseconds(Clock::now() - renderStart)});
+                waitForFrameSlot(frameDeadline, loop.engine.renderer.frameRateLimit());
             }
 
             return {};

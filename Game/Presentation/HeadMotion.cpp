@@ -218,7 +218,7 @@ namespace game
             .footfalls = state.footfalls,
             .landings = state.landings,
             .landSpeed = state.landSpeed,
-            .fovOffset = state.fovOffset};
+            .fovOffset = state.fovOffset + tuning.fieldOfViewOffset};
     }
 
     void resetHeadMotion(HeadMotionState& state)

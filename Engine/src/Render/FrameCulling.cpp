@@ -1,10 +1,14 @@
 #include "FrameCulling.hpp"
 
 #include "RendererState.hpp"
+#include "VelaConversions.hpp"
 #include "ViewModel.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <span>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace lockstep::render
@@ -12,6 +16,15 @@ namespace lockstep::render
     namespace
     {
         constexpr float k_minLocalCasterAngle{0.004f};
+        constexpr float k_receiverFovMargin{1.1f};
+        constexpr float k_lightMaskMargin{0.25f};
+        constexpr float k_maxReceiverFov{math::radians(170.0f)};
+
+        struct CasterPlanes
+        {
+            std::array<math::Vec4, 6> planes{};
+            uint32_t count{0};
+        };
 
         math::Vec4 row(const math::Mat4& matrix, int index)
         {
@@ -56,7 +69,151 @@ namespace lockstep::render
                 return castsIntoLocalTile(item.worldBounds, prepared.casterSpheres[tile - k_sunShadowTiles]);
             }
 
+            if (item.material->kind == MeshKind::Skinned && tile >= settings.skinnedCasterCascades)
+            {
+                return false;
+            }
+
             return item.material->alphaMode != AlphaMode::Mask || tile < settings.maskedCasterCascades;
+        }
+
+        bool intersectsPlanes(std::span<const math::Vec4> planes, const math::Aabb& box)
+        {
+            const math::Vec3 centre = (box.min + box.max) * 0.5f;
+            const math::Vec3 extent = (box.max - box.min) * 0.5f;
+
+            for (const math::Vec4& plane : planes)
+            {
+                const float distance = plane.x * centre.x + plane.y * centre.y + plane.z * centre.z + plane.w;
+                const float reach = std::abs(plane.x) * extent.x + std::abs(plane.y) * extent.y + std::abs(plane.z) * extent.z;
+
+                if (distance + reach < 0.0f)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        CasterPlanes sunCasterPlanes(const RendererState& state)
+        {
+            Camera receivers = state.camera;
+            receivers.verticalFov = std::min(std::max(receivers.verticalFov, receivers.viewModelFov) * k_receiverFovMargin,
+                k_maxReceiverFov);
+            const Frustum view = frustumFromMatrix(toProjectionMatrix(receivers, state.aspectRatio) * state.view);
+            const math::Vec3& travel = state.prepared.sunTravel;
+
+            CasterPlanes result{};
+
+            for (const math::Vec4& plane : view.planes)
+            {
+                if (plane.x * travel.x + plane.y * travel.y + plane.z * travel.z <= 0.0f)
+                {
+                    result.planes[result.count++] = plane;
+                }
+            }
+
+            return result;
+        }
+
+        uint32_t lightMaskFor(const math::Aabb& bounds, std::span<const math::Vec4> lights)
+        {
+            uint32_t mask = 0;
+
+            for (uint32_t index = 0; index < lights.size(); ++index)
+            {
+                const math::Vec4& light = lights[index];
+                const math::Vec3 centre{light.x, light.y, light.z};
+                const math::Vec3 nearest{std::clamp(centre.x, bounds.min.x, bounds.max.x),
+                    std::clamp(centre.y, bounds.min.y, bounds.max.y), std::clamp(centre.z, bounds.min.z, bounds.max.z)};
+
+                if (math::length(nearest - centre) < light.w + k_lightMaskMargin)
+                {
+                    mask |= 1u << index;
+                }
+            }
+
+            return mask;
+        }
+
+        math::Vec4 slabPlane(const math::Mat4& viewProjection, int axis, float boundary, float side)
+        {
+            return normalizedPlane((row(viewProjection, axis) - row(viewProjection, 3) * boundary) * side);
+        }
+
+        bool reachesPlane(const math::Vec4& plane, const math::Vec4& sphere)
+        {
+            return plane.x * sphere.x + plane.y * sphere.y + plane.z * sphere.z + plane.w >= -sphere.w;
+        }
+
+        std::pair<uint32_t, uint32_t> coveredCells(const math::Mat4& viewProjection, int axis, uint32_t cells,
+            const math::Vec4& sphere)
+        {
+            uint32_t first = cells;
+            uint32_t last = 0;
+
+            for (uint32_t cell = 0; cell < cells; ++cell)
+            {
+                const float low = static_cast<float>(cell) / static_cast<float>(cells) * 2.0f - 1.0f;
+                const float high = static_cast<float>(cell + 1) / static_cast<float>(cells) * 2.0f - 1.0f;
+
+                if (reachesPlane(slabPlane(viewProjection, axis, low, 1.0f), sphere)
+                    && reachesPlane(slabPlane(viewProjection, axis, high, -1.0f), sphere))
+                {
+                    first = std::min(first, cell);
+                    last = cell;
+                }
+            }
+
+            return {first, last};
+        }
+
+        void writeLightCells(GpuFrameLighting& lighting, std::span<const math::Vec4> lights,
+            const math::Mat4& viewProjection, uint32_t width, uint32_t height)
+        {
+            std::fill(std::begin(lighting.lightCells), std::end(lighting.lightCells), 0u);
+            lighting.lightCellScale[0] = static_cast<float>(k_lightCellsX) / static_cast<float>(std::max(width, 1u));
+            lighting.lightCellScale[1] = static_cast<float>(k_lightCellsY) / static_cast<float>(std::max(height, 1u));
+            const math::Vec4 nearPlane = normalizedPlane(row(viewProjection, 2));
+
+            for (uint32_t index = 0; index < lights.size(); ++index)
+            {
+                const math::Vec4& sphere = lights[index];
+
+                if (!reachesPlane(nearPlane, sphere))
+                {
+                    continue;
+                }
+
+                const auto [firstColumn, lastColumn] = coveredCells(viewProjection, 0, k_lightCellsX, sphere);
+                const auto [firstRow, lastRow] = coveredCells(viewProjection, 1, k_lightCellsY, sphere);
+                const uint32_t bit = 1u << index;
+
+                for (uint32_t y = firstRow; y <= lastRow && y < k_lightCellsY; ++y)
+                {
+                    for (uint32_t x = firstColumn; x <= lastColumn && x < k_lightCellsX; ++x)
+                    {
+                        lighting.lightCells[y * k_lightCellsX + x] |= bit;
+                    }
+                }
+            }
+        }
+
+        void sortByShadowState(std::vector<uint32_t>& list, const std::vector<DrawItem>& draws)
+        {
+            auto key = [&draws](uint32_t index)
+            {
+                const DrawItem& item = draws[index];
+                const MaterialRecord* masked = item.material->maskedShadow ? item.material : nullptr;
+
+                return std::tuple(masked, item.material->kind, item.mesh);
+            };
+
+            std::sort(list.begin(), list.end(), [&key](uint32_t left, uint32_t right)
+            {
+                return key(left) < key(right);
+            });
         }
 
         void sortByDistance(std::vector<uint32_t>& list, const std::vector<DrawItem>& draws, bool isFrontToBack)
@@ -89,21 +246,7 @@ namespace lockstep::render
 
     bool intersects(const Frustum& frustum, const math::Aabb& box)
     {
-        const math::Vec3 centre = (box.min + box.max) * 0.5f;
-        const math::Vec3 extent = (box.max - box.min) * 0.5f;
-
-        for (const math::Vec4& plane : frustum.planes)
-        {
-            const float distance = plane.x * centre.x + plane.y * centre.y + plane.z * centre.z + plane.w;
-            const float reach = std::abs(plane.x) * extent.x + std::abs(plane.y) * extent.y + std::abs(plane.z) * extent.z;
-
-            if (distance + reach < 0.0f)
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return intersectsPlanes(frustum.planes, box);
     }
 
     void FrameDrawLists::clear()
@@ -140,10 +283,29 @@ namespace lockstep::render
             tileFrusta[tile] = frustumFromMatrix(prepared.tiles[tile].viewProjection);
         }
 
+        const bool limitSunCasters = cull && state.settings.culling.sunCasterCulling && prepared.cascadeCount > 0
+            && !state.reflection.active;
+        const CasterPlanes sunCasters = limitSunCasters ? sunCasterPlanes(state) : CasterPlanes{};
+
+        const GpuFrameLighting& lighting = prepared.lighting;
+        std::array<math::Vec4, k_maxLocalLights> lightSpheres{};
+        const uint32_t lightCount = std::min(lighting.counts[0], k_maxLocalLights);
+
+        for (uint32_t light = 0; light < lightCount; ++light)
+        {
+            const float* sphere = lighting.lights[light].positionRange;
+            lightSpheres[light] = math::Vec4{sphere[0], sphere[1], sphere[2], sphere[3]};
+        }
+
+        const std::span<const math::Vec4> lights(lightSpheres.data(), lightCount);
+        writeLightCells(state.prepared.lighting, lights, viewProjection, state.frameWidth, state.frameHeight);
+
         for (uint32_t index = 0; index < state.draws.size(); ++index)
         {
             DrawItem& item = state.draws[index];
             item.cameraDistance = math::length((item.worldBounds.min + item.worldBounds.max) * 0.5f - state.camera.position);
+
+            item.lightMask = isViewModelDraw(item.layers) ? 0xFFFFFFFFu : lightMaskFor(item.worldBounds, lights);
 
             if (isViewModelDraw(item.layers))
             {
@@ -169,14 +331,27 @@ namespace lockstep::render
                 continue;
             }
 
+            const bool reachesView = intersectsPlanes(std::span(sunCasters.planes.data(), sunCasters.count),
+                item.worldBounds);
+
             for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
             {
+                if (tile < k_sunShadowTiles && !reachesView)
+                {
+                    continue;
+                }
+
                 if (tileActive[tile] && castsIntoTile(item, tile, prepared, state.settings.shadows)
                     && (!cull || intersects(tileFrusta[tile], item.worldBounds)))
                 {
                     lists.shadowCasters[tile].push_back(index);
                 }
             }
+        }
+
+        for (std::vector<uint32_t>& casters : lists.shadowCasters)
+        {
+            sortByShadowState(casters, state.draws);
         }
 
         sortByDistance(lists.opaque, state.draws, true);

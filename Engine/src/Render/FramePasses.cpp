@@ -9,6 +9,7 @@
 
 #include <Vela/Graphics/VertexLayout.hpp>
 
+#include <bit>
 #include <cstddef>
 #include <span>
 #include <string>
@@ -106,6 +107,7 @@ namespace lockstep::render
         }
 
         constants.factors.flags[3] = static_cast<float>(item.jointBase);
+        constants.factors.detail[3] = std::bit_cast<float>(item.lightMask);
 
         for (uint32_t channel = 0; channel < 3; ++channel)
         {

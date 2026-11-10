@@ -4,12 +4,16 @@
 #include "Breakables/GlassReplication.hpp"
 #include "DevPanel.hpp"
 #include "GameState.hpp"
+#include "Intro/Intro.hpp"
 #include "Npcs/NpcRoster.hpp"
 #include "Player/FireDrill.hpp"
 #include "Player/WeaponDrill.hpp"
 #include "Player/LocalPlayer.hpp"
 #include "Player/MoveDrill.hpp"
 #include "Presentation/Frame.hpp"
+#include "Shell/GameSession.hpp"
+#include "Shell/Shell.hpp"
+#include "Shell/ShellLaunch.hpp"
 #include "Simulation/HospitalSimulation.hpp"
 #include "Simulation/HostSimulation.hpp"
 #include "Simulation/LevelFlow.hpp"
@@ -36,6 +40,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace game
@@ -50,15 +55,13 @@ namespace game
         using lockstep::app::GameState;
         using lockstep::app::TickInfo;
 
-        constexpr std::string_view k_armedFlag{"--armed"};
         constexpr std::string_view k_npcCrouchFlag{"--dev-npc-crouch"};
         constexpr std::string_view k_ironSightsFlag{"--dev-iron-sights"};
+        constexpr uint32_t k_menuFrameRateCap{60};
         constexpr float k_drillTargetRange{6.0f};
         constexpr float k_watchRange{30.0f};
         constexpr float k_watchEyeHeight{1.6f};
         constexpr float k_watchTargetHeight{0.2f};
-        constexpr std::string_view k_ambienceFolder{"audio/"};
-        constexpr std::string_view k_ambienceName{"ambience_morning."};
 
         void logError(const char* what, const lockstep::Error& error)
         {
@@ -71,37 +74,6 @@ namespace game
             {
                 return argument != nullptr && std::string_view(argument) == flag;
             });
-        }
-
-        void startAmbience(EngineContext& engine)
-        {
-            for (const std::string& path : engine.files.list(""))
-            {
-                const std::string_view name = std::string_view(path).substr(path.rfind('/') + 1);
-
-                if (!name.starts_with(k_ambienceName) || path.find(k_ambienceFolder) == std::string::npos)
-                {
-                    continue;
-                }
-
-                auto sound = engine.audio.loadSound(engine.files, path,
-                    lockstep::audio::SoundDescription{.is3d = false, .isLooping = true, .isStreamed = true});
-
-                if (!sound)
-                {
-                    logError("loading ambience", sound.error());
-                    return;
-                }
-
-                if (auto voice = engine.audio.play(sound.value(), {.bus = lockstep::audio::Bus::Ambience}); !voice)
-                {
-                    logError("playing ambience", voice.error());
-                    return;
-                }
-
-                std::clog << "Game: playing ambience '" << path << "'\n";
-                return;
-            }
         }
 
         void matchStridesToCharacters(GameState& state)
@@ -148,7 +120,6 @@ namespace game
             auto state = std::make_unique<GameState>();
             state->visuals = visuals.value();
             state->weather.forced = weather.value();
-            state->settings.startArmed = hasArgument(engine.arguments, k_armedFlag) || !launch.value();
             state->npcLooks.isCrouchForced = hasArgument(engine.arguments, k_npcCrouchFlag);
             state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
             state->optics = loadOptics(engine.renderer, engine.files);
@@ -165,24 +136,23 @@ namespace game
             state->weaponFeedback.sounds = loadHandlingSounds(engine.audio, engine.files);
             applyArenaLook(engine.renderer);
 
-            if (auto loaded = startLevel(*state, engine, launch.value()); !loaded)
-            {
-                return loaded.error();
-            }
+            initShell(*state, engine);
 
-            startAmbience(engine);
-
-            if (engine.session.role() == net::Role::Client)
+            if (isMenuLaunch(engine.arguments))
             {
-                if (auto created = createArenaBodies(state->arena, engine.physics); !created)
+                enterMenu(*state, engine);
+                auto intro = startIntro(engine);
+
+                if (!intro)
                 {
-                    return created.error();
+                    return intro.error();
                 }
 
+                state->intro = std::move(intro).value();
                 return state.release();
             }
 
-            if (auto started = startHostSimulation(*state, engine); !started)
+            if (auto started = startGame(*state, engine, launch.value()); !started)
             {
                 return started.error();
             }
@@ -306,16 +276,22 @@ namespace game
 
         void fixedTick(GameState& state, EngineContext& engine, const TickInfo& tick)
         {
+            if (state.intro || tickShell(state, engine, tick))
+            {
+                return;
+            }
+
             state.lastTick = tick.tick;
             stepEcho(state);
             const platform::Input idle{};
             const bool isFlying = state.flyCamera.isActive;
+            const bool isInputIdle = isFlying || isShellBlockingInput(state.shell);
             state.local.weaponZone = localWeaponZone(state, engine);
             const PlayerStatus& own = state.local.statuses[localPawnIndex(engine)];
             const PlayerStatus& partner = state.local.statuses[localPawnIndex(engine) == k_hostPawn ? k_clientPawn
                                                                                                    : k_hostPawn];
             state.local.command = sampleLocalCommand(state.local.controls, state.settings.controls,
-                isFlying ? idle : tick.input, !isFlying && engine.window.isCursorCaptured(),
+                isInputIdle ? idle : tick.input, !isFlying && engine.window.isCursorCaptured(),
                 WeaponControl{.isArmed = own.isArmed && !own.isDowned,
                     .zone = state.local.weaponZone,
                     .isHoldingToy = isHoldingToy(state, engine),
@@ -347,6 +323,11 @@ namespace game
                             *npc + math::Vec3{0.0f, k_watchTargetHeight, 0.0f});
                     }
                 }
+            }
+
+            if (const std::optional<float> pitch = devLookPitch(engine.arguments))
+            {
+                state.local.command.pitch = *pitch;
             }
 
             if (isKickDrillRequested(engine.arguments))
@@ -419,6 +400,26 @@ namespace game
             presentLevel(state, engine);
         }
 
+        void frame(GameState& state, EngineContext& engine, const lockstep::app::FrameInfo& frameInfo)
+        {
+            engine.renderer.setFrameRateCap(state.intro || state.shell.isInMenu ? k_menuFrameRateCap : 0);
+
+            if (state.intro)
+            {
+                updateDevCapture(state.devCapture, engine.renderer, DevCaptureEvents{});
+
+                if (presentIntro(*state.intro, engine, frameInfo))
+                {
+                    return;
+                }
+
+                state.intro.reset();
+                return;
+            }
+
+            presentShell(state, engine, frameInfo);
+        }
+
         void shutdown(GameState* state)
         {
             std::unique_ptr<GameState> owned(state);
@@ -430,7 +431,7 @@ namespace game
         lockstep::app::GameApi api{};
         api.init = &init;
         api.fixedTick = &fixedTick;
-        api.frame = &presentFrame;
+        api.frame = &frame;
         api.shutdown = &shutdown;
 
 #if LOCKSTEP_DEV_TOOLS

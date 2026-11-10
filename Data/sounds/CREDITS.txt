@@ -12,3 +12,4 @@ Casings (casings/*), dropped magazines (magazines/*), gunshot tails (tails/*): s
 Vault (player/vault_*): synthesised (Content/source/scripts/make_vault_sounds.py: hand slap, cloth scuff, gear rattle).
 Kick (player/kick_swing_*, player/kick_hit_*): synthesised (Content/source/scripts/make_kick_sounds.py: air and cloth whoosh, boot thud).
 M4 and Glock gunshots (weapons/m4_shot_*, weapons/glock_shot_*): pitch and filter variants of the V-45 gunshots above (Content/source/scripts/make_loadout_shots.py).
+Startup intro (intro/*): synthesised (Content/source/scripts/make_intro_sounds.py: drone, room air, gust, pad, body-cam static and beeps).

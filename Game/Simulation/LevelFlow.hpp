@@ -60,6 +60,13 @@ namespace game
     [[nodiscard]] lockstep::Status startLevel(lockstep::app::GameState& state, lockstep::app::EngineContext& engine,
         const std::optional<SceneLaunch>& launch);
 
+    // Unloads the current level, if any: toys, gore, dropped weapons, glass, the room and station
+    // missions, the scene and its colliders, and frees its GPU memory at once (stalls the GPU).
+    // The level flow is reset. For leaving a game (quit to the main menu).
+    // state:  the game state.
+    // engine: Engine services.
+    void unloadLevel(lockstep::app::GameState& state, lockstep::app::EngineContext& engine);
+
     // Host, end of a tick: tells a newly connected client which level is loaded (a client started
     // in another level, or joining after a switch, loads it), switches to the
     // next level once the morning's drive has faded out, and runs the dev autoplay.

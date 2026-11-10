@@ -427,8 +427,18 @@ void main()
         sunLight += sunSpecular;
     }
 
-    for (uint index = 0u; index < frame.counts.x; ++index)
+    uint lightMask = floatBitsToUint(draw.detail.w) & ((1u << frame.counts.x) - 1u);
+
+    if (!isReflectionView && draw.flags.z != k_viewModelView && draw.flags.z != k_sightWindowView)
     {
+        uvec2 cell = min(uvec2(gl_FragCoord.xy * frame.lightCellScale.xy), uvec2(k_lightCellsX - 1u, k_lightCellsY - 1u));
+        lightMask &= frame.lightCells[cell.y * k_lightCellsX + cell.x];
+    }
+
+    while (lightMask != 0u)
+    {
+        uint index = uint(findLSB(lightMask));
+        lightMask &= lightMask - 1u;
         LocalLight light = frame.lights[index];
         vec3 offset = light.positionRange.xyz - inWorldPosition;
         float lightDistance = length(offset);

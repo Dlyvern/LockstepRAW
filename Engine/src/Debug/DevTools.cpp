@@ -270,7 +270,7 @@ namespace lockstep::debug
             frameTimes.gpu.add(stats.gpuFrameMs);
         }
 
-        recordGpuTimings(m_state->gpuTimingLog, *m_state->renderer->graph);
+        recordGpuTimings(m_state->gpuTimingLog, *m_state->renderer->graph, m_state->renderer->lastFrame);
     }
 
     void DevTools::logGpuTimings(bool enabled)

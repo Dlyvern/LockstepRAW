@@ -44,6 +44,29 @@ namespace lockstep::platform
             state.lastCursorPosition = position;
         }
 
+        std::optional<math::Vec2> normalizedCursor(const WindowState& state)
+        {
+            if (state.isCursorCaptured)
+            {
+                return std::nullopt;
+            }
+
+            int width = 0;
+            int height = 0;
+            state.window.getSize(width, height);
+
+            if (width <= 0 || height <= 0)
+            {
+                return std::nullopt;
+            }
+
+            double x = 0.0;
+            double y = 0.0;
+            state.window.getCursorPosition(x, y);
+
+            return math::Vec2{static_cast<float>(x / width), static_cast<float>(y / height)};
+        }
+
         void applyEvent(WindowState& state, const vela::core::Event& event)
         {
             switch (event.type)
@@ -63,6 +86,11 @@ namespace lockstep::platform
                 case vela::core::EventType::MouseMoved:
                 {
                     applyMouseMoveEvent(state, event);
+                    break;
+                }
+                case vela::core::EventType::TextEntered:
+                {
+                    InputAccess::addTypedCharacter(state.input, static_cast<char32_t>(event.codepoint));
                     break;
                 }
                 case vela::core::EventType::MouseScrolled:
@@ -139,6 +167,8 @@ namespace lockstep::platform
         {
             applyEvent(*m_state, event);
         }
+
+        InputAccess::setCursorPosition(m_state->input, normalizedCursor(*m_state));
     }
 
     const Input& Window::input() const

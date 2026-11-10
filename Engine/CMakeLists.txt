@@ -35,6 +35,7 @@ add_library(LockstepEngine STATIC
     src/Core/Hash.cpp
     src/Core/Log.cpp
     src/Core/Result.cpp
+    src/Core/SettingsFile.cpp
     src/Core/Transform.cpp
     src/Core/VelaError.cpp
     src/Core/VelaLog.cpp
@@ -97,9 +98,13 @@ add_library(LockstepEngine STATIC
     src/Render/SkyModel.cpp
     src/Render/SurfaceTextures.cpp
     src/Render/TemporalAntiAliasing.cpp
-    src/Render/TextPass.cpp
+    src/Render/OverlayPass.cpp
+    src/Render/TextLayout.cpp
     src/Render/TextureLayout.cpp
     src/Render/VelaConversions.cpp
+    src/UI/UiContext.cpp
+    src/UI/UiTypes.cpp
+    src/UI/UiWidgets.cpp
     src/Render/ViewModel.cpp
     src/Render/VolumetricFog.cpp
     src/World/Entities.cpp
@@ -225,8 +230,8 @@ set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tonemap.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/taa.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fxaa.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/text.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/text.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/particle.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/particle.frag
 )
@@ -252,6 +257,8 @@ vela_compile_shaders(TARGET LockstepEngine SOURCES ${ENGINE_SHADER_SOURCES})
 set(LOCKSTEP_ENGINE_FONTS
     ${CMAKE_CURRENT_SOURCE_DIR}/fonts/NotoSans-Regular.ttf
     ${CMAKE_CURRENT_SOURCE_DIR}/fonts/OFL.txt
+    ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Cousine-Regular.ttf
+    ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Cousine-OFL.txt
     CACHE INTERNAL "Fonts the Engine stages next to each executable"
 )
 

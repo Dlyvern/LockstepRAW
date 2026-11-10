@@ -236,6 +236,8 @@ namespace lockstep::render
             k_maxResolutionMultiplier);
         clamped.scopeResolution = std::clamp(quality.scopeResolution, k_minScopeResolution, k_maxScopeResolution);
         clamped.particleBudget = std::clamp(quality.particleBudget, k_minParticleBudget, k_maxParticleBudget);
+        clamped.frameRateLimit = quality.frameRateLimit == 0 ? 0
+            : std::clamp(quality.frameRateLimit, k_minFrameRateLimit, k_maxFrameRateLimit);
 
         return clamped;
     }

@@ -134,6 +134,9 @@ namespace lockstep::render
     // maskedCasterCascades: how many of the nearest cascades alpha-masked casters (foliage) render
     //                into; farther cascades skip them, as their alpha-tested shadow draws are the
     //                most expensive part of the shadow pass on foliage-heavy levels.
+    // skinnedCasterCascades: how many of the nearest cascades skinned casters (characters) render
+    //                into; farther cascades skip them (each skinned shadow draw skins its mesh again,
+    //                and a character's shadow in the farthest cascade is only a few texels).
     // localLights:   let point and spot lights with castsShadows cast shadows.
     // maxLocalLights: most shadow-casting local lights per frame, 0 to k_maxShadowedLocalLights.
     //                Replaced by GraphicsQuality::shadowedLocalLights when rendering.
@@ -152,6 +155,7 @@ namespace lockstep::render
         float normalBias{1.5f};
         bool debugCascades{false};
         uint32_t maskedCasterCascades{2};
+        uint32_t skinnedCasterCascades{3};
         bool localLights{true};
         uint32_t maxLocalLights{4};
         float localNormalBias{2.0f};
@@ -442,9 +446,13 @@ namespace lockstep::render
     // CPU-side visibility.
     // frustumCulling: skip draws whose bounds are outside the camera frustum (and, for shadows,
     //                 outside each cascade).
+    // sunCasterCulling: with frustumCulling, also skip sun shadow casters whose shadow cannot fall
+    //                 into the view (the view volume stretched towards the sun); off while a
+    //                 planar reflection is rendered, as the mirror sees receivers outside the view.
     struct CullingSettings
     {
         bool frustumCulling{true};
+        bool sunCasterCulling{true};
     };
 
     // Every renderer feature switch and tunable. Game sets its look once; the dev tools edit it live.

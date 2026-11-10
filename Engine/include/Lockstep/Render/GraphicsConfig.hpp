@@ -34,8 +34,9 @@ namespace lockstep::render
     // Returns:   the path (the file need not exist).
     [[nodiscard]] std::filesystem::path graphicsConfigPath(std::span<const char* const> arguments);
 
-    // Reads the graphics options. The settings file (`key = value` lines, '#' comments, `[section]`
-    // lines ignored) sets `preset` and may override any quality field and `window_width` /
+    // Reads the graphics options. The settings file (`key = value` lines, '#' comments; only lines
+    // before the first `[section]` header and in `[graphics]` count, other sections belong to
+    // other owners, see SettingsFile) sets `preset` and may override any quality field and `window_width` /
     // `window_height`; unknown keys and bad values are logged and skipped. `--graphics
     // <low|medium|high|ultra>` on the command line wins over the file: it takes that preset as is
     // and ignores the file's overrides (so test runs are predictable). With neither, High.
@@ -43,12 +44,20 @@ namespace lockstep::render
     // Returns:   the options, or an error if `--graphics` lacks a value or names no preset.
     [[nodiscard]] Result<GraphicsConfig> loadGraphicsConfig(std::span<const char* const> arguments);
 
-    // Writes the quality into a settings file: every quality field is written, other lines already
-    // in the file (window size, comments) are kept.
+    // Writes the quality into a settings file's `[graphics]` section: every quality field is
+    // written, other lines and sections already in the file (window size, comments) are kept.
     // file:    the settings file; its folder is created if missing.
     // quality: the quality to store.
     // Returns: an error if the file could not be written.
     [[nodiscard]] Status saveGraphicsQuality(const std::filesystem::path& file, const GraphicsQuality& quality);
+
+    // Writes the window size used at the next start into a settings file's `[graphics]` section,
+    // keeping everything else in the file.
+    // file:    the settings file; its folder is created if missing.
+    // width:   window width in pixels (clamped to 320..7680).
+    // height:  window height in pixels (clamped to 320..7680).
+    // Returns: an error if the file could not be written.
+    [[nodiscard]] Status saveWindowSize(const std::filesystem::path& file, uint32_t width, uint32_t height);
 } //namespace lockstep::render
 
 #endif //LOCKSTEP_RENDER_GRAPHICS_CONFIG_HPP

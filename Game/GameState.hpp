@@ -16,6 +16,8 @@
 #include "Enemies/Enemy.hpp"
 #include "Gore/Gore.hpp"
 #include "Hospital/HospitalMission.hpp"
+#include "Intro/Intro.hpp"
+#include "Shell/Shell.hpp"
 #include "Level/ApartmentRoom.hpp"
 #include "Level/Arena.hpp"
 #include "Level/SceneLevel.hpp"
@@ -197,6 +199,8 @@ namespace lockstep::app
         game::GlassShatter glassShatter{};
         game::LightAnimation lightAnimation{};
         game::Weather weather{};
+        std::optional<game::Intro> intro{};
+        game::Shell shell{};
         Settings settings{};
         Local local{};
         Simulation simulation{};

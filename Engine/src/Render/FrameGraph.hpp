@@ -15,10 +15,11 @@ namespace lockstep::render
     // Returns: success, or an error if a pass could not be created or added.
     [[nodiscard]] Status buildFrameGraph(RendererState& state);
 
-    // Adds the screen text pass as the first Engine pass and stores it in RendererState::textPass.
+    // Adds the screen overlay pass (text, rectangles, images) as the first Engine pass and stores it
+    // in RendererState::overlayPass.
     // state:   the renderer state, with its graph built.
     // Returns: success, or an error if the pass could not be created or added.
-    [[nodiscard]] Status addTextPass(RendererState& state);
+    [[nodiscard]] Status addOverlayPass(RendererState& state);
 
     // Matches the scene pass's sample count to the anti-aliasing mode (clamped to what the device
     // supports), redescribing the pass when it changes. On failure anti-aliasing is switched off (in the quality too).

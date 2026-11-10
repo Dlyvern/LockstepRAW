@@ -28,7 +28,9 @@ transport, session, host-authoritative snapshot replication), `Debug` (ImGui dev
 (run loop and the `GameApi` boundary), `Physics` (PhysX: `PhysicsWorld`, bodies, raycasts,
 character controllers), `Assets` (VFS, paks, glTF import, cooked formats), `Anim` (skeletons, clips,
 `Animator` blending, `SkinnedModel`/`SkinnedInstance`; GPU skinning in Render), `Audio` (FMOD Core:
-buses, 3D voices, listener). Create a module folder only when there is code for it.
+buses, 3D voices, listener), `UI` (immediate-mode screen UI: `UiContext` widgets drawn through the
+Renderer's overlay pass; Game's menus live in `Game/Shell/`, the startup intro in `Game/Intro/`).
+Create a module folder only when there is code for it.
 
 ## Architecture rules
 
@@ -332,9 +334,16 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
 - **Test runs on the user's laptop (RTX 3050 Laptop, 4 GB VRAM) must stay light; GPU memory
   exhaustion has crashed the machine.** Every agent test run uses `--graphics low` (smallest
   window, lowest preset, reduced texture resolution), no exceptions: never `ultra` or `high`,
-  graphics agents included (judge looks from `low` captures or ask the coordinator). Several
-  instances at once are fine as long as every one of them is `--graphics low`; always run them
-  under `timeout` and don't leave instances running.
+  graphics agents included (judge looks from `low` captures or ask the coordinator), and always
+  `--present vsync`: dev builds otherwise render unthrottled (LowLatency falls back to mailbox),
+  hundreds to 1000+ fps per instance, which pins the GPU and has frozen the laptop. Several
+  instances at once are fine as long as every one of them is `--graphics low --present vsync`;
+  always run them under `timeout` and don't leave instances running. Only a perf measurement
+  that needs raw frame time may use `--present uncapped`, one short single instance.
+- **Builds are serialized and capped**: several agents compiling three presets at full
+  parallelism has frozen the machine (22 GB RAM, 12 threads). Always build through the lock with
+  at most 4 jobs: `flock /tmp/lockstep-build.lock cmake --build --preset <p> --parallel 4`, one
+  preset per command, and build `shipping` only at the end of a task.
 - Debug builds enable the Vulkan validation layers. Validation messages count as bugs.
 - Work is not done until it builds without warnings in our code and runs without validation errors.
 - Presets: `debug`, `release`, `shipping` (`shipping` turns `LOCKSTEP_DEV_TOOLS` off).

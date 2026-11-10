@@ -9,7 +9,7 @@
 #include "ShaderLoader.hpp"
 #include "ShadowMaterials.hpp"
 #include "Skinning.hpp"
-#include "TextPass.hpp"
+#include "OverlayPass.hpp"
 #include "VelaConversions.hpp"
 #include "ViewModel.hpp"
 #include "VolumetricFog.hpp"
@@ -224,9 +224,9 @@ namespace lockstep::render
             return built.error();
         }
 
-        if (auto text = addTextPass(*state); !text)
+        if (auto overlay = addOverlayPass(*state); !overlay)
         {
-            return text.error();
+            return overlay.error();
         }
 
         static_cast<void>(updateAspectRatio(*state));
@@ -363,7 +363,36 @@ namespace lockstep::render
 
     void Renderer::submitText(std::string_view utf8, math::Vec2 position, const TextStyle& style)
     {
-        m_state->textPass->submit(utf8, position, style);
+        m_state->overlayPass->submitText(utf8, position, style);
+    }
+
+    void Renderer::submitRect(const ScreenRect& rect, const math::Vec4& color)
+    {
+        m_state->overlayPass->submitRect(rect, color);
+    }
+
+    void Renderer::submitImage(TextureHandle texture, const ScreenRect& rect, const ImageStyle& style)
+    {
+        m_state->overlayPass->submitImage(texture, rect, style);
+    }
+
+    void Renderer::setScreenClip(const std::optional<ScreenRect>& clip)
+    {
+        m_state->overlayPass->setClip(clip);
+    }
+
+    math::Vec2 Renderer::measureText(std::string_view utf8, const TextStyle& style) const
+    {
+        return m_state->overlayPass->measureText(utf8, style);
+    }
+
+    math::Vec2 Renderer::screenSize() const
+    {
+        int width = 0;
+        int height = 0;
+        m_state->window.getFramebufferSize(width, height);
+
+        return math::Vec2{static_cast<float>(std::max(width, 0)), static_cast<float>(std::max(height, 0))};
     }
 
     Status Renderer::setPresentMode(PresentMode mode)
@@ -391,6 +420,24 @@ namespace lockstep::render
         return m_state->quality;
     }
 
+    void Renderer::setFrameRateCap(uint32_t framesPerSecond)
+    {
+        m_state->frameRateCap = framesPerSecond == 0 ? 0 : std::clamp(framesPerSecond, k_minFrameRateLimit, k_maxFrameRateLimit);
+    }
+
+    uint32_t Renderer::frameRateLimit() const
+    {
+        const uint32_t limit = m_state->quality.frameRateLimit;
+        const uint32_t cap = m_state->frameRateCap;
+
+        if (limit == 0 || cap == 0)
+        {
+            return std::max(limit, cap);
+        }
+
+        return std::min(limit, cap);
+    }
+
     RenderSettings& Renderer::settings()
     {
         return m_state->requestedSettings;
@@ -414,6 +461,7 @@ namespace lockstep::render
         }
 
         const vela::graphics::Extent2D extent = scaledExtent(updateAspectRatio(state), state.renderScale);
+        state.frameWidth = extent.width;
         state.frameHeight = extent.height;
 
         for (RegisteredPass& registered : state.passes)
@@ -432,9 +480,9 @@ namespace lockstep::render
         writeCameraMotion(state);
         prepareViewModel(state);
         assignPreviousModels(state);
-        buildDrawLists(state, state.temporal.viewProjection, state.temporal.viewModelViewProjection);
         prepareReflection(state);
         prepareScope(state);
+        buildDrawLists(state, state.temporal.viewProjection, state.temporal.viewModelViewProjection);
         prepareSight(state);
         state.graph->setView(state.view, state.projection);
 

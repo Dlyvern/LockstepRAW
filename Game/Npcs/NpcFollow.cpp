@@ -4,6 +4,7 @@
 #include "Npcs/NpcPositions.hpp"
 #include "Npcs/NpcRoster.hpp"
 #include "Npcs/NpcSenses.hpp"
+#include "Npcs/NpcWatch.hpp"
 #include "Player/Pawns.hpp"
 
 #include <Lockstep/Physics/PhysicsWorld.hpp>
@@ -131,7 +132,7 @@ namespace game
 
         if (npc.action != NpcAction::Move)
         {
-            turnNpcToYaw(npc, leader->yaw, world.settings, world.delta);
+            watchAsSquad(roster, index, foot, world);
         }
     }
 } //namespace game

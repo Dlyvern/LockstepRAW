@@ -211,7 +211,8 @@ namespace lockstep::render
             if (sun && sun->castsShadows)
             {
                 const uint32_t count = std::clamp(shadows.cascadeCount, 1u, k_sunShadowTiles);
-                fitSunCascades(view.camera, view.aspectRatio, math::normalize(sun->direction), shadows, count,
+                prepared.sunTravel = math::normalize(sun->direction);
+                fitSunCascades(view.camera, view.aspectRatio, prepared.sunTravel, shadows, count,
                     view.shadowAtlasWidth, prepared.tiles);
                 prepared.cascadeCount = count;
                 gpu.shadowParams[0] = static_cast<float>(count);

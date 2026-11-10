@@ -187,4 +187,5 @@ The distant siren and the downed heartbeat are synthesised.
 | Item | Author / owner | Licence | Notes |
 |---|---|---|---|
 | Noto Sans | Google / The Noto Project Authors | SIL Open Font License 1.1 (`Engine/fonts/OFL.txt`) | On-screen text |
+| Cousine | Steve Matteson (digitized data copyright 2010 Google Corporation) | SIL Open Font License 1.1 (`Engine/fonts/Cousine-OFL.txt`) | Menus (monospaced) |
 | FMOD Engine 2.03 | Firelight Technologies Pty Ltd | FMOD licence (free indie tier; register the project before release) | Audio. The shipped game must show "Made with FMOD Studio by Firelight Technologies Pty Ltd." and the FMOD logo in its credits. |

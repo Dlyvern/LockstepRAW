@@ -136,7 +136,7 @@ namespace game
                 render::TextStyle{.size = k_lineSize, .color = color, .align = render::TextAlign::Center});
         }
 
-        if (!hud.subtitle.empty())
+        if (!hud.subtitle.empty() && hud.showSubtitles)
         {
             renderer.submitText(hud.subtitle, k_subtitlePosition,
                 render::TextStyle{.size = k_subtitleSize, .color = k_subtitleColor, .align = render::TextAlign::Center});

@@ -85,7 +85,7 @@ robocopy "%PHYSX_BUILD_OUTPUT%" "%PHYSX_LIB_OUTPUT%" *.lib *.dll *.pdb /njh /njs
 set "ROBOCOPY_EXIT=%ERRORLEVEL%"
 echo [Lockstep_PhysX_build] robocopy exit code: %ROBOCOPY_EXIT%
 if %ROBOCOPY_EXIT% GEQ 8 (
-    echo [Lockstep_PhysX_build] Error: Failed to copy PhysX binaries (robocopy exit %ROBOCOPY_EXIT%)
+    echo [Lockstep_PhysX_build] Error: Failed to copy PhysX binaries, robocopy exit %ROBOCOPY_EXIT%
     set "LOCKSTEP_EXIT_CODE=1" & goto :cleanup_and_exit
 )
 

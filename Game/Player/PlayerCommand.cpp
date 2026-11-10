@@ -44,11 +44,6 @@ namespace game
         constexpr std::size_t k_aimOffsetYawOffset{15};
         constexpr std::size_t k_aimOffsetPitchOffset{17};
 
-        float axis(const platform::Input& input, platform::Key positive, platform::Key negative)
-        {
-            return (input.isKeyDown(positive) ? 1.0f : 0.0f) - (input.isKeyDown(negative) ? 1.0f : 0.0f);
-        }
-
         std::byte quantizeAxis(float value)
         {
             const auto quantized = static_cast<int8_t>(std::lround(math::clamp(value, -1.0f, 1.0f) * k_moveQuantization));
@@ -72,20 +67,21 @@ namespace game
             return static_cast<float>(std::bit_cast<int16_t>(bits)) / k_aimOffsetQuantization;
         }
 
-        void pickWeapon(LocalControls& controls, const WeaponStatsTable& weapons, const platform::Input& input)
+        void pickWeapon(LocalControls& controls, const WeaponStatsTable& weapons, const KeyBindings& bindings,
+            const platform::Input& input)
         {
             WeaponKind wanted = controls.weapon;
             const float wheel = input.scrollDelta().y;
 
-            if (input.wasKeyPressed(platform::Key::Num1))
+            if (wasActionPressed(bindings, input, Action::Weapon1))
             {
                 wanted = WeaponKind::M4;
             }
-            else if (input.wasKeyPressed(platform::Key::Num2))
+            else if (wasActionPressed(bindings, input, Action::Weapon2))
             {
                 wanted = WeaponKind::Glock;
             }
-            else if (input.wasKeyPressed(platform::Key::Num3))
+            else if (wasActionPressed(bindings, input, Action::Weapon3))
             {
                 wanted = WeaponKind::Kriss;
             }
@@ -107,6 +103,18 @@ namespace game
             controls.trigger.mode = allowedFireMode(weaponStats(weapons, wanted), controls.trigger.mode);
         }
 
+        bool isBulletTimeHeld(const KeyBindings& bindings, const platform::Input& input, bool isCursorCaptured)
+        {
+            const ActionBinding& binding = actionBinding(bindings, Action::BulletTime);
+            const auto isHeld = [&input, isCursorCaptured](const Binding& candidate)
+            {
+                return (candidate.key && input.isKeyDown(*candidate.key))
+                    || (isCursorCaptured && candidate.button && input.isMouseButtonDown(*candidate.button));
+            };
+
+            return isHeld(binding.primary) || isHeld(binding.secondary);
+        }
+
         float dequantizeAxis(std::byte value)
         {
             return math::clamp(static_cast<float>(std::bit_cast<int8_t>(value)) / k_moveQuantization, -1.0f, 1.0f);
@@ -125,33 +133,34 @@ namespace game
         controls.switchSeconds = std::max(controls.switchSeconds - deltaSeconds, 0.0f);
         bool isAiming = false;
         bool isFirePressed = false;
+        const KeyBindings& bindings = settings.bindings;
 
         if (isCursorCaptured)
         {
-            const bool isAimHeld = weapon.isArmed && canRaise && input.isMouseButtonDown(platform::MouseButton::Right);
+            const bool isAimHeld = weapon.isArmed && canRaise && isActionDown(bindings, input, Action::Aim);
             const float sensitivity = lookSensitivity(settings, isAimHeld, controls.opticSensitivityScale);
-            const math::Vec2 delta = input.mouseDelta();
+            const math::Vec2 delta = lookDelta(settings, input.mouseDelta());
             controls.yaw = std::remainder(controls.yaw - delta.x * sensitivity, 2.0f * math::k_pi);
             controls.pitch = math::clamp(controls.pitch - delta.y * sensitivity, -settings.maxPitch, settings.maxPitch);
 
             if (weapon.isArmed && weapon.zone == WeaponZone::Open && !weapon.isHoldingToy
-                && input.wasKeyPressed(k_lowerWeaponKey))
+                && wasActionPressed(bindings, input, Action::LowerWeapon))
             {
                 controls.wantsLowered = !controls.wantsLowered;
             }
 
             if (weapon.isArmed)
             {
-                pickWeapon(controls, weapons, input);
+                pickWeapon(controls, weapons, bindings, input);
             }
 
-            if (weapon.isArmed && input.wasKeyPressed(k_fireModeKey))
+            if (weapon.isArmed && wasActionPressed(bindings, input, Action::FireMode))
             {
                 trigger.mode = nextWeaponFireMode(weaponStats(weapons, controls.weapon), trigger.mode);
                 trigger.queued = 0;
             }
 
-            if (input.wasMouseButtonPressed(platform::MouseButton::Left))
+            if (wasActionPressed(bindings, input, Action::Fire))
             {
                 if (wasLowered && !weapon.isHoldingToy)
                 {
@@ -171,30 +180,30 @@ namespace game
                 }
             }
 
-            isAiming = weapon.isArmed && canRaise && input.isMouseButtonDown(platform::MouseButton::Right);
+            isAiming = weapon.isArmed && canRaise && isActionDown(bindings, input, Action::Aim);
 
             if (isAiming)
             {
                 controls.wantsLowered = false;
             }
 
-            if (input.wasKeyPressed(platform::Key::F))
+            if (wasActionPressed(bindings, input, Action::Interact))
             {
                 ++controls.interactCount;
-
-                if (weapon.isArmed && weapon.canToggleFlashlight)
-                {
-                    controls.isFlashlightOn = !controls.isFlashlightOn;
-                }
             }
 
-            if (input.wasKeyPressed(platform::Key::R))
+            if (wasActionPressed(bindings, input, Action::Flashlight) && weapon.isArmed && weapon.canToggleFlashlight)
+            {
+                controls.isFlashlightOn = !controls.isFlashlightOn;
+            }
+
+            if (wasActionPressed(bindings, input, Action::Reload))
             {
                 ++controls.reloadCount;
             }
         }
 
-        bool isFireHeld = isCursorCaptured && input.isMouseButtonDown(platform::MouseButton::Left);
+        bool isFireHeld = isCursorCaptured && isActionDown(bindings, input, Action::Fire);
 
         if (weapon.scriptedFire)
         {
@@ -206,21 +215,19 @@ namespace game
                 + (weapon.scriptedFire->isPressed && isArmedWeapon && !hasRounds ? 1 : 0));
         }
 
-        const bool isSprintHeld = input.isKeyDown(platform::Key::LeftShift) || input.isKeyDown(platform::Key::RightShift);
-        const bool isSprintPressed = input.wasKeyPressed(platform::Key::LeftShift)
-            || input.wasKeyPressed(platform::Key::RightShift);
+        const bool isSprintHeld = isActionDown(bindings, input, Action::Sprint);
+        const bool isSprintPressed = wasActionPressed(bindings, input, Action::Sprint);
 
-        if (input.wasKeyPressed(platform::Key::C))
+        if (wasActionPressed(bindings, input, Action::CrouchToggle))
         {
             controls.isCrouchToggled = !controls.isCrouchToggled;
         }
-        else if (isSprintPressed || input.wasKeyPressed(platform::Key::Space))
+        else if (isSprintPressed || wasActionPressed(bindings, input, Action::Jump))
         {
             controls.isCrouchToggled = false;
         }
 
-        const bool isCrouchHeld = input.isKeyDown(platform::Key::LeftControl)
-            || input.isKeyDown(platform::Key::RightControl);
+        const bool isCrouchHeld = isActionDown(bindings, input, Action::Crouch);
         const bool isCrouching = controls.isCrouchToggled || isCrouchHeld;
         const WeaponStats& stats = weaponStats(weapons, controls.weapon);
         trigger.mode = allowedFireMode(stats, trigger.mode);
@@ -243,25 +250,25 @@ namespace game
         const math::Vec2 recoil = controls.recoil.offset;
 
         return PlayerCommand{
-            .move = {axis(input, platform::Key::D, platform::Key::A), axis(input, platform::Key::W, platform::Key::S)},
+            .move = {actionAxis(bindings, input, Action::MoveRight, Action::MoveLeft),
+                actionAxis(bindings, input, Action::MoveForward, Action::MoveBack)},
             .yaw = std::remainder(controls.yaw + recoil.x, 2.0f * math::k_pi),
             .pitch = math::clamp(controls.pitch + recoil.y, -settings.maxPitch, settings.maxPitch),
             .shotCount = controls.shotCount,
-            .bulletTime = input.isKeyDown(platform::Key::LeftAlt)
-                || (isCursorCaptured && input.isMouseButtonDown(platform::MouseButton::Middle)),
+            .bulletTime = isBulletTimeHeld(bindings, input, isCursorCaptured),
             .interactCount = controls.interactCount,
             .sprint = isSprintHeld,
             .aim = isAiming,
             .lower = controls.wantsLowered,
             .isWeaponUp = weapon.isArmed && !isWeaponLowered(controls.wantsLowered, weapon.zone, weapon.isHoldingToy),
             .crouch = isCrouching,
-            .jump = input.isKeyDown(platform::Key::Space),
-            .lean = static_cast<int8_t>(axis(input, platform::Key::E, platform::Key::Q)),
+            .jump = isActionDown(bindings, input, Action::Jump),
+            .lean = static_cast<int8_t>(actionAxis(bindings, input, Action::LeanRight, Action::LeanLeft)),
             .reloadCount = controls.reloadCount,
-            .isInteractHeld = isCursorCaptured && input.isKeyDown(platform::Key::F),
+            .isInteractHeld = isCursorCaptured && isActionDown(bindings, input, Action::Interact),
             .aimOffset = weapon.isArmed ? weapon.aimOffset : math::Vec2{0.0f, 0.0f},
             .isFlashlightOn = weapon.isArmed && controls.isFlashlightOn,
-            .kick = input.isKeyDown(platform::Key::V),
+            .kick = isActionDown(bindings, input, Action::Kick),
             .weapon = controls.weapon};
     }
 
@@ -282,6 +289,11 @@ namespace game
         command.kick = false;
         command.lean = 0;
         command.bulletTime = false;
+    }
+
+    math::Vec2 lookDelta(const ControlSettings& settings, math::Vec2 mouseDelta)
+    {
+        return math::Vec2{mouseDelta.x, settings.invertY ? -mouseDelta.y : mouseDelta.y};
     }
 
     float lookSensitivity(const ControlSettings& settings, bool isAiming, float opticScale)

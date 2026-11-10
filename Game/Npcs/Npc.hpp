@@ -93,6 +93,27 @@ namespace game
         bool isLow{false};
     };
 
+    // How a squad officer watches while it holds near the players (host only).
+    // yaw:            centre of the sector it covers.
+    // pickSeconds:    World seconds until it picks its sector again.
+    // pickedAt:       where it stood when it picked the sector.
+    // scanSeconds:    World seconds into its slow sweep across the sector.
+    // glanceSeconds:  World seconds left of a glance at a player.
+    // glanceCooldown: World seconds until it may glance at a player again.
+    // glanceAt:       the player it glances at.
+    // stareSeconds:   World seconds a player has kept looking straight at it.
+    struct NpcWatch
+    {
+        float yaw{0.0f};
+        float pickSeconds{0.0f};
+        math::Vec3 pickedAt{0.0f, 0.0f, 0.0f};
+        float scanSeconds{0.0f};
+        float glanceSeconds{0.0f};
+        float glanceCooldown{0.0f};
+        NpcTargetRef glanceAt{};
+        float stareSeconds{0.0f};
+    };
+
     // One host-simulated armed NPC: a World-domain entity with a capsule controller, its senses,
     // its tactics and its weapon. Host only; the client sees the replicated entity and the
     // NpcStateMessage.
@@ -137,6 +158,7 @@ namespace game
     // hitLimb:      the limb the killing shot hit (from the host's drawn pose); None if unknown.
     // flinchSeconds: World seconds left of a flinch from a hit (it holds its fire).
     // staggerSeconds: World seconds left of a stagger from a heavy or leg hit (it moves slower).
+    // watch:        where a squad officer looks while it holds (see NpcWatch).
     struct Npc
     {
         lockstep::world::EntityId entity{};
@@ -182,6 +204,7 @@ namespace game
         lockstep::anim::Limb hitLimb{lockstep::anim::Limb::None};
         float flinchSeconds{0.0f};
         float staggerSeconds{0.0f};
+        NpcWatch watch{};
     };
 
     // Capsule height of an NPC crouched behind low cover, metres.

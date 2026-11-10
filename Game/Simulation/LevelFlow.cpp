@@ -466,6 +466,13 @@ namespace game
         return setUpLevel(state, engine, state.levelFlow.launched, false);
     }
 
+    void unloadLevel(GameState& state, EngineContext& engine)
+    {
+        despawnToys(state, engine);
+        releaseLevel(state, engine);
+        state.levelFlow = LevelFlow{};
+    }
+
     void updateLevelFlowAsHost(GameState& state, EngineContext& engine)
     {
         LevelFlow& flow = state.levelFlow;

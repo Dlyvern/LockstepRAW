@@ -5,7 +5,8 @@
 
 namespace game
 {
-    // Presents one rendered frame (the GameApi frame callback): Escape / click cursor capture, the
+    // Presents one rendered frame of the running game: click cursor capture (not while the pause
+    // menu is open; Escape belongs to the shell, see Shell.hpp), the
     // arena and level, Echo ghosts, lights, both pawns (the local one only in mirrors), toys, the
     // first-person view model, scene characters, HUD, and the camera (first person, the lobby view
     // while there is no local pawn, or the dev fly camera). Reads simulation state, never changes it.

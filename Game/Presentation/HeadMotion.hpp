@@ -57,6 +57,8 @@ namespace game
     // bulletTimeRoll: roll rate multiplier in bullet-time (the head turns heavier).
     // bulletTimeLandDamping: landing spring damping multiplier in bullet-time.
     // weight:        the body's weight reactions (leans, footfall plant, turn roll, head lag).
+    // fieldOfViewOffset: the player's field of view option minus the default, radians; added to
+    //               every pose's fovOffset.
     struct HeadMotionTuning
     {
         float eyeHeightRate{12.0f};
@@ -101,6 +103,7 @@ namespace game
         float bulletTimeRoll{0.5f};
         float bulletTimeLandDamping{1.4f};
         HeadWeightTuning weight{};
+        float fieldOfViewOffset{0.0f};
     };
 
     // What drives the head motion this frame, from the local pawn's predicted (client) or

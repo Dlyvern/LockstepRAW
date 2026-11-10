@@ -4,6 +4,8 @@
 #include "Lockstep/Core/Math.hpp"
 #include "Lockstep/Platform/Input.hpp"
 
+#include <optional>
+
 namespace lockstep::platform
 {
     // Engine-internal writes to an Input snapshot. Game only reads Input; the Window and the run
@@ -11,7 +13,7 @@ namespace lockstep::platform
     struct InputAccess
     {
         // Marks a key as down or up and records the change. A press of a key that is already
-        // down (key repeat) records nothing.
+        // down (key repeat) only marks it as typed again (Input::wasKeyTyped()).
         // input: the snapshot to change.
         // key:   the key.
         // down:  true for pressed, false for released.
@@ -32,6 +34,16 @@ namespace lockstep::platform
         // input: the snapshot to change.
         // delta: wheel movement.
         static void addScrollDelta(Input& input, math::Vec2 delta);
+
+        // Sets where the cursor is.
+        // input:    the snapshot to change.
+        // position: normalized window position, or nothing when unknown or captured.
+        static void setCursorPosition(Input& input, std::optional<math::Vec2> position);
+
+        // Appends one typed character; dropped once k_maxTypedCharacters are kept.
+        // input:     the snapshot to change.
+        // codepoint: the Unicode code point.
+        static void addTypedCharacter(Input& input, char32_t codepoint);
 
         // Releases every held key and button, recording the releases. Used when the window
         // loses focus, since the OS stops reporting key-up events then.

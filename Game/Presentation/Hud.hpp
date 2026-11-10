@@ -31,6 +31,7 @@ namespace game
     // fade:         how black the screen is, 0 to 1.
     // caption:      large centred text shown over the fade, empty for none.
     // subtitle:     the dialogue subtitle at the bottom of the screen, empty for none.
+    // showSubtitles: draw the subtitle (accessibility option).
     struct Hud
     {
         std::size_t localPlayer{0};
@@ -40,6 +41,7 @@ namespace game
         float fade{0.0f};
         std::string caption;
         std::string subtitle;
+        bool showSubtitles{true};
     };
 
     // Sets the prompt; logs it when it changes to a new non-empty one.

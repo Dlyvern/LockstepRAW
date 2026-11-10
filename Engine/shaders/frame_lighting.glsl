@@ -4,6 +4,8 @@
 const uint k_maxLocalLights = 16u;
 const uint k_maxShadowTiles = 20u;
 const uint k_maxAmbientZones = 16u;
+const uint k_lightCellsX = 32u;
+const uint k_lightCellsY = 18u;
 const float k_spotLight = 1.0;
 
 struct LocalLight
@@ -79,4 +81,6 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     vec4 zoneLight;
     vec4 zoneFill;
     AmbientZone zones[k_maxAmbientZones];
+    vec4 lightCellScale;
+    uint lightCells[k_lightCellsX * k_lightCellsY];
 } frame;

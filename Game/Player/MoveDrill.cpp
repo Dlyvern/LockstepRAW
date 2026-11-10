@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <string_view>
 
@@ -31,6 +32,7 @@ namespace game
         constexpr float k_laneTolerance{0.6f};
         constexpr std::string_view k_kickDrillFlag{"--dev-kick-drill"};
         constexpr std::string_view k_watchNpcFlag{"--dev-watch-npc"};
+        constexpr std::string_view k_lookPitchFlag{"--dev-look-pitch"};
         constexpr float k_kickInterval{1.2f};
         constexpr float k_kickPressSeconds{0.05f};
         constexpr float k_kickDrillPitch{-0.15f};
@@ -191,6 +193,28 @@ namespace game
         {
             return argument != nullptr && std::string_view(argument) == k_watchNpcFlag;
         });
+    }
+
+    std::optional<float> devLookPitch(std::span<const char* const> arguments)
+    {
+        for (std::size_t index = 0; index + 1 < arguments.size(); ++index)
+        {
+            if (arguments[index] == nullptr || arguments[index + 1] == nullptr
+                || std::string_view(arguments[index]) != k_lookPitchFlag)
+            {
+                continue;
+            }
+
+            char* end = nullptr;
+            const float pitch = std::strtof(arguments[index + 1], &end);
+
+            if (end != arguments[index + 1])
+            {
+                return pitch;
+            }
+        }
+
+        return std::nullopt;
     }
 
     void lookAtPoint(PlayerCommand& command, const math::Vec3& eye, const math::Vec3& target)

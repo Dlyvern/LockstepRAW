@@ -9,7 +9,7 @@
 #include "RenderScale.hpp"
 #include "RendererState.hpp"
 #include "ScopeView.hpp"
-#include "TextPass.hpp"
+#include "OverlayPass.hpp"
 #include "VelaConversions.hpp"
 #include "VolumetricFog.hpp"
 
@@ -219,23 +219,23 @@ namespace lockstep::render
         return {};
     }
 
-    Status addTextPass(RendererState& state)
+    Status addOverlayPass(RendererState& state)
     {
-        auto textPass = TextPass::create(state.context);
+        auto overlayPass = OverlayPass::create(state.context, state);
 
-        if (!textPass)
+        if (!overlayPass)
         {
-            return textPass.error();
+            return overlayPass.error();
         }
 
-        TextPass* pass = textPass.value().get();
+        OverlayPass* pass = overlayPass.value().get();
 
-        if (auto added = state.addPass(std::move(textPass).value()); !added)
+        if (auto added = state.addPass(std::move(overlayPass).value()); !added)
         {
             return added;
         }
 
-        state.textPass = pass;
+        state.overlayPass = pass;
 
         return {};
     }

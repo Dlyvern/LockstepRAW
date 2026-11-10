@@ -1,6 +1,7 @@
 #include "Lockstep/Render/GraphicsConfig.hpp"
 
 #include "Lockstep/Core/Log.hpp"
+#include "Lockstep/Core/SettingsFile.hpp"
 
 #include <algorithm>
 #include <array>
@@ -27,7 +28,7 @@ namespace lockstep::render
         constexpr std::string_view k_antiAliasingKey{"anti_aliasing"};
         constexpr std::string_view k_windowWidthKey{"window_width"};
         constexpr std::string_view k_windowHeightKey{"window_height"};
-        constexpr std::string_view k_graphicsSection{"[graphics]"};
+        constexpr std::string_view k_graphicsSection{"graphics"};
         constexpr uint32_t k_minWindowSide{320};
         constexpr uint32_t k_maxWindowSide{7680};
         constexpr uint32_t k_lowWindowWidth{960};
@@ -44,7 +45,7 @@ namespace lockstep::render
             QualityField field;
         };
 
-        const std::array<FieldKey, 21> k_fields{{
+        const std::array<FieldKey, 22> k_fields{{
             {"render_scale", &GraphicsQuality::renderScale},
             {"texture_mip_drop", &GraphicsQuality::textureMipDrop},
             {"shadow_atlas_size", &GraphicsQuality::shadowAtlasSize},
@@ -65,7 +66,8 @@ namespace lockstep::render
             {"planar_reflections", &GraphicsQuality::planarReflections},
             {"reflection_resolution", &GraphicsQuality::reflectionResolution},
             {"scope_resolution", &GraphicsQuality::scopeResolution},
-            {"particle_budget", &GraphicsQuality::particleBudget}}};
+            {"particle_budget", &GraphicsQuality::particleBudget},
+            {"fps_limit", &GraphicsQuality::frameRateLimit}}};
 
         constexpr std::array<std::pair<std::string_view, AntiAliasingMode>, 5> k_antiAliasingNames{{
             {"off", AntiAliasingMode::Off}, {"fxaa", AntiAliasingMode::Fxaa}, {"msaa2x", AntiAliasingMode::Msaa2x},
@@ -112,16 +114,40 @@ namespace lockstep::render
                 .value = std::string(trimmed(content.substr(equals + 1))), .line = number};
         }
 
+        std::optional<std::string_view> sectionHeader(std::string_view line)
+        {
+            const std::string_view content = trimmed(line.substr(0, line.find('#')));
+
+            if (content.size() < 2 || content.front() != '[' || content.back() != ']')
+            {
+                return std::nullopt;
+            }
+
+            return trimmed(content.substr(1, content.size() - 2));
+        }
+
         std::vector<Entry> readEntries(const std::filesystem::path& file)
         {
             std::vector<Entry> entries;
             std::ifstream stream(file);
             std::string line;
             uint32_t number = 0;
+            bool isGraphicsSection = true;
 
             while (std::getline(stream, line))
             {
                 ++number;
+
+                if (const std::optional<std::string_view> section = sectionHeader(line))
+                {
+                    isGraphicsSection = *section == k_graphicsSection;
+                    continue;
+                }
+
+                if (!isGraphicsSection)
+                {
+                    continue;
+                }
 
                 if (auto entry = parseLine(line, number))
                 {
@@ -130,6 +156,11 @@ namespace lockstep::render
             }
 
             return entries;
+        }
+
+        void setGraphicsValue(SettingsFile& settings, std::string_view key, std::string_view value)
+        {
+            settings.set(settings.contains("", key) ? std::string_view() : k_graphicsSection, key, value);
         }
 
         std::optional<uint32_t> parseUnsigned(std::string_view text)
@@ -449,59 +480,25 @@ namespace lockstep::render
 
     Status saveGraphicsQuality(const std::filesystem::path& file, const GraphicsQuality& quality)
     {
-        std::vector<std::string> kept;
-        std::error_code error;
-
-        if (std::filesystem::is_regular_file(file, error))
-        {
-            std::ifstream stream(file);
-            std::string line;
-
-            while (std::getline(stream, line))
-            {
-                const std::optional<Entry> entry = parseLine(line, 0);
-                const bool isQuality = entry && (entry->key == k_presetKey || entry->key == k_antiAliasingKey
-                    || std::any_of(k_fields.begin(), k_fields.end(),
-                        [&entry](const FieldKey& field) { return field.key == entry->key; }));
-
-                if (!isQuality && trimmed(line) != k_graphicsSection)
-                {
-                    kept.push_back(line);
-                }
-            }
-        }
-
-        if (file.has_parent_path())
-        {
-            std::filesystem::create_directories(file.parent_path(), error);
-        }
-
-        std::ofstream stream(file, std::ios::trunc);
-
-        if (!stream)
-        {
-            return Error{ErrorCode::PlatformFailure, "saveGraphicsQuality: cannot write '" + file.string() + "'"};
-        }
-
-        stream << k_graphicsSection << '\n';
-        stream << k_presetKey << " = " << toString(quality.preset) << '\n';
-        stream << k_antiAliasingKey << " = " << antiAliasingName(quality.antiAliasing) << '\n';
+        SettingsFile settings = SettingsFile::load(file);
+        setGraphicsValue(settings, k_presetKey, toString(quality.preset));
+        setGraphicsValue(settings, k_antiAliasingKey, antiAliasingName(quality.antiAliasing));
 
         for (const FieldKey& field : k_fields)
         {
-            stream << field.key << " = " << formatField(quality, field.field) << '\n';
+            setGraphicsValue(settings, field.key, formatField(quality, field.field));
         }
 
-        for (const std::string& line : kept)
-        {
-            stream << line << '\n';
-        }
+        return settings.save();
+    }
 
-        if (!stream)
-        {
-            return Error{ErrorCode::PlatformFailure, "saveGraphicsQuality: writing '" + file.string() + "' failed"};
-        }
+    Status saveWindowSize(const std::filesystem::path& file, uint32_t width, uint32_t height)
+    {
+        SettingsFile settings = SettingsFile::load(file);
+        setGraphicsValue(settings, k_windowWidthKey, std::to_string(std::clamp(width, k_minWindowSide, k_maxWindowSide)));
+        setGraphicsValue(settings, k_windowHeightKey,
+            std::to_string(std::clamp(height, k_minWindowSide, k_maxWindowSide)));
 
-        return {};
+        return settings.save();
     }
 } //namespace lockstep::render

@@ -16,6 +16,11 @@
 
 namespace lockstep::render
 {
+    // Screen grid of local light masks (GpuFrameLighting::lightCells), resolution independent.
+    inline constexpr uint32_t k_lightCellsX{32};
+    inline constexpr uint32_t k_lightCellsY{18};
+    inline constexpr uint32_t k_lightCells{k_lightCellsX * k_lightCellsY};
+
     // One point or spot light as pbr.frag reads it (std430, 64 bytes).
     // positionRange:     xyz world position, w range.
     // color:             rgb colour times intensity, w its volumetric fog multiplier.
@@ -106,6 +111,11 @@ namespace lockstep::render
     // zoneLight:         x diffuse and y specular image-based light multiplier inside zones.
     // zoneFill:          rgb fill radiance inside zones.
     // zones:             the zones, nearest the camera first.
+    // lightCellScale:    xy light cells per scene pixel (k_lightCellsX / width, k_lightCellsY /
+    //                    height), zw unused.
+    // lightCells:        per screen cell (row-major, top row first), bit i set when local light i
+    //                    can reach a pixel of that cell (its bounding sphere's screen rectangle
+    //                    overlaps the cell). Only the camera's screen reads it.
     struct GpuFrameLighting
     {
         math::Mat4 shadowTileViewProjection[k_maxShadowTiles]{};
@@ -165,12 +175,14 @@ namespace lockstep::render
         float zoneLight[4];
         float zoneFill[4];
         GpuAmbientZone zones[k_maxFrameAmbientZones];
+        float lightCellScale[4];
+        uint32_t lightCells[k_lightCells];
     };
 
     static_assert(sizeof(GpuLocalLight) == 64);
     static_assert(sizeof(GpuAmbientZone) == 32);
     static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 7 * 64 + 43 * 16 + k_maxLocalLights * 64
-        + 3 * 16 + k_maxFrameAmbientZones * 32);
+        + 3 * 16 + k_maxFrameAmbientZones * 32 + 16 + k_lightCells * 4);
 
     // The lights submitted for one frame.
     // directional: the directional light, if one was submitted.
@@ -200,11 +212,13 @@ namespace lockstep::render
     // tiles:          every atlas tile's projection.
     // casterSpheres:  per local light tile, xyz the light's position and w its range (casters
     //                 outside it are skipped).
+    // sunTravel:      unit direction sunlight travels in (when cascadeCount > 0).
     struct PreparedLighting
     {
         GpuFrameLighting lighting{};
         bool hasSun{false};
         uint32_t cascadeCount{0};
+        math::Vec3 sunTravel{0.0f, -1.0f, 0.0f};
         uint32_t localTileCount{0};
         uint32_t shadowedLocalLights{0};
         std::array<ShadowTile, k_maxShadowTiles> tiles{};

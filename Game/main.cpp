@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "Shell/ShellLaunch.hpp"
 
 #include <Lockstep/App/Run.hpp>
 #include <Lockstep/Assets/FileSystem.hpp>
@@ -76,6 +77,14 @@ int main(int argc, char** argv)
     if (!content)
     {
         return reportError(content.error());
+    }
+
+    if (game::isMenuLaunch(options) && !game::hasContentOption(options))
+    {
+        for (const std::filesystem::path& pak : game::defaultContentPaks(LOCKSTEP_CONTENT_DIR))
+        {
+            content.value().push_back(pak);
+        }
     }
 
     mountGameData(content.value(), options);

@@ -92,6 +92,7 @@ namespace lockstep::debug
             changed |= sliderUnsigned("Scope resolution cap", quality.scopeResolution, 256, 1024);
             changed |= sliderUnsigned("Particle budget", quality.particleBudget, 1000, 50000);
             ImGui::TextDisabled("Particle budget applies when Game creates its particles (restart).");
+            changed |= sliderUnsigned("Frame rate limit (0 = off)", quality.frameRateLimit, 0, 300);
 
             return changed;
         }

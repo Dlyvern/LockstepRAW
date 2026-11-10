@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -302,6 +303,37 @@ namespace lockstep::render
         // style:    size, colour, alignment and shadow.
         void submitText(std::string_view utf8, math::Vec2 position, const TextStyle& style = {});
 
+        // Queues a filled screen rectangle for the next render() only. Screen rectangles, images
+        // and text share one overlay: they draw after tonemapping and anti-aliasing, before the dev
+        // tools, in submission order (later ones cover earlier ones).
+        // rect:  the rectangle (see ScreenRect).
+        // color: sRGB colour; alpha is opacity.
+        void submitRect(const ScreenRect& rect, const math::Vec4& color);
+
+        // Queues a textured screen rectangle for the next render() only, in the overlay order of
+        // submitRect(). An invalid or stale texture is skipped.
+        // texture: a texture created by this renderer (colour formats; sampled with its filter).
+        // rect:    the rectangle.
+        // style:   tint and texture coordinates.
+        void submitImage(TextureHandle texture, const ScreenRect& rect, const ImageStyle& style = {});
+
+        // Limits the overlay draws submitted after this call (text, rectangles, images) to a
+        // rectangle, until the next call; every frame starts without a limit.
+        // clip: the visible rectangle in normalized screen coordinates, or nothing for the whole
+        //       screen.
+        void setScreenClip(const std::optional<ScreenRect>& clip);
+
+        // Measures text as submitText() would lay it out.
+        // utf8:    the text; '\n' starts a new line.
+        // style:   size and font (alignment and colour don't matter).
+        // Returns: width of the widest line and height of all lines, in pixels at 1080p (the unit
+        //          of TextStyle::size; multiply by the framebuffer height / 1080 for real pixels).
+        [[nodiscard]] math::Vec2 measureText(std::string_view utf8, const TextStyle& style) const;
+
+        // Returns: the size of the presented image in pixels (the window's framebuffer), for
+        //          laying out screen overlays; (0, 0) while the window is minimized.
+        [[nodiscard]] math::Vec2 screenSize() const;
+
         // Changes how frames reach the screen, from the next render() on. Only the swapchain is
         // recreated; nothing else is rebuilt.
         // mode:    the present mode; falls back towards VSync when unsupported (see PresentMode).
@@ -319,6 +351,15 @@ namespace lockstep::render
 
         // Returns: the graphics quality in effect.
         [[nodiscard]] const GraphicsQuality& graphicsQuality() const;
+
+        // Sets a temporary frame rate cap on top of GraphicsQuality::frameRateLimit, for screens
+        // that need no high frame rate (menus, intro, loading). Stays until changed.
+        // framesPerSecond: the cap, 0 to remove it (otherwise clamped to 20 to 1000).
+        void setFrameRateCap(uint32_t framesPerSecond);
+
+        // Returns: frames per second the run loop renders at most: the lower of
+        //          GraphicsQuality::frameRateLimit and setFrameRateCap() that is set, or 0 for none.
+        [[nodiscard]] uint32_t frameRateLimit() const;
 
         // Returns: the feature switches and tunables (lighting, shadows, fog, tonemapping). Changes
         //          apply from the next render(), limited by graphicsQuality() (a feature it switches

@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_PLAYER_PLAYER_COMMAND_HPP
 #define LOCKSTEP_GAME_PLAYER_PLAYER_COMMAND_HPP
 
+#include "Player/KeyBindings.hpp"
 #include "Weapons/FireModes.hpp"
 #include "Weapons/OpticKind.hpp"
 #include "Weapons/Recoil.hpp"
@@ -117,9 +118,6 @@ namespace game
         float switchSeconds{0.0f};
     };
 
-    // The key that lowers or raises the weapon.
-    inline constexpr lockstep::platform::Key k_lowerWeaponKey{lockstep::platform::Key::X};
-
     // The fire and aim buttons of one tick.
     // isPressed: fire was pressed this tick.
     // isHeld:    fire is held.
@@ -161,21 +159,27 @@ namespace game
         std::optional<FireButtons> scriptedFire{};
     };
 
-    // The key that cycles the fire mode.
-    inline constexpr lockstep::platform::Key k_fireModeKey{lockstep::platform::Key::B};
-
     // Settings for turning device input into commands. Mouse movement is the raw relative motion
     // (the window enables raw mouse motion while the cursor is captured), applied linearly: no
     // smoothing, no acceleration.
     // mouseSensitivity: radians of look per pixel of mouse movement.
     // aimSensitivityScale: sensitivity multiplier while aiming down sights.
     // maxPitch:         largest look angle up or down, in radians.
+    // invertY:          moving the mouse up looks down.
+    // bindings:         the keys and buttons of every action (options menu, settings file).
     struct ControlSettings
     {
         float mouseSensitivity{0.0025f};
         float aimSensitivityScale{0.7f};
         float maxPitch{1.45f};
+        bool invertY{false};
+        KeyBindings bindings{defaultKeyBindings()};
     };
+
+    // settings:   invert-Y setting.
+    // mouseDelta: raw mouse movement in pixels.
+    // Returns:    the movement that turns the look (y flipped when settings.invertY).
+    [[nodiscard]] math::Vec2 lookDelta(const ControlSettings& settings, math::Vec2 mouseDelta);
 
     // settings:    sensitivity settings.
     // isAiming:    the player aims down sights.
@@ -183,7 +187,8 @@ namespace game
     // Returns:     radians of look per pixel of mouse movement.
     [[nodiscard]] float lookSensitivity(const ControlSettings& settings, bool isAiming, float opticScale = 1.0f);
 
-    // Builds this tick's command from local input: WASD to move, Shift to run, hold Ctrl or toggle
+    // Builds this tick's command from local input through ControlSettings::bindings (the defaults
+    // are named here): WASD to move, Shift to run, hold Ctrl or toggle
     // C to crouch (Ctrl or C while running slides), Space to jump (a press also clears the crouch
     // toggle), hold Q / E to lean, mouse to look, left mouse to fire (by the fire mode, B cycles
     // it within the weapon's modes), 1 / 2 / 3 or the mouse wheel to pick the M4, the Glock or
@@ -194,7 +199,7 @@ namespace game
     // click or aim raises it instead of firing (where raising is allowed; a click still throws a
     // held toy). Each shot kicks the camera recoil, which the command's look includes.
     // controls:        the local look and shot counter, updated in place.
-    // settings:        sensitivity and pitch limit.
+    // settings:        sensitivity, invert-Y, pitch limit and key bindings.
     // input:           this tick's input.
     // isCursorCaptured: true while the window holds the mouse for mouse look.
     // weapon:          armed state, zone, held toy, rounds, fire rate, recoil and sight offset.

@@ -33,14 +33,14 @@ namespace lockstep::render
     // Extended-A, Cyrillic and common punctuation (dashes, quotes, ellipsis, guillemets, No. sign).
     // The single-channel texture holds k_fontEdgeValue on glyph outlines, more inside, less
     // outside, falling by one unit per k_fontDistanceScale over a pixel at the bake size; it can be
-    // drawn at any size with a smoothstep around the edge (text.frag).
+    // drawn at any size with a smoothstep around the edge (overlay.frag).
     class FontAtlas
     {
     public:
         // Pixel height (ascender to descender) the glyphs are baked at.
         static constexpr float k_bakeSize{48.0f};
 
-        // Distance-field value on a glyph outline, out of 255 (text.frag uses the same value).
+        // Distance-field value on a glyph outline, out of 255 (overlay.frag uses the same value).
         static constexpr uint8_t k_fontEdgeValue{128};
 
         // Distance-field units per pixel at the bake size, out of 255.

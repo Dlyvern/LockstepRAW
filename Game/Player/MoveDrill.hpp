@@ -63,6 +63,12 @@ namespace game
     // Returns:   true when it is on.
     [[nodiscard]] bool isWatchNpcRequested(std::span<const char* const> arguments);
 
+    // Dev (`--dev-look-pitch <radians>`): holds the look pitch every tick (e.g. 1.5 to stare at the
+    // ceiling for measuring view-independent render cost); combines with the other drills.
+    // arguments: the command line.
+    // Returns:   the pitch to hold, or nothing when the flag is absent or malformed.
+    [[nodiscard]] std::optional<float> devLookPitch(std::span<const char* const> arguments);
+
     // Turns a command's look at a point.
     // command: the command, changed in place.
     // eye:     the local pawn's eye position.

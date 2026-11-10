@@ -149,6 +149,13 @@ namespace lockstep::debug
                 shadows.maskedCasterCascades = static_cast<uint32_t>(maskedCascades);
             }
 
+            int skinnedCascades = static_cast<int>(shadows.skinnedCasterCascades);
+
+            if (ImGui::SliderInt("Character cascades", &skinnedCascades, 0, k_maxCascades))
+            {
+                shadows.skinnedCasterCascades = static_cast<uint32_t>(skinnedCascades);
+            }
+
             ImGui::Separator();
             ImGui::Checkbox("Point / spot light shadows", &shadows.localLights);
 
@@ -237,6 +244,7 @@ namespace lockstep::debug
             ImGui::Checkbox("Bloom", &settings.bloom.enabled);
             ImGui::SliderFloat("Bloom strength", &settings.bloom.strength, 0.0f, k_maxBloomStrength, "%.3f");
             ImGui::Checkbox("Frustum culling", &settings.culling.frustumCulling);
+            ImGui::Checkbox("Sun caster culling", &settings.culling.sunCasterCulling);
         }
 
         void drawTonemap(render::TonemapSettings& tonemap)

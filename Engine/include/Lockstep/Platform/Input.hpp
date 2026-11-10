@@ -3,9 +3,12 @@
 
 #include "Lockstep/Core/Math.hpp"
 
+#include <array>
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string_view>
 
 namespace lockstep::platform
 {
@@ -30,6 +33,24 @@ namespace lockstep::platform
         RightShift,
         RightControl,
         RightAlt,
+        Delete,
+        Insert,
+        Home,
+        End,
+        PageUp,
+        PageDown,
+        CapsLock,
+        Minus,
+        Equal,
+        LeftBracket,
+        RightBracket,
+        Backslash,
+        Semicolon,
+        Apostrophe,
+        Comma,
+        Period,
+        Slash,
+        GraveAccent,
         Count
     };
 
@@ -39,8 +60,13 @@ namespace lockstep::platform
         Left,
         Right,
         Middle,
+        Back,
+        Forward,
         Count
     };
+
+    // Most characters one Input snapshot keeps of typed text; more are dropped.
+    inline constexpr std::size_t k_maxTypedCharacters{32};
 
     struct InputAccess;
 
@@ -64,6 +90,11 @@ namespace lockstep::platform
         // Returns: true if `key` went up during the period this snapshot covers.
         [[nodiscard]] bool wasKeyReleased(Key key) const;
 
+        // key:     the key to query.
+        // Returns: true if `key` went down or the OS repeated it (held long enough) during the
+        //          period this snapshot covers. For text editing and menu navigation.
+        [[nodiscard]] bool wasKeyTyped(Key key) const;
+
         // button:  the mouse button to query.
         // Returns: true if `button` is held down.
         [[nodiscard]] bool isMouseButtonDown(MouseButton button) const;
@@ -85,6 +116,15 @@ namespace lockstep::platform
         //          vertical wheel).
         [[nodiscard]] math::Vec2 scrollDelta() const;
 
+        // Returns: where the cursor is, in normalized window coordinates ((0,0) top-left, (1,1)
+        //          bottom-right; outside that range when the cursor is outside the window), or
+        //          nothing while the cursor is captured or its position is unknown.
+        [[nodiscard]] std::optional<math::Vec2> cursorPosition() const;
+
+        // Returns: the characters typed during the period this snapshot covers (layout and shift
+        //          applied, as Unicode code points), in order. At most k_maxTypedCharacters.
+        [[nodiscard]] std::u32string_view typedText() const;
+
     private:
         friend struct InputAccess;
 
@@ -97,9 +137,29 @@ namespace lockstep::platform
         std::bitset<k_mouseButtonCount> m_buttonsDown;
         std::bitset<k_mouseButtonCount> m_buttonsPressed;
         std::bitset<k_mouseButtonCount> m_buttonsReleased;
+        std::bitset<k_keyCount> m_keysTyped;
         math::Vec2 m_mouseDelta{0.0f, 0.0f};
         math::Vec2 m_scrollDelta{0.0f, 0.0f};
+        std::optional<math::Vec2> m_cursorPosition{};
+        std::array<char32_t, k_maxTypedCharacters> m_typed{};
+        std::size_t m_typedCount{0};
     };
+
+    // key:     a key.
+    // Returns: its short English name for menus and settings files ("W", "Space", "Left Shift").
+    [[nodiscard]] std::string_view keyName(Key key);
+
+    // button:  a mouse button.
+    // Returns: its short English name ("Mouse Left", "Mouse Back").
+    [[nodiscard]] std::string_view mouseButtonName(MouseButton button);
+
+    // name:    a name as keyName() spells it (case-insensitive).
+    // Returns: the key, or nothing if no key has that name.
+    [[nodiscard]] std::optional<Key> keyFromName(std::string_view name);
+
+    // name:    a name as mouseButtonName() spells it (case-insensitive).
+    // Returns: the button, or nothing if no button has that name.
+    [[nodiscard]] std::optional<MouseButton> mouseButtonFromName(std::string_view name);
 } //namespace lockstep::platform
 
 #endif //LOCKSTEP_PLATFORM_INPUT_HPP
