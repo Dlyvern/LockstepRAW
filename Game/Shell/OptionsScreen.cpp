@@ -7,6 +7,8 @@
 #include <Lockstep/Render/Renderer.hpp>
 
 #include <array>
+#include <span>
+#include <string_view>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -86,6 +88,89 @@ namespace game
             }
         }
 
+        template<typename Value>
+        void qualityChoice(GameState& state, EngineContext& engine, ui::Column& column, std::string_view id,
+            std::string_view label, Value& field, std::span<const Value> values, std::span<const std::string> names)
+        {
+            std::size_t index = 0;
+
+            for (std::size_t candidate = 1; candidate < values.size(); ++candidate)
+            {
+                if (std::abs(static_cast<double>(values[candidate]) - static_cast<double>(field))
+                    < std::abs(static_cast<double>(values[index]) - static_cast<double>(field)))
+                {
+                    index = candidate;
+                }
+            }
+
+            if (state.shell.ui.cycler(id, column.next(k_menuRowHeight), label, index, names))
+            {
+                field = values[index % values.size()];
+                saveQuality(state.shell, engine, false);
+            }
+        }
+
+        void sectionHeading(ui::UiContext& context, ui::Column& column, std::string_view title)
+        {
+            const ui::Rect row = column.next(k_menuRowHeight);
+            context.text(title, {row.min.x, row.min.y + k_menuRowHeight * 0.35f}, 22.0f, k_menuAccent);
+        }
+
+        void drawFog(GameState& state, EngineContext& engine, ui::Column& column)
+        {
+            render::GraphicsQuality& quality = state.shell.options.quality;
+            sectionHeading(state.shell.ui, column, "FOG");
+            qualityToggle(state, engine, column, "opt.fog", "VOLUMETRIC FOG", quality.volumetricFog);
+
+            constexpr std::array<float, 5> k_fogResolutions{0.5f, 0.6f, 0.7f, 1.0f, 1.5f};
+            const std::vector<std::string> resolutionNames{"LOW", "MEDIUM", "HIGH", "VERY HIGH", "ULTRA"};
+            qualityChoice<float>(state, engine, column, "opt.fogres", "FOG QUALITY", quality.volumetricFogResolution,
+                k_fogResolutions, resolutionNames);
+
+            constexpr std::array<uint32_t, 6> k_fogLights{0, 2, 4, 6, 8, 16};
+            const std::vector<std::string> lightNames{"NONE", "2", "4", "6", "8", "ALL"};
+            qualityChoice<uint32_t>(state, engine, column, "opt.foglights", "LIGHTS IN FOG", quality.volumetricFogLights,
+                k_fogLights, lightNames);
+        }
+
+        void drawShadows(GameState& state, EngineContext& engine, ui::Column& column)
+        {
+            render::GraphicsQuality& quality = state.shell.options.quality;
+            sectionHeading(state.shell.ui, column, "SHADOWS");
+
+            constexpr std::array<uint32_t, 4> k_atlasSizes{1024, 2048, 4096, 8192};
+            const std::vector<std::string> atlasNames{"LOW", "MEDIUM", "HIGH", "ULTRA"};
+            qualityChoice<uint32_t>(state, engine, column, "opt.shadowres", "SHADOW RESOLUTION", quality.shadowAtlasSize,
+                k_atlasSizes, atlasNames);
+
+            constexpr std::array<uint32_t, 4> k_cascades{1, 2, 3, 4};
+            const std::vector<std::string> cascadeNames{"1", "2", "3", "4"};
+            qualityChoice<uint32_t>(state, engine, column, "opt.cascades", "SUN SHADOW CASCADES", quality.shadowCascades,
+                k_cascades, cascadeNames);
+
+            constexpr std::array<uint32_t, 6> k_shadowedLights{0, 1, 2, 3, 4, 8};
+            const std::vector<std::string> shadowedNames{"NONE", "1", "2", "3", "4", "8"};
+            qualityChoice<uint32_t>(state, engine, column, "opt.shadowlights", "SHADOWED LAMPS",
+                quality.shadowedLocalLights, k_shadowedLights, shadowedNames);
+
+            constexpr std::array<uint32_t, 5> k_characterCascades{0, 1, 2, 3, 4};
+            const std::vector<std::string> characterNames{"OFF", "NEAR", "MEDIUM", "FAR", "FULL"};
+            qualityChoice<uint32_t>(state, engine, column, "opt.charshadows", "CHARACTER SHADOW DISTANCE",
+                quality.characterShadowCascades, k_characterCascades, characterNames);
+
+            const std::vector<std::string> reliefNames{"SUN ONLY", "ALL LIGHTS"};
+            std::size_t relief = quality.parallaxLocalShadows ? 1 : 0;
+
+            if (state.shell.ui.cycler("opt.relief", column.next(k_menuRowHeight), "SURFACE RELIEF SHADOWS", relief,
+                    reliefNames))
+            {
+                quality.parallaxLocalShadows = relief % 2 == 1;
+                saveQuality(state.shell, engine, false);
+            }
+
+            qualityToggle(state, engine, column, "opt.contact", "CONTACT SHADOWS", quality.contactShadows);
+        }
+
         void drawGraphics(GameState& state, EngineContext& engine, ui::Column& column)
         {
             Shell& shell = state.shell;
@@ -118,16 +203,16 @@ namespace game
                 saveQuality(shell, engine, false);
             }
 
-            qualityToggle(state, engine, column, "opt.fog", "VOLUMETRIC FOG", quality.volumetricFog);
             qualityToggle(state, engine, column, "opt.ssr", "SCREEN-SPACE REFLECTIONS", quality.screenSpaceReflections);
             qualityToggle(state, engine, column, "opt.ao", "AMBIENT OCCLUSION", quality.ambientOcclusion);
-            qualityToggle(state, engine, column, "opt.contact", "CONTACT SHADOWS", quality.contactShadows);
             qualityToggle(state, engine, column, "opt.bloom", "BLOOM", quality.bloom);
             qualityToggle(state, engine, column, "opt.blur", "MOTION BLUR", quality.motionBlur);
             qualityToggle(state, engine, column, "opt.dof", "DEPTH OF FIELD", quality.depthOfField);
             qualityToggle(state, engine, column, "opt.lens", "LENS EFFECTS", quality.lensEffects);
             qualityToggle(state, engine, column, "opt.mirrors", "MIRRORS", quality.planarReflections);
             qualityToggle(state, engine, column, "opt.parallax", "PARALLAX SURFACES", quality.parallax);
+            drawFog(state, engine, column);
+            drawShadows(state, engine, column);
 
             std::vector<std::string> sizes;
 
@@ -281,7 +366,7 @@ namespace game
             {
                 case OptionsTab::Graphics:
                 {
-                    return rows(17);
+                    return rows(26);
                 }
                 case OptionsTab::Audio:
                 {

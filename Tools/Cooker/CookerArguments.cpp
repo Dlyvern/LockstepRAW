@@ -33,6 +33,7 @@ namespace lockstep::cooker
         constexpr std::string_view k_noAutoCap{"--no-auto-cap"};
         constexpr std::string_view k_limbs{"--limbs"};
         constexpr std::string_view k_noSurfaceDetail{"--no-surface-detail"};
+        constexpr std::string_view k_singleSided{"--single-sided"};
 
         struct ParsedFlags
         {
@@ -54,7 +55,8 @@ namespace lockstep::cooker
                     continue;
                 }
 
-                if (argument == k_noAutoCap || argument == k_limbs || argument == k_noSurfaceDetail)
+                if (argument == k_noAutoCap || argument == k_limbs || argument == k_noSurfaceDetail
+                    || argument == k_singleSided)
                 {
                     parsed.flags.emplace_back(argument, std::string_view{});
                     continue;
@@ -198,6 +200,10 @@ namespace lockstep::cooker
                 else if (flag == k_noSurfaceDetail)
                 {
                     options.surfaces.detail = false;
+                }
+                else if (flag == k_singleSided)
+                {
+                    options.singleSided = true;
                 }
                 else
                 {

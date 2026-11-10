@@ -37,13 +37,16 @@ namespace lockstep::render
                 .shadowAtlasSize = 2048,
                 .shadowCascades = 2,
                 .shadowedLocalLights = 2,
+                .characterShadowCascades = 2,
                 .volumetricFog = true,
                 .volumetricFogResolution = 0.5f,
+                .volumetricFogLights = 2,
                 .screenSpaceReflections = false,
                 .ambientOcclusion = true,
                 .contactShadows = false,
                 .effectSteps = 0.5f,
                 .parallax = false,
+                .parallaxLocalShadows = false,
                 .surfaceDetail = false,
                 .motionBlur = false,
                 .depthOfField = false,
@@ -65,13 +68,16 @@ namespace lockstep::render
                 .shadowAtlasSize = 4096,
                 .shadowCascades = 3,
                 .shadowedLocalLights = 3,
+                .characterShadowCascades = 2,
                 .volumetricFog = true,
-                .volumetricFogResolution = 0.75f,
+                .volumetricFogResolution = 0.6f,
+                .volumetricFogLights = 4,
                 .screenSpaceReflections = true,
                 .ambientOcclusion = true,
                 .contactShadows = true,
                 .effectSteps = 0.75f,
                 .parallax = true,
+                .parallaxLocalShadows = false,
                 .surfaceDetail = true,
                 .motionBlur = true,
                 .depthOfField = true,
@@ -93,13 +99,16 @@ namespace lockstep::render
                 .shadowAtlasSize = 8192,
                 .shadowCascades = 4,
                 .shadowedLocalLights = 8,
+                .characterShadowCascades = 3,
                 .volumetricFog = true,
                 .volumetricFogResolution = 1.5f,
+                .volumetricFogLights = 16,
                 .screenSpaceReflections = true,
                 .ambientOcclusion = true,
                 .contactShadows = true,
                 .effectSteps = 1.5f,
                 .parallax = true,
+                .parallaxLocalShadows = true,
                 .surfaceDetail = true,
                 .motionBlur = true,
                 .depthOfField = true,
@@ -130,6 +139,7 @@ namespace lockstep::render
             fog.enabled = fog.enabled && quality.volumetricFog;
             fog.steps = scaledSteps(fog.steps, quality.effectSteps, 8, 64);
             fog.resolutionScale = std::clamp(fog.resolutionScale * quality.volumetricFogResolution, 0.25f, 1.0f);
+            fog.maxLights = std::min(fog.maxLights, quality.volumetricFogLights);
         }
 
         void limitSurfacesAndLens(RenderSettings& settings, const GraphicsQuality& quality)
@@ -137,6 +147,7 @@ namespace lockstep::render
             SurfaceDetailSettings& detail = settings.surfaceDetail;
             detail.parallax = detail.parallax && quality.parallax;
             detail.parallaxShadows = detail.parallaxShadows && quality.parallax;
+            detail.parallaxLocalShadows = detail.parallaxLocalShadows && quality.parallaxLocalShadows;
             detail.parallaxMinSteps = scaledSteps(detail.parallaxMinSteps, quality.effectSteps, 4, 64);
             detail.parallaxMaxSteps = scaledSteps(detail.parallaxMaxSteps, quality.effectSteps,
                 detail.parallaxMinSteps, 64);
@@ -229,6 +240,8 @@ namespace lockstep::render
             k_maxShadowAtlasSize));
         clamped.shadowCascades = std::clamp(quality.shadowCascades, 1u, k_maxShadowCascades);
         clamped.shadowedLocalLights = std::min(quality.shadowedLocalLights, k_maxShadowedLocalLights);
+        clamped.characterShadowCascades = std::min(quality.characterShadowCascades, k_maxShadowCascades);
+        clamped.volumetricFogLights = std::min(quality.volumetricFogLights, k_maxVolumetricFogLights);
         clamped.volumetricFogResolution = std::clamp(quality.volumetricFogResolution, k_minResolutionMultiplier,
             k_maxResolutionMultiplier);
         clamped.effectSteps = std::clamp(quality.effectSteps, k_minEffectSteps, k_maxEffectSteps);
@@ -249,6 +262,8 @@ namespace lockstep::render
         settings.shadows.cascadeCount = quality.shadowCascades;
         settings.shadows.maxLocalLights = quality.shadowedLocalLights;
         settings.shadows.maskedCasterCascades = std::min(settings.shadows.maskedCasterCascades, quality.shadowCascades);
+        settings.shadows.skinnedCasterCascades = std::min(settings.shadows.skinnedCasterCascades,
+            quality.characterShadowCascades);
         settings.reflections.enabled = settings.reflections.enabled && quality.planarReflections;
         settings.reflections.resolutionScale = std::clamp(
             settings.reflections.resolutionScale * quality.reflectionResolution, 0.25f, 1.0f);

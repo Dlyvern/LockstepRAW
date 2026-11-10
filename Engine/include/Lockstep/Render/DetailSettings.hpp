@@ -17,7 +17,9 @@ namespace lockstep::render
     // parallaxMinSteps:  fewest height samples of the search, 4 to 64; the count grows by one per two
     //                    pixels of on-screen shift.
     // parallaxMaxSteps:  most height samples (grazing angles up close), parallaxMinSteps to 64.
-    // parallaxShadows:   the relief shadows itself from the sun and local lights where parallax runs.
+    // parallaxShadows:   the relief shadows itself from the sun where parallax runs.
+    // parallaxLocalShadows: with parallaxShadows, also from point and spot lights (a height-map
+    //                    march per light in range).
     // detail:            layer the generic micro-detail textures on materials that ask for one.
     // detailDistance:    metres from the camera where the detail has faded out (from half of it).
     // detailStrength:    multiplier on the detail's normal, roughness and albedo variation, 0 to 2.
@@ -28,6 +30,7 @@ namespace lockstep::render
         uint32_t parallaxMinSteps{6};
         uint32_t parallaxMaxSteps{24};
         bool parallaxShadows{true};
+        bool parallaxLocalShadows{true};
         bool detail{true};
         float detailDistance{8.0f};
         float detailStrength{1.0f};

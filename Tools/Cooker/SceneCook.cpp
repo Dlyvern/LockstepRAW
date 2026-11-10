@@ -733,6 +733,22 @@ namespace lockstep::cooker
                 << options.wound.string() << "'\n";
         }
         context.level.materials = scene.value().materials;
+
+        if (options.singleSided)
+        {
+            uint32_t changed = 0;
+
+            for (assets::CookedMaterial& material : context.level.materials)
+            {
+                if (material.factors.doubleSided && material.factors.alphaMode == render::AlphaMode::Opaque)
+                {
+                    material.factors.doubleSided = false;
+                    ++changed;
+                }
+            }
+
+            std::cout << "  single-sided: " << changed << " opaque materials no longer double-sided\n";
+        }
         context.level.instances = scene.value().instances;
         context.level.nodes = scene.value().nodes;
         context.level.lights = scene.value().lights;

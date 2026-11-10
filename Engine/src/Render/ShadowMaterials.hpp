@@ -7,19 +7,28 @@
 #include <Vela/Graphics/Material.hpp>
 #include <Vela/Graphics/Texture.hpp>
 
+#include <cstdint>
+
 namespace lockstep::render
 {
     struct RendererState;
 
+    // Set-1 binding of RendererState::shadowInstanceBuffer in the static shadow materials
+    // (shadow.vert, shadow_mask.vert): per instance, the light matrix (tile view-projection times
+    // model) of an instanced caster.
+    inline constexpr uint32_t k_shadowInstanceBinding{1};
+
     // Creates the depth-only material opaque casters render into the shadow atlas with, using
-    // the hardware depth bias of RenderSettings::shadows.depthBias.
+    // the hardware depth bias of RenderSettings::shadows.depthBias. Static casters are drawn
+    // instanced from the shadow instance buffer; skinned ones one by one with push constants.
     // state:   the renderer state holding the shadow shaders and settings.
     // kind:    static casters, or skinned ones (skinned on the GPU from the joint buffer).
     // Returns: the material, or an error if the pipeline could not be created.
     [[nodiscard]] Result<vela::graphics::Material> createShadowMaterial(RendererState& state, MeshKind kind);
 
     // Creates the shadow material of an alpha-masked lit material: depth only, discarding by the
-    // base colour alpha, with the same depth bias as createShadowMaterial().
+    // base colour alpha, with the same depth bias as createShadowMaterial(). Static ones are drawn
+    // instanced like createShadowMaterial()'s.
     // state:     the renderer state holding the shadow shaders and settings.
     // baseColor: the base colour texture whose alpha masks the caster. Must outlive the material.
     // kind:      the kind of mesh the lit material draws.

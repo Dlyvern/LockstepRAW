@@ -17,13 +17,14 @@ namespace lockstep::render
 
     RendererState::RendererState(vela::core::Window& window, vela::core::Context&& context, MaterialShaders&& shaders,
         vela::graphics::DynamicBuffer&& lightBuffer, vela::graphics::DynamicBuffer&& jointBuffer,
-        EnvironmentResources&& environment)
+        vela::graphics::DynamicBuffer&& shadowInstanceBuffer, EnvironmentResources&& environment)
         : window(window),
           context(std::move(context)),
           shaders(std::move(shaders)),
           environment(std::move(environment)),
           lightBuffer(std::move(lightBuffer)),
-          jointBuffer(std::move(jointBuffer))
+          jointBuffer(std::move(jointBuffer)),
+          shadowInstanceBuffer(std::move(shadowInstanceBuffer))
     {
     }
 

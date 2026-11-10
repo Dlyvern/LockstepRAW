@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <string_view>
 
 namespace game
 {
@@ -21,7 +23,30 @@ namespace game
         {
             return (input.isKeyDown(positive) ? 1.0f : 0.0f) - (input.isKeyDown(negative) ? 1.0f : 0.0f);
         }
+        constexpr std::string_view k_devCameraFlag{"--dev-camera"};
     } //namespace
+
+    std::optional<FlyCamera> devFixedCamera(std::span<const char* const> arguments)
+    {
+        for (std::size_t index = 0; index + 1 < arguments.size(); ++index)
+        {
+            if (arguments[index] == nullptr || arguments[index + 1] == nullptr
+                || std::string_view(arguments[index]) != k_devCameraFlag)
+            {
+                continue;
+            }
+
+            FlyCamera camera{.isActive = true};
+
+            if (std::sscanf(arguments[index + 1], "%f,%f,%f,%f,%f", &camera.position.x, &camera.position.y,
+                    &camera.position.z, &camera.yaw, &camera.pitch) == 5)
+            {
+                return camera;
+            }
+        }
+
+        return std::nullopt;
+    }
 
     void toggleFlyCamera(FlyCamera& camera, const platform::Input& input, const math::Vec3& eye, float yaw, float pitch)
     {

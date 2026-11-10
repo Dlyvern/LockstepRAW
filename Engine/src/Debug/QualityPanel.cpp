@@ -69,6 +69,7 @@ namespace lockstep::debug
             changed |= atlasCombo(quality.shadowAtlasSize);
             changed |= sliderUnsigned("Sun cascades", quality.shadowCascades, 1, k_maxCascades);
             changed |= sliderUnsigned("Shadowed local lights", quality.shadowedLocalLights, 0, k_maxShadowedLights);
+            changed |= sliderUnsigned("Character shadow cascades", quality.characterShadowCascades, 0, k_maxCascades);
 
             return changed;
         }
@@ -78,10 +79,13 @@ namespace lockstep::debug
             bool changed = ImGui::SliderFloat("Effect steps", &quality.effectSteps, 0.25f, 2.0f, "%.2f");
             changed |= ImGui::Checkbox("Volumetric fog", &quality.volumetricFog);
             changed |= ImGui::SliderFloat("Fog resolution", &quality.volumetricFogResolution, 0.25f, 2.0f, "%.2f");
+            changed |= sliderUnsigned("Fog lights", quality.volumetricFogLights, 0,
+                static_cast<int>(render::k_maxVolumetricFogLights));
             changed |= ImGui::Checkbox("Screen-space reflections", &quality.screenSpaceReflections);
             changed |= ImGui::Checkbox("Ambient occlusion", &quality.ambientOcclusion);
             changed |= ImGui::Checkbox("Contact shadows", &quality.contactShadows);
             changed |= ImGui::Checkbox("Parallax", &quality.parallax);
+            changed |= ImGui::Checkbox("Parallax self-shadow from local lights", &quality.parallaxLocalShadows);
             changed |= ImGui::Checkbox("Surface detail", &quality.surfaceDetail);
             changed |= ImGui::Checkbox("Motion blur", &quality.motionBlur);
             changed |= ImGui::Checkbox("Depth of field", &quality.depthOfField);

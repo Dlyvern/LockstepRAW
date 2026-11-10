@@ -5,6 +5,8 @@
 #include "ViewModel.hpp"
 
 #include <algorithm>
+#include <bit>
+#include <cstdint>
 #include <cmath>
 #include <span>
 #include <tuple>
@@ -19,6 +21,8 @@ namespace lockstep::render
         constexpr float k_receiverFovMargin{1.1f};
         constexpr float k_lightMaskMargin{0.25f};
         constexpr float k_maxReceiverFov{math::radians(170.0f)};
+        constexpr uint64_t k_keyMix{0x9E3779B97F4A7C15ull};
+        constexpr uint64_t k_keyPrime{0x100000001B3ull};
 
         struct CasterPlanes
         {
@@ -37,6 +41,34 @@ namespace lockstep::render
 
             return length > 0.0f ? math::Vec4{plane.x / length, plane.y / length, plane.z / length, plane.w / length}
                 : plane;
+        }
+
+        uint64_t mixWord(uint64_t key, uint64_t word)
+        {
+            key ^= word + k_keyMix + (key << 6) + (key >> 2);
+
+            return key * k_keyPrime;
+        }
+
+        uint64_t mixKey(uint64_t key, const math::Mat4& matrix)
+        {
+            for (int column = 0; column < 4; ++column)
+            {
+                for (int component = 0; component < 4; ++component)
+                {
+                    key = mixWord(key, std::bit_cast<uint32_t>(matrix[column][component]));
+                }
+            }
+
+            return key;
+        }
+
+        uint64_t shadowCasterKey(const DrawItem& item)
+        {
+            uint64_t key = mixWord(k_keyPrime, reinterpret_cast<std::uintptr_t>(item.mesh));
+            key = mixWord(key, reinterpret_cast<std::uintptr_t>(item.material));
+
+            return mixKey(key, item.model);
         }
 
         bool castsShadow(const DrawItem& item)
@@ -261,6 +293,9 @@ namespace lockstep::render
         {
             casters.clear();
         }
+
+        shadowKeys.fill(0);
+        shadowAnimated.fill(false);
     }
 
     void buildDrawLists(RendererState& state, const math::Mat4& viewProjection,
@@ -333,20 +368,29 @@ namespace lockstep::render
 
             const bool reachesView = intersectsPlanes(std::span(sunCasters.planes.data(), sunCasters.count),
                 item.worldBounds);
+            const uint64_t casterKey = shadowCasterKey(item);
 
             for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
             {
-                if (tile < k_sunShadowTiles && !reachesView)
+                if (!tileActive[tile] || !castsIntoTile(item, tile, prepared, state.settings.shadows)
+                    || (cull && !intersects(tileFrusta[tile], item.worldBounds)))
                 {
                     continue;
                 }
 
-                if (tileActive[tile] && castsIntoTile(item, tile, prepared, state.settings.shadows)
-                    && (!cull || intersects(tileFrusta[tile], item.worldBounds)))
+                lists.shadowKeys[tile] += casterKey;
+                lists.shadowAnimated[tile] = lists.shadowAnimated[tile] || item.material->kind == MeshKind::Skinned;
+
+                if (tile >= k_sunShadowTiles || reachesView)
                 {
                     lists.shadowCasters[tile].push_back(index);
                 }
             }
+        }
+
+        for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
+        {
+            lists.shadowKeys[tile] = mixKey(lists.shadowKeys[tile], prepared.tiles[tile].atlasViewProjection);
         }
 
         for (std::vector<uint32_t>& casters : lists.shadowCasters)

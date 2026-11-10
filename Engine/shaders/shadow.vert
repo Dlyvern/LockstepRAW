@@ -1,13 +1,15 @@
 #version 450
 
-layout(push_constant) uniform ShadowConstants
+// Per instance (gl_InstanceIndex), the caster's model matrix premultiplied by its shadow tile's
+// atlas view-projection. Binding: k_shadowInstanceBinding in ShadowMaterials.hpp.
+layout(set = 1, binding = 1, std430) readonly buffer ShadowInstances
 {
-    mat4 lightModel;
-} constants;
+    mat4 lightModels[];
+} instances;
 
 layout(location = 0) in vec3 inPosition;
 
 void main()
 {
-    gl_Position = constants.lightModel * vec4(inPosition, 1.0);
+    gl_Position = instances.lightModels[gl_InstanceIndex] * vec4(inPosition, 1.0);
 }

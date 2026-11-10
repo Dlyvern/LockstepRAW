@@ -233,8 +233,12 @@ void main()
     {
         uint localSteps = max(steps / 2u, 4u);
 
-        for (uint index = 0u; index < frame.counts.x; ++index)
+        uint fogLights = frame.counts.z;
+
+        while (fogLights != 0u)
         {
+            uint index = uint(findLSB(fogLights));
+            fogLights &= fogLights - 1u;
             LocalLight light = frame.lights[index];
 
             if (light.color.w > 0.0)

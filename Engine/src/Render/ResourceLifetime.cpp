@@ -12,12 +12,26 @@ namespace lockstep::render
 {
     bool Renderer::destroyMesh(MeshHandle mesh)
     {
-        return m_state->meshes.retire(mesh);
+        if (!m_state->meshes.retire(mesh))
+        {
+            return false;
+        }
+
+        m_state->shadowCache.invalidate();
+
+        return true;
     }
 
     bool Renderer::destroyMaterial(MaterialHandle material)
     {
-        return m_state->materials.retire(material);
+        if (!m_state->materials.retire(material))
+        {
+            return false;
+        }
+
+        m_state->shadowCache.invalidate();
+
+        return true;
     }
 
     bool Renderer::destroyTexture(TextureHandle texture)

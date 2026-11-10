@@ -1,6 +1,8 @@
 #ifndef LOCKSTEP_GAME_PRESENTATION_FLY_CAMERA_HPP
 #define LOCKSTEP_GAME_PRESENTATION_FLY_CAMERA_HPP
 
+#include <optional>
+#include <span>
 #include "Player/PlayerCommand.hpp"
 
 #include <Lockstep/Core/Math.hpp>
@@ -45,6 +47,12 @@ namespace game
     // frameSeconds:    wall time of the frame (presentation only).
     void updateFlyCamera(FlyCamera& camera, const lockstep::platform::Input& input, const ControlSettings& settings,
         bool isCursorCaptured, float frameSeconds);
+
+    // Dev (`--dev-camera x,y,z,yaw,pitch`): a fixed fly camera pose (radians; yaw 0 looks along -z)
+    // held every frame, for reproducible render measurements.
+    // arguments: the command line.
+    // Returns:   the active camera at that pose, or nothing when the flag is absent or malformed.
+    [[nodiscard]] std::optional<FlyCamera> devFixedCamera(std::span<const char* const> arguments);
 
     // camera:  the fly camera.
     // Returns: the render camera looking from it.

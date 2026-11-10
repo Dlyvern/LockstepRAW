@@ -100,7 +100,11 @@ Create a module folder only when there is code for it.
   pixels reduced and not smeared into the world, chromatic aberration; `LensPasses.cpp`,
   `shaders/lens_effects.glsl`), film grain and dither. Game drives DoF strength from bullet-time
   (`Game/Presentation/LensEffects`); `LevelLook` sets the lens defaults. Shadow atlas 4096x2048:
-  sun cascades left half, 16 local light tiles (512) right half.
+  sun cascades left half, 16 local light tiles (512) right half. The atlas is persistent
+  (`ShadowPass.cpp`, `ShadowCache.cpp`): a tile is re-rendered only when its key (tile matrix +
+  every caster's mesh/material/model) changed or it holds a skinned caster; cascades 3-4 keep
+  their matrix for a frame (staggered refresh) unless the camera turned/moved or the sun changed.
+  Static casters are drawn instanced (one call per mesh + shadow material run per tile).
 - **Particles:** `Lockstep/Render/Particles.hpp` `ParticleSystem` (CPU sim, Game-owned, budget
   20k): effects from a description (atlas frames, blend Alpha/Additive, Lit/Unlit, billboard or
   velocity-stretched, curves), emitters and `burst()`. Drawn by the `particles` graph pass after
@@ -122,7 +126,10 @@ Create a module folder only when there is code for it.
   `tactical` by marker number (`_Swat`/`_Tactical` override), mercs use `robber_armed`; all keep
   the SWAT skeleton, clips and model name "SWAT". They are built by
   `Content/source/scripts/chars/` (`fit_char.py` -> `finish_char.py` -> `merge_glb.py`, which keeps
-  swat.glb's skeleton and clips byte-identical); cook them with `--limbs --wound gore.glb` too.
+  swat.glb's skeleton and clips byte-identical); cook them with `--limbs --wound Content/source/characters/gore/gore.glb --single-sided` too
+  (`--single-sided` cooks opaque materials back-face culled whatever glTF says; the Blender export marks
+  them double-sided, which cost ~1.3 ms at 1080p in close-ups; first-person models, weapons and gore
+  stay double-sided).
 - **Audio: FMOD Core 2.03.08** in `external/fmod` (as in Velix; SDK files git-ignored, only our
   CMakeLists tracked; `LOCKSTEP_WITH_FMOD` defaults ON when the SDK exists, else a silent backend).
   FMOD is private to `Engine/src/Audio`. The World bus follows the World time-domain scale (pitch +
@@ -358,7 +365,10 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
   1. (fixed in 6e13b93: `vela_stage_shaders(TARGET FROM)`, used by `lockstep_stage_engine_shaders`)
   2. (fixed in 6e13b93: shader `#include` tracking and restaging on shader-only edits)
   3. A pass can't render into a persistent `Texture` (the sky IBL atlas is rebuilt every
-     frame). Persistent attachments + `InputUsage::History` exist since a601b8d (used by TAA).
+     frame). Persistent attachments + `InputUsage::History` exist since a601b8d (used by TAA);
+     persistent depth with `LoadOp::Load` works too, and Vela branch `lockstep/shadow-caching`
+     adds `PassRecorder::clearDepth(rect)`, `wasAttachmentReset(name)` and instanced mesh draws
+     `drawInstanced(mesh, material, count, firstInstance)` (used by the shadow atlas cache).
   4. No cubemap, array or per-mip attachments.
   5. No `PassRecorder::setViewport` (only scissor).
   6. Only 4 pass-input slots (auto exposure reaches tonemapping through bloomUp1's alpha).

@@ -45,7 +45,7 @@ namespace lockstep::render
             QualityField field;
         };
 
-        const std::array<FieldKey, 22> k_fields{{
+        const std::array<FieldKey, 25> k_fields{{
             {"render_scale", &GraphicsQuality::renderScale},
             {"texture_mip_drop", &GraphicsQuality::textureMipDrop},
             {"shadow_atlas_size", &GraphicsQuality::shadowAtlasSize},
@@ -53,6 +53,9 @@ namespace lockstep::render
             {"shadowed_local_lights", &GraphicsQuality::shadowedLocalLights},
             {"volumetric_fog", &GraphicsQuality::volumetricFog},
             {"volumetric_fog_resolution", &GraphicsQuality::volumetricFogResolution},
+            {"volumetric_fog_lights", &GraphicsQuality::volumetricFogLights},
+            {"character_shadow_cascades", &GraphicsQuality::characterShadowCascades},
+            {"parallax_local_shadows", &GraphicsQuality::parallaxLocalShadows},
             {"screen_space_reflections", &GraphicsQuality::screenSpaceReflections},
             {"ambient_occlusion", &GraphicsQuality::ambientOcclusion},
             {"contact_shadows", &GraphicsQuality::contactShadows},

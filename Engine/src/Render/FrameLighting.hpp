@@ -104,7 +104,9 @@ namespace lockstep::render
     //                    holographic sight is drawn.
     // sightReticle:      rgb the reticle's radiance, w the ring's angular radius.
     // sightShape:        x half the ring's angular width, y the dot's angular radius, zw unused.
-    // counts:            x local lights, y 1 if specular is on.
+    // counts:            x local lights, y 1 if specular is on, z bit mask of the local lights that
+    //                    scatter in volumetric fog (VolumetricFogSettings::maxLights nearest the
+    //                    camera), w 1 if parallax relief shadows itself from local lights.
     // lights:            the local lights.
     // zoneParams:        x interior ambient zones in use, y blend distance, z normal offset, w 1 to
     //                    tint by zone weight.

@@ -91,8 +91,10 @@ add_library(LockstepEngine STATIC
     src/Render/ScopeView.cpp
     src/Render/ScreenSpaceReflections.cpp
     src/Render/ShaderLoader.cpp
+    src/Render/ShadowCache.cpp
     src/Render/ShadowCascades.cpp
     src/Render/ShadowMaterials.cpp
+    src/Render/ShadowPass.cpp
     src/Render/Shapes.cpp
     src/Render/Skinning.cpp
     src/Render/SkyModel.cpp

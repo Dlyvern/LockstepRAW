@@ -48,14 +48,13 @@ namespace lockstep::render
             return renderState;
         }
 
-        Status bindJointPalettes(RendererState& state, vela::graphics::Material& material, MeshKind kind)
+        Status bindCasterData(RendererState& state, vela::graphics::Material& material, MeshKind kind)
         {
-            if (kind != MeshKind::Skinned)
-            {
-                return {};
-            }
+            const bool isSkinned = kind == MeshKind::Skinned;
+            auto bound = isSkinned ? material.setStorageBuffer(k_jointPaletteBinding, state.jointBuffer)
+                : material.setStorageBuffer(k_shadowInstanceBinding, state.shadowInstanceBuffer);
 
-            if (auto bound = material.setStorageBuffer(k_jointPaletteBinding, state.jointBuffer); !bound)
+            if (!bound)
             {
                 return toError(bound.error());
             }
@@ -80,7 +79,7 @@ namespace lockstep::render
             return toError(material.error());
         }
 
-        if (auto bound = bindJointPalettes(state, material.value(), kind); !bound)
+        if (auto bound = bindCasterData(state, material.value(), kind); !bound)
         {
             return bound.error();
         }
@@ -105,7 +104,7 @@ namespace lockstep::render
             return toError(material.error());
         }
 
-        if (auto bound = bindJointPalettes(state, material.value(), kind); !bound)
+        if (auto bound = bindCasterData(state, material.value(), kind); !bound)
         {
             return bound.error();
         }

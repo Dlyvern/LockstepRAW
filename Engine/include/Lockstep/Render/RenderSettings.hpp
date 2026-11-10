@@ -211,6 +211,8 @@ namespace lockstep::render
     // temporal:           blend each pixel with last frame's reprojected result (hides the jitter
     //                     noise; can ghost slightly behind fast-moving lights).
     // historyWeight:      share of last frame kept by `temporal`, 0 to 0.98.
+    // maxLights:          most point and spot lights, nearest the camera first, that scatter in the
+    //                     fog (each one raymarched where the ray passes through its range).
     struct VolumetricFogSettings
     {
         bool enabled{false};
@@ -228,6 +230,7 @@ namespace lockstep::render
         float resolutionScale{0.5f};
         bool temporal{true};
         float historyWeight{0.9f};
+        uint32_t maxLights{16};
     };
 
     // Screen-space ambient occlusion (GTAO: horizon search in a few screen slices around each

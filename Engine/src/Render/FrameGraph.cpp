@@ -9,6 +9,7 @@
 #include "RenderScale.hpp"
 #include "RendererState.hpp"
 #include "ScopeView.hpp"
+#include "ShadowPass.hpp"
 #include "OverlayPass.hpp"
 #include "VelaConversions.hpp"
 #include "VolumetricFog.hpp"

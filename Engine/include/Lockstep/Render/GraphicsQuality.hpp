@@ -31,6 +31,9 @@ namespace lockstep::render
     inline constexpr uint32_t k_minShadowAtlasSize{1024};
     inline constexpr uint32_t k_maxShadowAtlasSize{8192};
 
+    // Most lights GraphicsQuality::volumetricFogLights can allow.
+    inline constexpr uint32_t k_maxVolumetricFogLights{16};
+
     // Range of a set frame rate limit or cap, in frames per second.
     inline constexpr uint32_t k_minFrameRateLimit{20};
     inline constexpr uint32_t k_maxFrameRateLimit{1000};
@@ -54,8 +57,13 @@ namespace lockstep::render
     // shadowCascades:      most sun cascades, 1 to k_maxShadowCascades.
     // shadowedLocalLights: most shadow-casting point and spot lights per frame, 0 to
     //                      k_maxShadowedLocalLights.
+    // characterShadowCascades: most sun cascades skinned characters cast into, 0 to
+    //                      k_maxShadowCascades (ShadowSettings::skinnedCasterCascades); fewer means
+    //                      characters far from the camera lose their sun shadow.
     // volumetricFog:       allow volumetric fog.
     // volumetricFogResolution: multiplier on VolumetricFogSettings::resolutionScale.
+    // volumetricFogLights: most point and spot lights (nearest the camera) that scatter in the
+    //                      volumetric fog, 0 to k_maxVolumetricFogLights.
     // screenSpaceReflections: allow screen-space reflections.
     // ambientOcclusion:    allow ambient occlusion (GTAO).
     // contactShadows:      allow contact shadows.
@@ -63,6 +71,8 @@ namespace lockstep::render
     //                      reflections, ambient occlusion, contact shadows, parallax, motion blur
     //                      and depth of field (each still clamped to its own range).
     // parallax:            allow parallax occlusion mapping.
+    // parallaxLocalShadows: parallax relief also shadows itself from point and spot lights (off:
+    //                      from the sun only; each local light costs a height-map march).
     // surfaceDetail:       allow the micro-detail layer.
     // motionBlur:          allow motion blur.
     // depthOfField:        allow depth of field.
@@ -84,13 +94,16 @@ namespace lockstep::render
         uint32_t shadowAtlasSize{4096};
         uint32_t shadowCascades{4};
         uint32_t shadowedLocalLights{4};
+        uint32_t characterShadowCascades{2};
         bool volumetricFog{true};
-        float volumetricFogResolution{1.0f};
+        float volumetricFogResolution{0.7f};
+        uint32_t volumetricFogLights{6};
         bool screenSpaceReflections{true};
         bool ambientOcclusion{true};
         bool contactShadows{true};
         float effectSteps{1.0f};
         bool parallax{true};
+        bool parallaxLocalShadows{false};
         bool surfaceDetail{true};
         bool motionBlur{true};
         bool depthOfField{true};

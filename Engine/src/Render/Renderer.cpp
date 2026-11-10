@@ -46,6 +46,7 @@ namespace lockstep::render
         constexpr std::string_view k_shadowSkinnedVertexShader{"shadow_skinned.vert.spv"};
         constexpr std::string_view k_shadowMaskSkinnedVertexShader{"shadow_mask_skinned.vert.spv"};
         constexpr std::size_t k_initialJointBufferBytes{256 * sizeof(math::Mat4)};
+        constexpr std::size_t k_initialShadowInstanceBytes{4096 * sizeof(math::Mat4)};
         constexpr const char* k_engineName{"Lockstep"};
 
         Result<vela::core::Context> createPresentingContext(vela::core::Window& window,
@@ -196,6 +197,14 @@ namespace lockstep::render
             return toError(jointBuffer.error());
         }
 
+        auto shadowInstanceBuffer = vela::graphics::DynamicBuffer::create(context.value(),
+            vela::graphics::DynamicBuffer::Usage::Storage, k_initialShadowInstanceBytes);
+
+        if (!shadowInstanceBuffer)
+        {
+            return toError(shadowInstanceBuffer.error());
+        }
+
         auto environment = EnvironmentResources::create(context.value());
 
         if (!environment)
@@ -205,7 +214,7 @@ namespace lockstep::render
 
         auto state = std::make_unique<RendererState>(velaWindow, std::move(context).value(),
             std::move(shaders).value(), std::move(lightBuffer).value(), std::move(jointBuffer).value(),
-            std::move(environment).value());
+            std::move(shadowInstanceBuffer).value(), std::move(environment).value());
 
         state->presentMode = description.presentMode;
         state->quality = clampedQuality(description.quality);
@@ -477,6 +486,7 @@ namespace lockstep::render
             LightingView{.camera = state.camera, .aspectRatio = state.aspectRatio,
                 .viewProjection = state.temporal.viewProjection, .zones = state.ambientZones,
                 .shadowAtlasWidth = state.shadowAtlasWidth});
+        holdFarCascades(state);
         writeCameraMotion(state);
         prepareViewModel(state);
         assignPreviousModels(state);
@@ -526,13 +536,6 @@ namespace lockstep::render
             }
         }
 
-        uint32_t shadowDraws = 0;
-
-        for (const std::vector<uint32_t>& casters : state.drawLists.shadowCasters)
-        {
-            shadowDraws += static_cast<uint32_t>(casters.size());
-        }
-
         state.lastFrame = {
             .local = static_cast<uint32_t>(state.lights.points.size() + state.lights.spots.size()),
             .dropped = state.lights.dropped,
@@ -543,7 +546,7 @@ namespace lockstep::render
             .submitted = static_cast<uint32_t>(state.draws.size()),
             .visible = static_cast<uint32_t>(state.drawLists.opaque.size() + state.drawLists.blended.size()
                 + state.drawLists.viewModelOpaque.size() + state.drawLists.viewModelBlended.size()),
-            .shadowDraws = shadowDraws};
+            .shadowDraws = state.shadowCache.drawCalls};
         endTemporalFrame(state);
         state.draws.clear();
         state.jointData.clear();

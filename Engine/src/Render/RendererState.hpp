@@ -17,6 +17,7 @@
 #include "FrameParticles.hpp"
 #include "PlanarReflections.hpp"
 #include "ScopeView.hpp"
+#include "ShadowCache.hpp"
 #include "TemporalAntiAliasing.hpp"
 #include "RenderPass.hpp"
 #include "RenderPassAdapter.hpp"
@@ -163,6 +164,10 @@ namespace lockstep::render
     // viewModelOpaque:  visible opaque and masked viewmodel draws, front to back.
     // viewModelBlended: visible alpha-blended viewmodel draws, back to front.
     // shadowCasters:    per shadow atlas tile, the draws that cast into it.
+    // shadowKeys:       per shadow atlas tile, a key of the tile's matrix and of every caster in its
+    //                   frustum (mesh, material, model matrix; sun tiles without the view culling of
+    //                   shadowCasters). A tile whose key is unchanged needs no re-render.
+    // shadowAnimated:   per shadow atlas tile, a skinned caster is in it (re-rendered every frame).
     struct FrameDrawLists
     {
         std::vector<uint32_t> opaque;
@@ -171,6 +176,8 @@ namespace lockstep::render
         std::vector<uint32_t> viewModelOpaque;
         std::vector<uint32_t> viewModelBlended;
         std::array<std::vector<uint32_t>, k_maxShadowTiles> shadowCasters;
+        std::array<uint64_t, k_maxShadowTiles> shadowKeys{};
+        std::array<bool, k_maxShadowTiles> shadowAnimated{};
 
         // Forgets every list, keeping their storage.
         void clear();
@@ -185,7 +192,8 @@ namespace lockstep::render
     // cascades:       sun shadow cascades rendered.
     // submitted:      draws submitted.
     // visible:        draws that passed frustum culling.
-    // shadowDraws:    shadow-map draws over all atlas tiles.
+    // shadowDraws:    shadow-map draw calls recorded (an instanced batch counts once; cached tiles
+    //                 record none).
     struct FrameStats
     {
         uint32_t local{0};
@@ -232,10 +240,12 @@ namespace lockstep::render
         // shaders:         SPIR-V of the built-in material shaders.
         // lightBuffer:     the per-frame lighting storage buffer lit materials bind.
         // jointBuffer:     the per-frame joint palette storage buffer skinned materials bind.
+        // shadowInstanceBuffer: the per-frame storage buffer of instanced shadow casters' light
+        //                  matrices, which static shadow materials bind (k_shadowInstanceBinding).
         // environment:     default material textures and the BRDF lookup table.
         RendererState(vela::core::Window& window, vela::core::Context&& context, MaterialShaders&& shaders,
             vela::graphics::DynamicBuffer&& lightBuffer, vela::graphics::DynamicBuffer&& jointBuffer,
-            EnvironmentResources&& environment);
+            vela::graphics::DynamicBuffer&& shadowInstanceBuffer, EnvironmentResources&& environment);
 
         ~RendererState();
 
@@ -273,6 +283,7 @@ namespace lockstep::render
         ResourcePool<MeshHandle, MeshRecord> meshes;
         vela::graphics::DynamicBuffer lightBuffer;
         vela::graphics::DynamicBuffer jointBuffer;
+        vela::graphics::DynamicBuffer shadowInstanceBuffer;
         ResourcePool<MaterialHandle, MaterialRecord> materials;
         std::optional<vela::graphics::Material> shadowMaterial;
         std::optional<vela::graphics::Material> skinnedShadowMaterial;
@@ -296,6 +307,7 @@ namespace lockstep::render
         std::vector<PlanarReflector> reflectors;
         std::vector<AmbientZone> ambientZones;
         PreparedLighting prepared;
+        ShadowCache shadowCache;
         PreparedReflection reflection;
         std::optional<ScopeView> scopeView;
         std::optional<HolographicSight> sight;

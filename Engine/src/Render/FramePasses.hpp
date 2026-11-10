@@ -90,34 +90,6 @@ namespace lockstep::render
         vela::graphics::Material m_material;
     };
 
-    // Renders the depth of every shadow caster into its tiles of the fixed-size shadow atlas: the
-    // sun's cascades and possibly one spot light. Alpha-masked materials discard in their own
-    // shadow material. Every shadow material renders with the hardware depth bias of the shadow
-    // settings (see updateShadowMaterials()). The atlas is cleared even when nothing casts, which
-    // keeps the graph static.
-    class ShadowPass final : public vela::graphics::Pass
-    {
-    public:
-        // Creates the pass. It draws opaque casters with RendererState::shadowMaterial, which must
-        // exist before the first frame.
-        // state:   the renderer state whose draw lists, prepared lighting and shadow materials the
-        //          pass reads every frame. Must outlive the pass.
-        // Returns: the pass.
-        [[nodiscard]] static Result<std::unique_ptr<ShadowPass>> create(RendererState& state);
-
-        // Returns: the shadow atlas as the only (depth) output.
-        [[nodiscard]] vela::graphics::PassDescription describe() const override;
-
-        // Draws each tile's casters, scissored to the tile.
-        // recorder: Vela's recorder for this pass.
-        void record(vela::graphics::PassRecorder& recorder) override;
-
-    private:
-        explicit ShadowPass(const RendererState& state);
-
-        const RendererState* m_state{nullptr};
-    };
-
     // The forward scene pass: clears the HDR targets and depth, draws visible opaque viewmodel draws
     // (their depth is in front of every world surface, so drawing them first only saves shading),
     // opaque world draws front to back, decals in submission order, the sky behind them, alpha-blended world draws back to

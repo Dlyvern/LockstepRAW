@@ -284,6 +284,28 @@ namespace lockstep::render
             gpu.zoneParams[0] = static_cast<float>(count);
         }
 
+        uint32_t fogLightMask(const GpuFrameLighting& gpu, uint32_t count, uint32_t maxLights, const math::Vec3& camera)
+        {
+            std::array<std::pair<float, uint32_t>, k_maxLocalLights> byDistance{};
+
+            for (uint32_t index = 0; index < count; ++index)
+            {
+                const float* position = gpu.lights[index].positionRange;
+                const math::Vec3 offset = math::Vec3{position[0], position[1], position[2]} - camera;
+                byDistance[index] = {std::max(math::length(offset) - position[3], 0.0f), index};
+            }
+
+            std::sort(byDistance.begin(), byDistance.begin() + count);
+            uint32_t mask = 0;
+
+            for (uint32_t rank = 0; rank < std::min(count, maxLights); ++rank)
+            {
+                mask |= 1u << byDistance[rank].second;
+            }
+
+            return mask;
+        }
+
         void packSurfaceDetail(GpuFrameLighting& gpu, const SurfaceDetailSettings& surface)
         {
             const float minSteps = static_cast<float>(std::clamp(surface.parallaxMinSteps, 4u, 64u));
@@ -365,8 +387,8 @@ namespace lockstep::render
 
         gpu.counts[0] = count;
         gpu.counts[1] = settings.lighting.specular ? 1u : 0u;
-        gpu.counts[2] = 0;
-        gpu.counts[3] = 0;
+        gpu.counts[2] = fogLightMask(gpu, count, settings.volumetricFog.maxLights, view.camera.position);
+        gpu.counts[3] = settings.surfaceDetail.parallaxShadows && settings.surfaceDetail.parallaxLocalShadows ? 1u : 0u;
 
         packShadows(prepared, lights, settings, sun, view);
         packZones(gpu, settings.interiorAmbient, view);

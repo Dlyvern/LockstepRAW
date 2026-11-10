@@ -467,7 +467,11 @@ void main()
             attenuation *= localShadow(light, inWorldPosition, geometryNormal, lightDistance);
         }
 
-        attenuation *= parallaxSelfShadow(toLight);
+        if (frame.counts.w != 0u)
+        {
+            attenuation *= parallaxSelfShadow(toLight);
+        }
+
         shadeLight(surface, toLight, light.color.rgb * attenuation, direct, specular);
     }
 

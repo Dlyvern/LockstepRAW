@@ -39,14 +39,7 @@ namespace lockstep::render
             PbrFactors factors;
         };
 
-        struct MaskedShadowConstants
-        {
-            math::Mat4 lightModel;
-            float mask[4];
-        };
-
         static_assert(sizeof(PbrDrawConstants) == 208);
-        static_assert(sizeof(MaskedShadowConstants) == 80);
 
         vela::graphics::AttachmentSlot clearedSlot(std::string_view name, vela::graphics::TextureFormat format)
         {
@@ -204,77 +197,6 @@ namespace lockstep::render
 
         recorder.bind(m_material);
         recorder.drawInstanced(k_fullscreenTriangleVertices, 1);
-    }
-
-    Result<std::unique_ptr<ShadowPass>> ShadowPass::create(RendererState& state)
-    {
-        return std::unique_ptr<ShadowPass>(new ShadowPass(state));
-    }
-
-    ShadowPass::ShadowPass(const RendererState& state)
-        : m_state(&state)
-    {
-    }
-
-    vela::graphics::PassDescription ShadowPass::describe() const
-    {
-        vela::graphics::AttachmentSlot depth = clearedSlot(k_shadowMapAttachment, k_depthFormat);
-        depth.size = {m_state->shadowAtlasWidth, m_state->shadowAtlasWidth / 2};
-        depth.clear.depth = 1.0f;
-
-        vela::graphics::PassDescription description{};
-        description.depthOutput = depth;
-
-        return description;
-    }
-
-    void ShadowPass::record(vela::graphics::PassRecorder& recorder)
-    {
-        const PreparedLighting& prepared = m_state->prepared;
-
-        for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
-        {
-            const std::vector<uint32_t>& casters = m_state->drawLists.shadowCasters[tile];
-
-            if (casters.empty())
-            {
-                continue;
-            }
-
-            const math::Vec4 rect = shadowTileRect(tile);
-            const uint32_t atlasWidth = m_state->shadowAtlasWidth;
-            const uint32_t texels = shadowTileTexels(tile, atlasWidth);
-            recorder.setScissor(static_cast<int32_t>(rect.x * static_cast<float>(atlasWidth)),
-                static_cast<int32_t>(rect.y * static_cast<float>(atlasWidth / 2)), texels, texels);
-
-            const math::Mat4& tileViewProjection = prepared.tiles[tile].atlasViewProjection;
-
-            for (const uint32_t index : casters)
-            {
-                const DrawItem& item = m_state->draws[index];
-                const math::Mat4 lightModel = tileViewProjection * item.model;
-                const float jointBase = static_cast<float>(item.jointBase);
-
-                if (item.material->maskedShadow)
-                {
-                    const PbrFactors& factors = item.material->factors;
-                    const MaskedShadowConstants constants{
-                        .lightModel = lightModel,
-                        .mask = {factors.baseColorFactor[3], factors.surface[3], jointBase, 0.0f}};
-                    recorder.draw(*item.mesh, *item.material->maskedShadow, constants);
-                    continue;
-                }
-
-                if (item.material->kind == MeshKind::Skinned)
-                {
-                    const MaskedShadowConstants constants{.lightModel = lightModel, .mask = {0.0f, 0.0f, jointBase, 0.0f}};
-                    recorder.draw(*item.mesh, *m_state->skinnedShadowMaterial, constants);
-                    continue;
-                }
-
-                recorder.draw(*item.mesh, *m_state->shadowMaterial, lightModel);
-            }
-        }
     }
 
     Result<std::unique_ptr<LitScenePass>> LitScenePass::create(RendererState& state)

@@ -19,7 +19,7 @@ namespace lockstep::cooker
         "usage:\n"
         "  LockstepCooker <source.gltf> --out <dir> --name <virtual prefix> [--scale f] [--threads n]\n"
         "      [--max-texture-size n] [--texels-per-metre n] [--no-auto-cap] [--limbs [--wound <wound.gltf>]]\n"
-        "      [--height-dir <dir>]... [--no-surface-detail]\n"
+        "      [--height-dir <dir>]... [--no-surface-detail] [--single-sided]\n"
         "  LockstepCooker pack <cooked dir> <out.pak> [--zstd-level n] [--threads n]\n";
 
     // Parses the cooker's command line.

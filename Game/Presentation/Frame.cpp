@@ -239,6 +239,15 @@ namespace game
             const float yaw = std::atan2(-view.direction.x, -view.direction.z);
             const float pitch = std::asin(math::clamp(view.direction.y, -1.0f, 1.0f));
             toggleFlyCamera(state.flyCamera, frameInfo.input, view.eye, yaw, pitch);
+#if LOCKSTEP_DEV_TOOLS
+            if (const std::optional<FlyCamera> fixed = devFixedCamera(engine.arguments))
+            {
+                state.flyCamera = *fixed;
+                engine.renderer.setCamera(flyCameraView(state.flyCamera));
+
+                return true;
+            }
+#endif
 
             if (!state.flyCamera.isActive)
             {

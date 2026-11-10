@@ -27,6 +27,9 @@ namespace lockstep::cooker
     //          wound material (--wound). Empty for plain caps.
     // surfaces: height maps for parallax and micro-detail layers by material (see
     //          applySurfaceRules(); --height-dir, --no-surface-detail).
+    // singleSided: opaque materials are cooked single-sided whatever glTF says (--single-sided);
+    //          masked and blended ones keep it. For closed models such as characters, whose
+    //          Blender export marks every material double-sided: back faces then cost no shading.
     struct CookOptions
     {
         std::filesystem::path source;
@@ -38,6 +41,7 @@ namespace lockstep::cooker
         bool splitLimbs{false};
         std::filesystem::path wound;
         SurfaceRuleOptions surfaces{};
+        bool singleSided{false};
     };
 
     // Cooks a glTF scene into engine-ready files: meshes in PbrVertex layout, textures in their
