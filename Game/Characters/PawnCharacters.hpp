@@ -3,6 +3,7 @@
 
 #include "Characters/ArmedCrouch.hpp"
 #include "Characters/CharacterModel.hpp"
+#include "Characters/CharacterMotion.hpp"
 #include "Characters/CharacterStains.hpp"
 #include "Characters/FirstPersonBody.hpp"
 #include "Characters/HeldGuns.hpp"
@@ -33,6 +34,11 @@ namespace lockstep::render
 {
     class Renderer;
 } //namespace lockstep::render
+
+namespace lockstep::physics
+{
+    class PhysicsWorld;
+} //namespace lockstep::physics
 
 namespace game
 {
@@ -88,6 +94,8 @@ namespace game
     // isVaulting: the pawn vaults over an obstacle (a procedural side vault: no clip exists).
     // isKicking: the pawn kicks (a procedural front kick, see KickPose.hpp; starts when it turns on).
     // weapon:   the loadout weapon in its hands (the M4 and Glock are drawn as held guns).
+    // isAirborne: the pawn is off the ground (jumping, falling); known for the local pawn only,
+    //            other pawns are judged from their vertical speed.
     struct PawnLook
     {
         bool isArmed{false};
@@ -98,6 +106,7 @@ namespace game
         bool isVaulting{false};
         bool isKicking{false};
         WeaponKind weapon{WeaponKind::M4};
+        bool isAirborne{false};
     };
 
     // Stand-in for the crouch and slide clips that are missing (armed crouch, slide): the
@@ -145,6 +154,7 @@ namespace game
     // reactionRig:   the joints it turns on the model last drawn.
     // weapon:        the loadout weapon it was last drawn holding.
     // stains:        blood, dirt and rain on its body.
+    // motion:        foot IK, warping and lean state of its body.
     struct PawnCharacter
     {
         lockstep::anim::SkinnedInstance instance{};
@@ -162,6 +172,7 @@ namespace game
         ReactionRig reactionRig{};
         WeaponKind weapon{WeaponKind::M4};
         BodyStains stains{};
+        CharacterMotion motion{};
     };
 
     // The armed body, its two locomotion sets, its crouch (nothing when the model lacks the
@@ -195,6 +206,8 @@ namespace game
     // kickPose:    how the procedural kick looks.
     // reactionTuning: how hit reactions on the pawns look.
     // npcBodies:   the other character models NPCs may be drawn with (see NpcBody).
+    // locomotionTuning: the procedural locomotion layers of every character (pawns, NPCs,
+    //              placeholders): inertialization, foot IK, warping, lean, turning in place.
     struct PawnCharacters
     {
         CharacterModel unarmed;
@@ -211,6 +224,7 @@ namespace game
         HitReactionTuning reactionTuning{.impulse = 4.5f, .staggerImpulse = 5.0f};
         KickPoseTuning kickPose{};
         NpcBodies npcBodies{};
+        LocomotionTuning locomotionTuning{};
     };
 
     // The viewmodel of a loadout weapon: its own, else the KRISS' as a stand-in.
@@ -258,9 +272,11 @@ namespace game
     void beginPawnCharacters(PawnCharacters& characters);
 
     // Queues a player pawn for drawing: the animated character (armed or unarmed body, playing
-    // the unarmed, rifle or aiming locomotion) standing at the capsule bottom and facing the
-    // pawn's yaw, or the coloured box without characters.
+    // the unarmed, rifle or aiming locomotion, fitted to the ground and its movement by the
+    // locomotion layers) standing at the capsule bottom and facing the pawn's yaw, or the
+    // coloured box without characters.
     // renderer:     the renderer.
+    // physics:      the world the feet are placed on (foot IK), or null.
     // visuals:      the boxes and colours of the fallback.
     // characters:   the pawn characters, or null to draw boxes.
     // owner:        the pawn's player (Player1 or Player2); picks the character, its head gear
@@ -272,7 +288,8 @@ namespace game
     // firstPerson:  for the local pawn, the first-person look: the body is drawn a second time on
     //               k_firstPersonBodyLayer, behind the eye and without head and head gear
     //               (full-body awareness); null for other pawns.
-    void drawPawn(lockstep::render::Renderer& renderer, const Visuals& visuals, PawnCharacters* characters,
+    void drawPawn(lockstep::render::Renderer& renderer, const lockstep::physics::PhysicsWorld* physics,
+        const Visuals& visuals, PawnCharacters* characters,
         lockstep::world::EntityOwner owner, const math::Transform& transform, const PawnLook& look,
         float deltaSeconds, lockstep::render::RenderLayers layers = lockstep::render::k_defaultRenderLayer,
         const FirstPersonBodyView* firstPerson = nullptr);

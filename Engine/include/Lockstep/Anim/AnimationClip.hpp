@@ -66,6 +66,14 @@ namespace lockstep::anim
     //          resetToRest() for a full pose.
     void sampleClip(const AnimationClip& clip, float seconds, Pose& pose);
 
+    // Samples one joint's rotation from a clip.
+    // clip:    the clip.
+    // joint:   index into the skeleton.
+    // seconds: time in the clip.
+    // Returns: the joint's local rotation, or nothing when the clip doesn't animate it.
+    [[nodiscard]] std::optional<math::Quat> sampleJointRotation(const AnimationClip& clip, uint32_t joint,
+        float seconds);
+
     // Blends two poses of the same skeleton: translation and scale linearly, rotation
     // spherically along the shortest arc.
     // from:   the pose at weight 0.

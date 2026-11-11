@@ -5,6 +5,7 @@
 #include "Breakables/BreakableGlass.hpp"
 #include "Cloth/Curtains.hpp"
 #include "Audio/Footsteps.hpp"
+#include "Characters/AnimDrill.hpp"
 #include "Characters/NpcPlaceholders.hpp"
 #include "Characters/PawnCharacters.hpp"
 #include "Dialogue/Dialogue.hpp"
@@ -185,6 +186,7 @@ namespace lockstep::app
         game::Subtitles subtitles{};
         game::NpcPlaceholders npcs{};
         game::NpcLooks npcLooks{};
+        game::AnimDrill animDrill{};
         game::GoreState gore{};
         game::LevelFlow levelFlow{};
         std::optional<game::EchoPlayback> echo{};

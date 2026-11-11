@@ -12,14 +12,19 @@ add_executable(LockstepGame
     Cloth/ClothPanel.cpp
     Cloth/CurtainMesh.cpp
     Cloth/Curtains.cpp
+    Characters/AnimDrill.cpp
     Characters/ArmedCrouch.cpp
     Characters/CharacterModel.cpp
+    Characters/CharacterMotion.cpp
     Characters/CharacterStains.cpp
     Characters/FirstPersonBody.cpp
     Characters/KickPose.cpp
     Characters/GearLooks.cpp
     Characters/HeldGuns.cpp
     Characters/Locomotion.cpp
+    Characters/LocomotionSignals.cpp
+    Characters/MotionMatchedLocomotion.cpp
+    Characters/MotionSets.cpp
     Characters/NpcBodies.cpp
     Characters/NpcPlaceholders.cpp
     Characters/PawnCharacters.cpp

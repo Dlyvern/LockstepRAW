@@ -1,5 +1,6 @@
 #include "Npcs/NpcPresentation.hpp"
 
+#include "Characters/MotionMatchedLocomotion.hpp"
 #include "Characters/PawnCharacters.hpp"
 #include "Gore/SeveredLimbs.hpp"
 #include "Presentation/Visuals.hpp"
@@ -254,18 +255,35 @@ namespace game
         look.isWeaponDropped = false;
         const anim::PartMask parts = npcBodyParts(looks, look);
         const bool isCrouched = transform.scale.y < k_crouchedHeight || looks.isCrouchForced;
-        const bool isCrouchClip = isCrouched && armed->crouch != nullptr;
-        const LocomotionSet& set = isCrouchClip ? armedCrouchSet(*armed->crouch, view.isAlert)
-                                                : (view.isAlert ? *armed->aiming : *armed->rifle);
-        updateLocomotion(look.locomotion, set, look.instance.animator(), foot, yaw, seconds);
-        updateArmedCrouchLayer(look.instance.animator(), armed->crouch, isCrouchClip, view.isAlert,
-            k_crouchLayerFade);
+        const LocomotionTuning& tuning = characters->locomotionTuning;
+        const MotionSets* sets = tuning.isMotionMatched && armed->body->motionSets ? &*armed->body->motionSets : nullptr;
+        const bool isMatched = sets != nullptr
+            && updateMotionMatchedLocomotion(look.locomotion, *sets, motionStance(isCrouched, view.isAlert, false),
+                look.instance.animator(), foot, yaw, seconds, tuning);
+        const bool isCrouchClip = isCrouched && (isMatched || armed->crouch != nullptr);
+
+        if (!isMatched)
+        {
+            const LocomotionSet& set = isCrouchClip ? armedCrouchSet(*armed->crouch, view.isAlert)
+                                                    : (view.isAlert ? *armed->aiming : *armed->rifle);
+            updateLocomotion(look.locomotion, set, look.instance.animator(), foot, yaw, seconds, tuning,
+                armed->body->rootJoint);
+        }
+
+        updateArmedCrouchLayer(look.instance.animator(), isMatched ? nullptr : armed->crouch,
+            isCrouchClip && !isMatched, view.isAlert, k_crouchLayerFade);
         updateHitReaction(look.reaction, reactionRigFor(looks, *model), looks.reactionTuning, seconds);
-        look.instance.update(*model, seconds, look.reaction.offsets);
         const float squash = isCrouched && !isCrouchClip ? k_crouchSquash : 1.0f;
         look.modelTransform = math::Transform{.position = foot,
             .rotation = facing,
             .scale = math::Vec3{1.0f, squash, 1.0f}};
+        poseCharacter(look.instance, *armed->body, look.motion, tuning,
+            CharacterPoseFrame{.placement = look.modelTransform,
+                .offsets = look.reaction.offsets,
+                .signals = &look.locomotion.signals,
+                .yaw = yaw,
+                .physics = &physics,
+                .deltaSeconds = seconds});
         look.instance.submit(renderer, *model, look.modelTransform, render::k_defaultRenderLayer, parts,
             look.stains.surface);
     }

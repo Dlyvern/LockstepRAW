@@ -32,6 +32,7 @@ namespace game
         constexpr float k_minStrideSpeed{0.1f};
         constexpr std::string_view k_leftFoot{"LeftFoot"};
         constexpr std::string_view k_rightFoot{"RightFoot"};
+        constexpr std::string_view k_hips{"Hips"};
 
         constexpr float k_fallbackWalk{1.4f};
         constexpr float k_fallbackRun{3.7f};
@@ -149,6 +150,13 @@ namespace game
             return std::remainder(angle, 2.0f * k_pi);
         }
 
+        float velocityAngle(const math::Vec3& velocity, float yaw)
+        {
+            const math::Vec3 forward{-std::sin(yaw), 0.0f, -std::cos(yaw)};
+            const math::Vec3 right{std::cos(yaw), 0.0f, -std::sin(yaw)};
+            return std::atan2(math::dot(velocity, right), math::dot(velocity, forward));
+        }
+
         float smoothingWeight(float deltaSeconds, float smoothingSeconds)
         {
             return 1.0f - std::exp(-deltaSeconds / smoothingSeconds);
@@ -203,18 +211,24 @@ namespace game
             return Gait::Forward;
         }
 
-        Gait pickGait(const LocomotionState& state, const LocomotionSet& set, float yaw)
+        Gait pickGait(const LocomotionState& state, const LocomotionSet& set, float yaw, bool isMoving,
+            const LocomotionTuning& tuning)
         {
-            const float speed = math::length(state.velocity);
-            const bool isMoving = speed > (isMovingGait(state.gait) ? k_stopSpeed : k_startSpeed);
-
             if (isMoving)
             {
-                const math::Vec3 forward{-std::sin(yaw), 0.0f, -std::cos(yaw)};
-                const math::Vec3 right{std::cos(yaw), 0.0f, -std::sin(yaw)};
-                const float angle = std::atan2(math::dot(state.velocity, right), math::dot(state.velocity, forward));
+                return movingGait(state.gait, velocityAngle(state.velocity, yaw));
+            }
 
-                return movingGait(state.gait, angle);
+            if (tuning.isTurningInPlace)
+            {
+                const std::optional<TurnStep>& step = state.signals.step;
+
+                if (!step || !step->clip)
+                {
+                    return Gait::Idle;
+                }
+
+                return step->isLeft ? Gait::TurnLeft : Gait::TurnRight;
             }
 
             const bool isTurning = std::abs(state.yawRate) > (isTurningGait(state.gait) ? k_stopTurnRate : k_startTurnRate);
@@ -232,15 +246,24 @@ namespace game
             return Gait::Idle;
         }
 
-        float playbackFor(float speed, float strideSpeed)
+        struct GaitPlay
         {
-            return std::clamp(speed / strideSpeed, k_minPlayback, k_maxPlayback);
+            const LocomotionSet& set;
+            const LocomotionTuning& tuning;
+            float speed{0.0f};
+        };
+
+        float playbackFor(const GaitPlay& play, float strideSpeed, LocomotionSignals& signals)
+        {
+            return stridePlayback(play.tuning, play.speed, strideSpeed, k_minPlayback, k_maxPlayback,
+                signals.strideScale);
         }
 
-        void playStride(anim::Animator& animator, const StrideClip& stride, float speed)
+        void playStride(anim::Animator& animator, const GaitPlay& play, const StrideClip& stride,
+            LocomotionSignals& signals)
         {
             animator.play(stride.clip, k_crossfadeSeconds,
-                {.loop = true, .speed = stride.direction * playbackFor(speed, stride.strideSpeed)});
+                {.loop = true, .speed = stride.direction * playbackFor(play, stride.strideSpeed, signals)});
         }
 
         float forwardBlendParameter(const LocomotionSet& set, float speed)
@@ -257,44 +280,71 @@ namespace game
             return set.walk.strideSpeed + (set.run.strideSpeed - set.walk.strideSpeed) * runAmount;
         }
 
-        void playForward(anim::Animator& animator, const LocomotionSet& set, float speed)
+        void playForward(anim::Animator& animator, const GaitPlay& play, LocomotionSignals& signals)
         {
+            const LocomotionSet& set = play.set;
             const std::array<anim::BlendSample, 2> samples{{{.clip = set.walk.clip, .parameter = set.walk.strideSpeed},
                 {.clip = set.run.clip, .parameter = set.run.strideSpeed}}};
-            const float parameter = forwardBlendParameter(set, speed);
-            const float playback = speed > set.run.strideSpeed ? playbackFor(speed, set.run.strideSpeed)
-                                                               : playbackFor(speed, parameter);
+            const float parameter = forwardBlendParameter(set, play.speed);
+            const float playback = play.speed > set.run.strideSpeed ? playbackFor(play, set.run.strideSpeed, signals)
+                                                                    : playbackFor(play, parameter, signals);
 
             animator.playBlend(samples, k_crossfadeSeconds, {.loop = true, .speed = playback});
             animator.setParameter(parameter);
         }
 
-        void playGait(anim::Animator& animator, const LocomotionSet& set, Gait gait, float speed)
+        void playTurn(anim::Animator& animator, const GaitPlay& play, std::optional<uint32_t> clip,
+            const std::optional<TurnStep>& step)
         {
+            if (!play.tuning.isTurningInPlace || !step || !step->clip)
+            {
+                animator.play(clip.value_or(play.set.idle), k_crossfadeSeconds);
+                return;
+            }
+
+            animator.play(step->clip->clip, k_crossfadeSeconds,
+                {.loop = false, .speed = play.tuning.turnClipRate, .removeRootYaw = true,
+                    .startPhase = step->clip->startPhase});
+        }
+
+        void playGait(anim::Animator& animator, const GaitPlay& play, Gait gait, LocomotionSignals& signals)
+        {
+            signals.strideScale = 1.0f;
+
             switch (gait)
             {
                 case Gait::Idle:
-                    animator.play(set.idle, k_crossfadeSeconds);
+                    animator.play(play.set.idle, k_crossfadeSeconds);
                     break;
                 case Gait::Forward:
-                    playForward(animator, set, speed);
+                    playForward(animator, play, signals);
                     break;
                 case Gait::Backward:
-                    playStride(animator, set.walkBack, speed);
+                    playStride(animator, play, play.set.walkBack, signals);
                     break;
                 case Gait::StrafeLeft:
-                    playStride(animator, set.strafeLeft, speed);
+                    playStride(animator, play, play.set.strafeLeft, signals);
                     break;
                 case Gait::StrafeRight:
-                    playStride(animator, set.strafeRight, speed);
+                    playStride(animator, play, play.set.strafeRight, signals);
                     break;
                 case Gait::TurnLeft:
-                    animator.play(set.turnLeft.value_or(set.idle), k_crossfadeSeconds);
+                    playTurn(animator, play, play.set.turnLeft, signals.step);
                     break;
                 case Gait::TurnRight:
-                    animator.play(set.turnRight.value_or(set.idle), k_crossfadeSeconds);
+                    playTurn(animator, play, play.set.turnRight, signals.step);
                     break;
             }
+        }
+
+        float warpTarget(const LocomotionState& state, float yaw)
+        {
+            if (!isMovingGait(state.gait))
+            {
+                return 0.0f;
+            }
+
+            return wrapAngle(sectorCentre(state.gait) - velocityAngle(state.velocity, yaw));
         }
     } //namespace
 
@@ -317,6 +367,8 @@ namespace game
             clips[index] = *clip;
         }
 
+        const uint32_t hips = findJointEndingWith(model.skeleton, k_hips);
+
         return LocomotionSet{
             .idle = clips[0],
             .walk = {clips[1], measureStrideSpeed(model, clips[1], k_fallbackWalk)},
@@ -325,43 +377,76 @@ namespace game
             .strafeLeft = {clips[4], measureStrideSpeed(model, clips[4], k_fallbackSide)},
             .strafeRight = {clips[5], measureStrideSpeed(model, clips[5], k_fallbackSide)},
             .turnLeft = findOptionalClip(model, names.turnLeft),
-            .turnRight = findOptionalClip(model, names.turnRight)};
+            .turnRight = findOptionalClip(model, names.turnRight),
+            .turnClips = {.left = measureTurnClip(model, hips, findOptionalClip(model, names.turnLeft)),
+                .right = measureTurnClip(model, hips, findOptionalClip(model, names.turnRight))}};
     }
 
     void updateLocomotion(LocomotionState& state, const LocomotionSet& set, anim::Animator& animator,
-        const math::Vec3& foot, float yaw, float deltaSeconds)
+        const math::Vec3& foot, float yaw, float deltaSeconds, const LocomotionTuning& tuning,
+        const anim::RootJoint& root)
+    {
+        animator.setInertialization(tuning.isInertialized ? tuning.halflifePerFade : 0.0f);
+        animator.setRootJoint(root);
+
+        const bool isFirst = !state.hasLast;
+        state.stance = -1;
+
+        if (!observeLocomotion(state, foot, yaw, deltaSeconds))
+        {
+            if (isFirst)
+            {
+                animator.play(set.idle, 0.0f);
+            }
+
+            return;
+        }
+
+        const float speed = math::length(state.velocity);
+        const bool isMoving = speed > (isMovingGait(state.gait) ? k_stopSpeed : k_startSpeed);
+        const bool isTurnFree = std::abs(state.yawRate) < k_stopTurnRate;
+        updateTurnInPlace(state.signals, tuning, yaw, isMoving, isTurnFree, set.turnClips, deltaSeconds);
+        state.gait = pickGait(state, set, yaw, isMoving, tuning);
+        playGait(animator, GaitPlay{.set = set, .tuning = tuning, .speed = speed}, state.gait, state.signals);
+        updateLocomotionSignals(state.signals, tuning, state.velocity, yaw, warpTarget(state, yaw), deltaSeconds);
+    }
+
+    bool observeLocomotion(LocomotionState& state, const math::Vec3& foot, float yaw, float deltaSeconds)
     {
         if (!state.hasLast)
         {
             state = LocomotionState{.lastFoot = foot, .lastYaw = yaw, .hasLast = true};
-            animator.play(set.idle, 0.0f);
-            return;
+            return false;
         }
 
         if (deltaSeconds <= 0.0f)
         {
-            return;
+            return false;
         }
 
+        const float climbed = (foot.y - state.lastFoot.y) / deltaSeconds;
         const math::Vec3 moved{foot.x - state.lastFoot.x, 0.0f, foot.z - state.lastFoot.z};
         const math::Vec3 velocity = moved * (1.0f / deltaSeconds);
         const float yawRate = wrapAngle(yaw - state.lastYaw) / deltaSeconds;
         state.lastFoot = foot;
         state.lastYaw = yaw;
 
-        if (math::length(velocity) > k_teleportSpeed)
+        if (math::length(velocity) > k_teleportSpeed || std::abs(climbed) > k_teleportSpeed)
         {
             state.velocity = math::Vec3{0.0f, 0.0f, 0.0f};
             state.yawRate = 0.0f;
+            state.verticalSpeed = 0.0f;
+            state.signals.lastVelocity = state.velocity;
         }
         else
         {
-            state.velocity = math::lerp(state.velocity, velocity, smoothingWeight(deltaSeconds, k_velocitySmoothingSeconds));
+            const float weight = smoothingWeight(deltaSeconds, k_velocitySmoothingSeconds);
+            state.velocity = math::lerp(state.velocity, velocity, weight);
+            state.verticalSpeed += (climbed - state.verticalSpeed) * weight;
             state.yawRate += (yawRate - state.yawRate) * smoothingWeight(deltaSeconds, k_yawSmoothingSeconds);
         }
 
-        state.gait = pickGait(state, set, yaw);
-        playGait(animator, set, state.gait, math::length(state.velocity));
+        return true;
     }
 
     const char* gaitName(Gait gait)

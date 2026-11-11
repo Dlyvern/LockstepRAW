@@ -159,7 +159,7 @@ namespace game
         ImGui::SliderFloat("Speed", &controls.speed, 0.0f, 3.0f);
 
         const anim::Animator& animator = characters.instances.front().animator();
-        ImGui::Text("Phase %.2f%s", animator.phase(), animator.isFading() ? "  (crossfading)" : "");
+        ImGui::Text("Phase %.2f%s", animator.phase(), animator.isFading() ? "  (blending)" : "");
     }
 #endif
 } //namespace game

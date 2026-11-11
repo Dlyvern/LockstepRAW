@@ -174,7 +174,7 @@ namespace game
             beginPawnCharacters(*state.pawnCharacters);
         }
 
-        drawNpcPlaceholders(engine.renderer, state.npcs, state.pawnCharacters ? &*state.pawnCharacters : nullptr,
-            frameSeconds);
+        drawNpcPlaceholders(engine.renderer, &engine.physics, state.npcs,
+            state.pawnCharacters ? &*state.pawnCharacters : nullptr, frameSeconds);
     }
 } //namespace game

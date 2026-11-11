@@ -112,8 +112,8 @@ namespace game
 
                 steps.push_back(remoteFootsteps(state, ownerPawnIndex(entity->owner()), transform, pawn.controller,
                     entity->owner()));
-                drawPawn(engine.renderer, state.visuals, pawnCharacters(state), entity->owner(), transform,
-                    remotePawnLook(state, entity->owner(), transform), playerSeconds);
+                drawPawn(engine.renderer, &engine.physics, state.visuals, pawnCharacters(state), entity->owner(),
+                    transform, remotePawnLook(state, entity->owner(), transform), playerSeconds);
             }
 
             if (const world::Entity* enemy = engine.entities.find(state.simulation.enemy.entity))
@@ -169,8 +169,9 @@ namespace game
                     {
                         steps.push_back(remoteFootsteps(state, ownerPawnIndex(entity->owner()), transform, {},
                             entity->owner()));
-                        drawPawn(engine.renderer, state.visuals, pawnCharacters(state), entity->owner(), transform,
-                            remotePawnLook(state, entity->owner(), transform), playerSeconds);
+                        drawPawn(engine.renderer, &engine.physics, state.visuals, pawnCharacters(state),
+                            entity->owner(), transform, remotePawnLook(state, entity->owner(), transform),
+                            playerSeconds);
                     }
 
                     continue;
@@ -453,6 +454,10 @@ namespace game
             presentHost(state, engine, frameInfo.alpha, playerSeconds, worldSeconds, localPawn, steps);
         }
 
+#if LOCKSTEP_DEV_TOOLS
+        presentAnimDrill(state.animDrill, engine.arguments, engine.renderer, engine.physics, state.npcLooks,
+            pawnCharacters(state), state.visuals, worldSeconds);
+#endif
         endNpcLooks(state.npcLooks, engine.physics, engine.renderer, frameInfo.alpha, worldSeconds);
         presentKicks(state, engine, worldSeconds);
 
@@ -468,8 +473,8 @@ namespace game
                 .eye = eyePosition(*localPawn),
                 .hasViewModel = ownPawnLook.isArmed && state.pawnCharacters
                     && firstPersonModel(*state.pawnCharacters, WeaponKind::Kriss) != nullptr};
-            drawPawn(engine.renderer, state.visuals, pawnCharacters(state), localOwner(engine), *localPawn,
-                ownPawnLook, playerSeconds, k_mirrorOnlyLayer, &bodyView);
+            drawPawn(engine.renderer, &engine.physics, state.visuals, pawnCharacters(state), localOwner(engine),
+                *localPawn, ownPawnLook, playerSeconds, k_mirrorOnlyLayer, &bodyView);
         }
 
         HeadPose head{};
@@ -522,7 +527,7 @@ namespace game
         {
             presentSceneCharacters(engine.renderer, state.level->scene, state.characters, frameInfo.frameSeconds,
                 view.eye, view.direction);
-            drawNpcPlaceholders(engine.renderer, state.npcs, pawnCharacters(state), playerSeconds);
+            drawNpcPlaceholders(engine.renderer, &engine.physics, state.npcs, pawnCharacters(state), playerSeconds);
         }
 
         drawHud(engine.renderer, state.hud);

@@ -25,6 +25,14 @@ namespace game
     {
         namespace net = lockstep::net;
         namespace platform = lockstep::platform;
+
+        constexpr std::string_view k_graphicsFlag{"--graphics"};
+
+        bool hasGraphicsFlag(std::span<const char* const> arguments)
+        {
+            return std::ranges::any_of(arguments,
+                [](const char* argument) { return std::string_view(argument) == k_graphicsFlag; });
+        }
         namespace ui = lockstep::ui;
 
         using lockstep::app::EngineContext;
@@ -294,6 +302,12 @@ namespace game
         Shell& shell = state.shell;
         shell.settingsFile = lockstep::render::graphicsConfigPath(engine.arguments);
         shell.settings = loadUserSettings(shell.settingsFile);
+
+        if (hasGraphicsFlag(engine.arguments))
+        {
+            shell.settings.fullscreen = false;
+        }
+
         shell.style = createMenuStyle(engine.renderer);
         applyUserSettings(shell.settings, state, engine);
 

@@ -64,7 +64,8 @@ namespace game
             .isSliding = isSliding(localPawnMotion(state, engine)),
             .isVaulting = isVaulting(localPawnMotion(state, engine)),
             .isKicking = isKicking(localPawnMotion(state, engine)),
-            .weapon = state.local.command.weapon};
+            .weapon = state.local.command.weapon,
+            .isAirborne = !localPawnMotion(state, engine).isGrounded};
     }
 
     const PawnMotion& localPawnMotion(const GameState& state, const EngineContext& engine)

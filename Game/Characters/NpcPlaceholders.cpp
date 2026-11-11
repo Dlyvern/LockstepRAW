@@ -260,7 +260,8 @@ namespace game
         }
     }
 
-    void drawNpcPlaceholders(lockstep::render::Renderer& renderer, NpcPlaceholders& placeholders,
+    void drawNpcPlaceholders(lockstep::render::Renderer& renderer, const lockstep::physics::PhysicsWorld* physics,
+        NpcPlaceholders& placeholders,
         const PawnCharacters* characters, float frameSeconds)
     {
         if (characters == nullptr)
@@ -284,7 +285,8 @@ namespace game
                 seconds = npc.phase * model.clips[clip].duration;
             }
 
-            npc.instance.update(model, seconds);
+            poseCharacter(npc.instance, character, npc.motion, characters->locomotionTuning,
+                CharacterPoseFrame{.placement = npc.placement, .physics = physics, .deltaSeconds = seconds});
             npc.instance.submit(renderer, model, npc.placement, lockstep::render::k_defaultRenderLayer,
                 gearMask(character.gearMasks, npc.gearLook), npc.stains.surface);
         }

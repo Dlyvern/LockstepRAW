@@ -55,6 +55,7 @@ namespace game
     // cooldown:    Player seconds until they may speak again.
     // isNear:      the local player stood within reach on the last tick.
     // stains:      rain soak and grime on its body (blood only with the stain drill).
+    // motion:      its feet placed on the ground.
     struct NpcPlaceholder
     {
         std::string name;
@@ -69,6 +70,7 @@ namespace game
         float cooldown{0.0f};
         bool isNear{false};
         BodyStains stains{};
+        CharacterMotion motion{};
     };
 
     // A level's NPC placeholders and the random state that picks their lines.
@@ -109,13 +111,16 @@ namespace game
         const std::optional<math::Vec3>& localFoot, float playerDelta);
 
     // Animates and queues every placeholder for drawing: the unarmed or the armed model of its
-    // body, by pose, each looping its pose's clip from its own phase.
+    // body, by pose, each looping its pose's clip from its own phase, its feet placed on the
+    // ground (foot IK).
     // renderer:     the renderer.
+    // physics:      the world the feet are placed on, or null.
     // placeholders: the level's placeholders.
     // characters:   the pawn characters; nothing is drawn without them. Armed poses use the
     //               unarmed body when the armed one is missing.
     // frameSeconds: presentation time since the last frame.
-    void drawNpcPlaceholders(lockstep::render::Renderer& renderer, NpcPlaceholders& placeholders,
+    void drawNpcPlaceholders(lockstep::render::Renderer& renderer, const lockstep::physics::PhysicsWorld* physics,
+        NpcPlaceholders& placeholders,
         const PawnCharacters* characters, float frameSeconds);
 } //namespace game
 

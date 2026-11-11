@@ -42,11 +42,13 @@ namespace lockstep::physics
             float maxDistance;
         };
 
-        std::optional<RaycastHit> raycastBodies(const PhysicsState& state, const Ray& ray, BodyId ignoredBody)
+        std::optional<RaycastHit> raycastBodies(const PhysicsState& state, const Ray& ray, BodyId ignoredBody,
+            bool isStaticOnly)
         {
             BodiesOnlyFilter filter(state.findBody(ignoredBody));
-            const physx::PxQueryFilterData filterData(
-                physx::PxQueryFlag::eSTATIC | physx::PxQueryFlag::eDYNAMIC | physx::PxQueryFlag::ePREFILTER);
+            const physx::PxQueryFlags kinds = isStaticOnly ? physx::PxQueryFlags(physx::PxQueryFlag::eSTATIC)
+                                                           : physx::PxQueryFlag::eSTATIC | physx::PxQueryFlag::eDYNAMIC;
+            const physx::PxQueryFilterData filterData(kinds | physx::PxQueryFlag::ePREFILTER);
             physx::PxRaycastBuffer result;
 
             if (!state.scene->raycast(ray.origin, ray.direction, ray.maxDistance, result, k_hitFlags, filterData, &filter)
@@ -125,8 +127,9 @@ namespace lockstep::physics
             return std::nullopt;
         }
 
-        const std::optional<RaycastHit> bodyHit = raycastBodies(*m_state, ray, ignore.body);
-        const std::optional<RaycastHit> controllerHit = raycastControllers(*m_state, ray, ignore.controller);
+        const std::optional<RaycastHit> bodyHit = raycastBodies(*m_state, ray, ignore.body, ignore.dynamicBodies);
+        const std::optional<RaycastHit> controllerHit = ignore.allControllers ? std::nullopt
+            : raycastControllers(*m_state, ray, ignore.controller);
 
         if (bodyHit && controllerHit)
         {

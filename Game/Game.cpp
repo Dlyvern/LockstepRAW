@@ -60,6 +60,8 @@ namespace game
         constexpr std::string_view k_shakeClothFlag{"--dev-shake-cloth"};
         constexpr std::string_view k_lightningDrillFlag{"--dev-lightning-drill"};
         constexpr std::string_view k_ironSightsFlag{"--dev-iron-sights"};
+        constexpr std::string_view k_locomotionOffFlag{"--dev-locomotion-off"};
+        constexpr std::string_view k_motionMatchingOffFlag{"--dev-motion-matching-off"};
         constexpr uint32_t k_menuFrameRateCap{60};
         constexpr float k_drillTargetRange{6.0f};
         constexpr float k_watchRange{30.0f};
@@ -132,6 +134,17 @@ namespace game
                 startLightningDrill(state->weather);
             }
             state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
+
+            if (state->pawnCharacters && hasArgument(engine.arguments, k_locomotionOffFlag))
+            {
+                disableLocomotionLayers(state->pawnCharacters->locomotionTuning);
+            }
+
+            if (state->pawnCharacters && hasArgument(engine.arguments, k_motionMatchingOffFlag))
+            {
+                state->pawnCharacters->locomotionTuning.isMotionMatched = false;
+            }
+
             state->optics = loadOptics(engine.renderer, engine.files);
 
             if (hasArgument(engine.arguments, k_ironSightsFlag))

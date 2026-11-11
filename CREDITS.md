@@ -155,6 +155,12 @@ Every new asset gets a line here when it's added.
 | ChewingGum 001 (decal) | ambientCG | https://ambientcg.com/a/ChewingGum001 |
 | RoadLines 012 (decal) | ambientCG | https://ambientcg.com/a/RoadLines012 |
 
+## Mixamo animations (Adobe Mixamo; royalty-free for personal and commercial use in games, no attribution required)
+
+| Asset | Origin | Used in |
+|---|---|---|
+| Pro Rifle Pack, Rifle 8-Way Locomotion Pack (same 49 clips; the Pro pack's files are used), Shooter Pack, Basic Shooter Pack, Pistol Handgun Locomotion Pack, single rifle clips (Rifle Turn 45 / 180) | https://www.mixamo.com (Adobe), downloaded by the developer for the X Bot / Y Bot skeleton (`Content/source/characters/mixamo_mm/raw/`) | Motion matching: 61 clips retargeted onto the SWAT skeleton (`MM_Rifle_*`, `MM_Aim_*`, `MM_Crouch_*`, `MM_Pistol_*` in swat_armed, tactical_armed and robber_armed; `Content/source/scripts/mm_fbx_to_glb.py`, `mm_retarget.py`) |
+
 ## User-provided packs (licence to confirm before shipping)
 
 | Asset | Origin | Used in |

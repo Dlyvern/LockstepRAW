@@ -3,7 +3,14 @@ add_library(LockstepEngine STATIC
     src/Anim/Animator.cpp
     src/Anim/BoneMask.cpp
     src/Anim/DrivenPose.cpp
+    src/Anim/Inertialization.cpp
+    src/Anim/JointEdits.cpp
     src/Anim/Limbs.cpp
+    src/Anim/LocomotionPose.cpp
+    src/Anim/MotionClips.cpp
+    src/Anim/MotionDatabase.cpp
+    src/Anim/MotionMatching.cpp
+    src/Anim/RootMotion.cpp
     src/Anim/Skeleton.cpp
     src/Anim/SkinnedModel.cpp
     src/App/Run.cpp
@@ -36,7 +43,9 @@ add_library(LockstepEngine STATIC
     src/Core/Hash.cpp
     src/Core/Log.cpp
     src/Core/Result.cpp
+    src/Core/Rotation.cpp
     src/Core/SettingsFile.cpp
+    src/Core/Spring.cpp
     src/Core/Transform.cpp
     src/Core/VelaError.cpp
     src/Core/VelaLog.cpp

@@ -1,5 +1,6 @@
 #include "Characters/PawnCharacters.hpp"
 
+#include "Characters/MotionMatchedLocomotion.hpp"
 #include "Weapons/DroppedWeapons.hpp"
 #include "Weapons/WeaponSockets.hpp"
 
@@ -36,6 +37,15 @@ namespace game
         constexpr float k_minSquash{0.3f};
         constexpr float k_fallbackHipHeight{0.9f};
         constexpr float k_maxFirstPersonVaultBlend{0.05f};
+        constexpr float k_airborneRiseSpeed{2.8f};
+        constexpr float k_airborneFallSpeed{4.0f};
+
+        bool isPawnGrounded(const PawnCharacter& pawn, const PawnLook& look)
+        {
+            const float verticalSpeed = pawn.locomotion.verticalSpeed;
+            const bool isJumping = verticalSpeed > k_airborneRiseSpeed || verticalSpeed < -k_airborneFallSpeed;
+            return !look.isAirborne && !look.isVaulting && !look.isSliding && pawn.kickSeconds < 0.0f && !isJumping;
+        }
 
         math::Transform posedTransform(PawnCharacter& pawn, const PawnPoseTuning& tuning, const math::Vec3& foot,
             float yaw, float leanRoll, const PawnLook& look, bool hasCrouchClips, float deltaSeconds)
@@ -101,7 +111,17 @@ namespace game
             std::clog << std::fixed << std::setprecision(2) << "Game: pawn character '" << model.name << "' " << label
                 << " stride speeds (m/s): walk " << set.walk.strideSpeed << ", run " << set.run.strideSpeed
                 << ", back " << set.walkBack.strideSpeed << ", strafe " << set.strafeLeft.strideSpeed << " / "
-                << set.strafeRight.strideSpeed << '\n';
+                << set.strafeRight.strideSpeed;
+
+            for (const std::optional<TurnClip>& turn : {set.turnClips.left, set.turnClips.right})
+            {
+                if (turn)
+                {
+                    std::clog << ", turn " << math::degrees(turn->angle) << " deg in " << turn->duration << " s";
+                }
+            }
+
+            std::clog << '\n';
         }
 
         void logFirstPersonBody(std::string_view label, bool hasLimbs)
@@ -309,7 +329,8 @@ namespace game
         }
     }
 
-    void drawPawn(render::Renderer& renderer, const Visuals& visuals, PawnCharacters* characters,
+    void drawPawn(render::Renderer& renderer, const lockstep::physics::PhysicsWorld* physics, const Visuals& visuals,
+        PawnCharacters* characters,
         world::EntityOwner owner, const math::Transform& transform, const PawnLook& look, float deltaSeconds,
         render::RenderLayers layers, const FirstPersonBodyView* firstPerson)
     {
@@ -321,7 +342,8 @@ namespace game
 
         PawnCharacter& pawn = characters->pawns[pawnIndex(owner)];
         const ArmedCharacter* armed = look.isArmed && characters->armed ? &*characters->armed : nullptr;
-        const anim::SkinnedModel& model = armed != nullptr ? armed->body.skinned() : characters->unarmed.skinned();
+        const CharacterModel& character = armed != nullptr ? armed->body : characters->unarmed;
+        const anim::SkinnedModel& model = character.skinned();
         const bool isCrouched = !look.isSliding && look.crouch >= characters->pose.crouchClipThreshold;
         const ArmedCrouch* armedCrouch = armed != nullptr && armed->crouch ? &*armed->crouch : nullptr;
         const bool hasCrouchClips = armed != nullptr ? armedCrouch != nullptr : characters->crouch.has_value();
@@ -341,9 +363,22 @@ namespace game
 
         pawn.isDrawn = true;
         pawn.isArmedModel = armed != nullptr;
-        updateLocomotion(pawn.locomotion, set, pawn.instance.animator(), foot, yaw, deltaSeconds);
-        updateArmedCrouchLayer(pawn.instance.animator(), armedCrouch, isCrouchClip, !look.isLowered,
-            characters->pose.armedCrouchFade);
+        const LocomotionTuning& tuning = characters->locomotionTuning;
+        const MotionSets* sets = armed != nullptr && tuning.isMotionMatched && character.motionSets
+            ? &*character.motionSets : nullptr;
+        const bool isMatched = sets != nullptr
+            && updateMotionMatchedLocomotion(pawn.locomotion, *sets,
+                motionStance(isCrouched, !look.isLowered, look.weapon == WeaponKind::Glock), pawn.instance.animator(),
+                foot, yaw, deltaSeconds, tuning);
+
+        if (!isMatched)
+        {
+            updateLocomotion(pawn.locomotion, set, pawn.instance.animator(), foot, yaw, deltaSeconds, tuning,
+                character.rootJoint);
+        }
+
+        updateArmedCrouchLayer(pawn.instance.animator(), isMatched ? nullptr : armedCrouch, isCrouchClip && !isMatched,
+            !look.isLowered, characters->pose.armedCrouchFade);
         resolveReactionRig(pawn.reactionRig, model);
         updateHitReaction(pawn.reaction, pawn.reactionRig, characters->reactionTuning, deltaSeconds);
 
@@ -356,9 +391,16 @@ namespace game
         const float kickExtension = appendKickOffsets(pawn.reaction.offsets, pawn.reactionRig, characters->kickPose,
             pawn.kickSeconds);
 
-        pawn.instance.update(model, deltaSeconds, pawn.reaction.offsets);
         const math::Transform placement = posedTransform(pawn, characters->pose, foot, yaw, pawnLeanRoll(transform),
-            look, hasCrouchClips, deltaSeconds);
+            look, hasCrouchClips || isMatched, deltaSeconds);
+        poseCharacter(pawn.instance, character, pawn.motion, characters->locomotionTuning,
+            CharacterPoseFrame{.placement = placement,
+                .offsets = pawn.reaction.offsets,
+                .signals = &pawn.locomotion.signals,
+                .yaw = yaw,
+                .isGrounded = isPawnGrounded(pawn, look),
+                .physics = physics,
+                .deltaSeconds = deltaSeconds});
         pawn.placement = placement;
         pawn.yaw = yaw;
         pawn.weapon = look.weapon;
@@ -451,6 +493,17 @@ namespace game
             ImGui::Text("Player %zu: %s%s  %.2f m/s  turn %.2f rad/s  phase %.2f", index + 1, gaitName(locomotion.gait),
                 pawn.isArmedModel ? " (armed)" : "", math::length(locomotion.velocity), locomotion.yawRate,
                 pawn.instance.animator().phase());
+            const LocomotionSignals& signals = locomotion.signals;
+            if (locomotion.stance >= 0)
+            {
+                ImGui::Text("  matched %s  clip slot %u at %.2f s  jumps %u  cost %.2f",
+                    motionStanceName(static_cast<MotionStance>(locomotion.stance)), locomotion.matcher.clip,
+                    locomotion.matcher.seconds, locomotion.matcher.jumps, locomotion.matcher.cost);
+            }
+
+            ImGui::Text("  legs %.2f rad  stride x%.2f  lean %.2f  IK %.2f  pelvis %.2f m%s",
+                lowerBodyYaw(signals, pawn.yaw), signals.strideScale, math::length(signals.lean), pawn.motion.pose.weight,
+                pawn.motion.pose.pelvisOffset, signals.step ? "  stepping" : "");
         }
 
         ImGui::PushID("pawnReactions");
@@ -473,6 +526,7 @@ namespace game
             ImGui::TreePop();
         }
 
+        locomotionTuningDevSection(characters->locomotionTuning);
         firstPersonBodyDevSection(characters->firstPersonBody);
         kickPoseDevSection(characters->kickPose);
 

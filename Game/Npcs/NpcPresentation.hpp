@@ -2,6 +2,7 @@
 #define LOCKSTEP_GAME_NPCS_NPC_PRESENTATION_HPP
 
 #include "Archetypes.hpp"
+#include "Characters/CharacterMotion.hpp"
 #include "Characters/CharacterStains.hpp"
 #include "Characters/Locomotion.hpp"
 #include "Npcs/HitReactions.hpp"
@@ -53,6 +54,7 @@ namespace game
     //               stump caps shown. A ragdoll drops the bodies of these limbs.
     // reaction:     procedural hit reaction on top of its animation while alive.
     // stains:       blood, dirt and rain on its body.
+    // motion:       foot IK, warping and lean state of its body.
     struct NpcLook
     {
         lockstep::world::EntityId entity{};
@@ -71,6 +73,7 @@ namespace game
         lockstep::anim::LimbMask severedLimbs{0};
         HitReaction reaction{};
         BodyStains stains{};
+        CharacterMotion motion{};
     };
 
     // The weapon found on one model NPCs are drawn with.
@@ -109,8 +112,8 @@ namespace game
 
     // Queues one armed NPC for drawing: the armed model of view.body (the SWAT one when that body
     // isn't loaded; head gear by view.gearLook) playing the
-    // relaxed rifle locomotion, or the aiming one while alert, squashed while crouched behind
-    // cover; a dead one drops its weapon and becomes a ragdoll pushed along the killing shot at
+    // relaxed rifle locomotion, or the aiming one while alert (fitted to the ground and its
+    // movement by the locomotion layers, see LocomotionSignals.hpp), crouched behind cover; a dead one drops its weapon and becomes a ragdoll pushed along the killing shot at
     // the limb it hit (this machine only, never replicated) that keeps simulating (asleep once
     // still) unless too many simulate; without a ragdoll it tips over backwards. Its shot counter
     // is kept for the weapon effects (WeaponFx). Without characters it is a box.

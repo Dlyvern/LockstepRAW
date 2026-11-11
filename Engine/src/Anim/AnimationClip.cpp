@@ -101,6 +101,19 @@ namespace lockstep::anim
         }
     } //namespace
 
+    std::optional<math::Quat> sampleJointRotation(const AnimationClip& clip, uint32_t joint, float seconds)
+    {
+        for (const AnimationChannel& channel : clip.channels)
+        {
+            if (channel.joint == joint && channel.target == ChannelTarget::Rotation && isUsable(channel))
+            {
+                return math::normalize(toQuat(sampleChannel(channel, seconds)));
+            }
+        }
+
+        return std::nullopt;
+    }
+
     void sampleClip(const AnimationClip& clip, float seconds, Pose& pose)
     {
         for (const AnimationChannel& channel : clip.channels)

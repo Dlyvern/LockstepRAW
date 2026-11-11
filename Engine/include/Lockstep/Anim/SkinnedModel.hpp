@@ -96,6 +96,24 @@ namespace lockstep::anim
         // offsets:      the added rotations; empty for none.
         void update(const SkinnedModel& model, float deltaSeconds, std::span<const JointRotationOffset> offsets);
 
+        // The first half of update(): advances the animator and computes the pose and the joint
+        // matrices (offsets included), but not the skinning matrices. The joint matrices may then
+        // be edited in model space (editJointMatrices(), see JointEdits.hpp and
+        // LocomotionPose.hpp) before finishPose() completes the update.
+        // model:        the model this instance animates (always the same one).
+        // deltaSeconds: elapsed presentation time.
+        // offsets:      rotations added on top of the animated pose; empty for none.
+        void animate(const SkinnedModel& model, float deltaSeconds, std::span<const JointRotationOffset> offsets = {});
+
+        // Returns: the model-space joint matrices computed by animate(), to edit before
+        //          finishPose().
+        [[nodiscard]] std::span<math::Mat4> editJointMatrices() noexcept;
+
+        // The second half of update(): computes the skinning matrices and bounds from the (edited)
+        // joint matrices. Call after animate() and before submit().
+        // model: the model passed to animate().
+        void finishPose(const SkinnedModel& model);
+
         // Starts driving the pose from outside (e.g. a ragdoll): later updateDriven() calls fade
         // from the current joint matrices into the driven pose. update() may be called again
         // afterwards to go back to the animator.

@@ -60,6 +60,7 @@ namespace lockstep::anim
         Motion motion{};
         motion.samples.assign(samples.begin(), samples.end());
         motion.options = options;
+        motion.phase = std::clamp(options.startPhase, 0.0f, 1.0f);
         std::stable_sort(motion.samples.begin(), motion.samples.end(),
             [](const BlendSample& a, const BlendSample& b) { return a.parameter < b.parameter; });
 
@@ -69,6 +70,15 @@ namespace lockstep::anim
             return;
         }
 
+        start(std::move(motion), fadeSeconds);
+    }
+
+    void Animator::playFrom(uint32_t clip, float startPhase, float fadeSeconds, const PlaybackOptions& options)
+    {
+        Motion motion{};
+        motion.samples.push_back(BlendSample{.clip = clip, .parameter = 0.0f});
+        motion.options = options;
+        motion.phase = std::clamp(startPhase, 0.0f, 1.0f);
         start(std::move(motion), fadeSeconds);
     }
 
@@ -137,6 +147,7 @@ namespace lockstep::anim
     void Animator::advance(std::span<const AnimationClip> clips, float deltaSeconds)
     {
         const float delta = std::max(deltaSeconds, 0.0f);
+        m_unevaluatedSeconds += delta;
         advanceLayer(clips, delta);
 
         if (m_hasCurrent)
@@ -161,6 +172,8 @@ namespace lockstep::anim
 
     void Animator::evaluate(const Skeleton& skeleton, std::span<const AnimationClip> clips, Pose& pose)
     {
+        const float delta = std::exchange(m_unevaluatedSeconds, 0.0f);
+
         if (!m_hasCurrent)
         {
             resetToRest(skeleton, pose);
@@ -175,7 +188,34 @@ namespace lockstep::anim
             blendPoses(m_previousPose, pose, m_fadeElapsed / m_fadeSeconds, pose);
         }
 
+        if (m_hasPendingInertialization)
+        {
+            beginInertialization(skeleton, clips, pose, delta);
+        }
+
+        m_inertializer.apply(pose, delta);
         applyLayer(skeleton, clips, pose);
+    }
+
+    void Animator::setInertialization(float halflifePerFadeSecond)
+    {
+        m_inertialScale = std::max(halflifePerFadeSecond, 0.0f);
+    }
+
+    float Animator::inertialization() const noexcept
+    {
+        return m_inertialScale;
+    }
+
+    void Animator::beginInertialization(const Skeleton& skeleton, std::span<const AnimationClip> clips, const Pose& pose,
+        float deltaSeconds)
+    {
+        m_hasPendingInertialization = false;
+        const float phase = m_current.phase;
+        advanceMotion(m_current, clips, -deltaSeconds);
+        evaluateMotion(m_current, skeleton, clips, m_inertialBefore);
+        m_current.phase = phase;
+        m_inertializer.begin(pose, m_inertialBefore, deltaSeconds, m_pendingHalflife);
     }
 
     void Animator::advanceLayer(std::span<const AnimationClip> clips, float deltaSeconds)
@@ -248,7 +288,7 @@ namespace lockstep::anim
 
     bool Animator::isFading() const noexcept
     {
-        return m_hasPrevious;
+        return m_hasPrevious || m_hasPendingInertialization || m_inertializer.isActive();
     }
 
     float Animator::phase() const noexcept
@@ -317,7 +357,7 @@ namespace lockstep::anim
 
         if (first < clips.size())
         {
-            sampleClip(clips[first], motion.phase * clips[first].duration, pose);
+            sampleMotionClip(motion, clips[first], pose);
         }
 
         if (pair.weight <= 0.0f || second == first || second >= clips.size())
@@ -326,13 +366,38 @@ namespace lockstep::anim
         }
 
         resetToRest(skeleton, m_scratch);
-        sampleClip(clips[second], motion.phase * clips[second].duration, m_scratch);
+        sampleMotionClip(motion, clips[second], m_scratch);
         blendPoses(pose, m_scratch, pair.weight, pose);
+    }
+
+    void Animator::sampleMotionClip(const Motion& motion, const AnimationClip& clip, Pose& pose) const
+    {
+        const float seconds = motion.phase * clip.duration;
+        sampleClip(clip, seconds, pose);
+
+        if (motion.options.removeRootYaw)
+        {
+            turnRoot(pose, m_root, -clipRootYaw(clip, m_root, seconds));
+        }
+    }
+
+    void Animator::setRootJoint(const RootJoint& root)
+    {
+        m_root = root;
     }
 
     void Animator::start(Motion&& motion, float fadeSeconds)
     {
-        if (m_hasCurrent && fadeSeconds > 0.0f)
+        const bool isInertial = m_inertialScale > 0.0f && m_hasCurrent && fadeSeconds > 0.0f;
+        m_hasPendingInertialization = isInertial;
+        m_pendingHalflife = fadeSeconds * m_inertialScale;
+
+        if (fadeSeconds <= 0.0f)
+        {
+            m_inertializer.reset();
+        }
+
+        if (m_hasCurrent && fadeSeconds > 0.0f && !isInertial)
         {
             m_previous = std::move(m_current);
             m_hasPrevious = true;

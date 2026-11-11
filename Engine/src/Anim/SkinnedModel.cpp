@@ -37,6 +37,25 @@ namespace lockstep::anim
         finishUpdate(model);
     }
 
+    void SkinnedInstance::animate(const SkinnedModel& model, float deltaSeconds,
+        std::span<const JointRotationOffset> offsets)
+    {
+        beginUpdate(model);
+        m_animator.advance(model.clips, deltaSeconds);
+        m_animator.evaluate(model.skeleton, model.clips, m_pose);
+        computeOffsetJointMatrices(model.skeleton, m_pose, offsets, m_joints);
+    }
+
+    std::span<math::Mat4> SkinnedInstance::editJointMatrices() noexcept
+    {
+        return m_joints;
+    }
+
+    void SkinnedInstance::finishPose(const SkinnedModel& model)
+    {
+        finishUpdate(model);
+    }
+
     void SkinnedInstance::beginDriven(float blendSeconds)
     {
         m_blendFrom = m_joints;

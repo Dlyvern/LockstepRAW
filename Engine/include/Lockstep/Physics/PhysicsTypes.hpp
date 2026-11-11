@@ -151,12 +151,16 @@ namespace lockstep::physics
     };
 
     // What a raycast should not hit. Null handles ignore nothing.
-    // body:       a body to pass through, e.g. the shooter's own collider.
-    // controller: a controller to pass through, e.g. the shooter's pawn.
+    // body:           a body to pass through, e.g. the shooter's own collider.
+    // controller:     a controller to pass through, e.g. the shooter's pawn.
+    // allControllers: pass through every controller (e.g. probing the ground under feet).
+    // dynamicBodies:  pass through every dynamic and kinematic body, hitting static ones only.
     struct RaycastIgnore
     {
         BodyId body{};
         ControllerId controller{};
+        bool allControllers{false};
+        bool dynamicBodies{false};
     };
 
     // The closest thing a raycast hit. Exactly one of `body` and `controller` is non-null.

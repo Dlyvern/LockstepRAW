@@ -160,6 +160,17 @@ Create a module folder only when there is code for it.
   (`--single-sided` cooks opaque materials back-face culled whatever glTF says; the Blender export marks
   them double-sided, which cost ~1.3 ms at 1080p in close-ups; first-person models, weapons and gore
   stay double-sided).
+- **Locomotion layers / motion matching** (Engine/Anim, presentation only): inertialization
+  (`PoseInertializer`, `Animator::setInertialization`), model-space joint edits and two-bone IK
+  (`JointEdits`), `LocomotionPose` (orientation/stride warping, foot locking, lean, foot IK with
+  static-only ground rays and pelvis drop; prepare -> probe -> finish), root-yaw removal (`RootMotion`),
+  motion matching (`MotionDatabase` built at load from `MM_<Rifle|Aim|Crouch|Pistol>_*` clips,
+  `updateMotionMatching`, `predictTrajectory`). Game: `Characters/LocomotionSignals`, `CharacterMotion`,
+  `MotionSets`, `MotionMatchedLocomotion`; dev panel Pawn characters > Locomotion layers. Data: Mixamo
+  packs in `Content/source/characters/mixamo_mm/raw/` -> `scripts/mm_fbx_to_glb.py` (Blender) ->
+  `scripts/mm_retarget.py <body_armed.glb> <out> mixamo_mm/glb` -> `chars/arm_clearance.py --only MM_`
+  for swat/tactical/robber_armed, then recook with `--limbs --wound ... --single-sided`. Dev:
+  `--dev-anim-drill x,y,z,yaw[,spacing]`, `--dev-locomotion-off`, `--dev-motion-matching-off`.
 - **Audio: FMOD Core 2.03.08** in `external/fmod` (as in Velix; SDK files git-ignored, only our
   CMakeLists tracked; `LOCKSTEP_WITH_FMOD` defaults ON when the SDK exists, else a silent backend).
   FMOD is private to `Engine/src/Audio`. The World bus follows the World time-domain scale (pitch +

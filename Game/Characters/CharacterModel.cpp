@@ -53,7 +53,18 @@ namespace game
             return std::nullopt;
         }
 
-        const GearMasks masks = findGearMasks(loaded.value().skinnedModels[*index]);
-        return CharacterModel{.scene = std::move(loaded).value(), .model = *index, .gearMasks = masks};
+        lockstep::anim::SkinnedModel& skinned = loaded.value().skinnedModels[*index];
+        const GearMasks masks = findGearMasks(skinned);
+        std::optional<lockstep::anim::LocomotionRig> rig = lockstep::anim::findLocomotionRig(skinned.skeleton,
+            k_mixamoLocomotionRig);
+        const lockstep::anim::RootJoint root = lockstep::anim::makeRootJoint(skinned.skeleton,
+            rig ? rig->hips : lockstep::anim::k_noJoint);
+        std::optional<MotionSets> motionSets = rig ? buildMotionSets(skinned, *rig) : std::nullopt;
+        return CharacterModel{.scene = std::move(loaded).value(),
+            .model = *index,
+            .gearMasks = masks,
+            .locomotionRig = rig,
+            .rootJoint = root,
+            .motionSets = std::move(motionSets)};
     }
 } //namespace game
