@@ -45,7 +45,7 @@ namespace lockstep::render
             QualityField field;
         };
 
-        const std::array<FieldKey, 25> k_fields{{
+        const std::array<FieldKey, 45> k_fields{{
             {"render_scale", &GraphicsQuality::renderScale},
             {"texture_mip_drop", &GraphicsQuality::textureMipDrop},
             {"shadow_atlas_size", &GraphicsQuality::shadowAtlasSize},
@@ -62,14 +62,34 @@ namespace lockstep::render
             {"effect_steps", &GraphicsQuality::effectSteps},
             {"parallax", &GraphicsQuality::parallax},
             {"surface_detail", &GraphicsQuality::surfaceDetail},
+            {"skin_scattering", &GraphicsQuality::skinScattering},
+            {"fabric_sheen", &GraphicsQuality::fabricSheen},
+            {"character_surfaces", &GraphicsQuality::characterSurfaces},
+            {"decal_relief", &GraphicsQuality::decalRelief},
+            {"tube_lights", &GraphicsQuality::tubeLights},
+            {"light_profiles", &GraphicsQuality::lightProfiles},
+            {"soft_shadows", &GraphicsQuality::softShadows},
+            {"bounce_lighting", &GraphicsQuality::irradianceVolume},
+            {"shadow_caster_texels", &GraphicsQuality::shadowCasterTexels},
             {"motion_blur", &GraphicsQuality::motionBlur},
             {"depth_of_field", &GraphicsQuality::depthOfField},
             {"lens_effects", &GraphicsQuality::lensEffects},
             {"bloom", &GraphicsQuality::bloom},
+            {"lens_flares", &GraphicsQuality::lensFlares},
+            {"bokeh", &GraphicsQuality::bokeh},
             {"planar_reflections", &GraphicsQuality::planarReflections},
             {"reflection_resolution", &GraphicsQuality::reflectionResolution},
             {"scope_resolution", &GraphicsQuality::scopeResolution},
             {"particle_budget", &GraphicsQuality::particleBudget},
+            {"decal_budget", &GraphicsQuality::decalBudget},
+            {"screen_lights", &GraphicsQuality::screenLights},
+            {"water_ripples", &GraphicsQuality::waterRipples},
+            {"volumetric_clouds", &GraphicsQuality::volumetricClouds},
+            {"lens_rain", &GraphicsQuality::lensRain},
+            {"lightning_shadows", &GraphicsQuality::lightningShadows},
+            {"foliage_wind", &GraphicsQuality::foliageWind},
+            {"wind_debris", &GraphicsQuality::windDebris},
+            {"cloth", &GraphicsQuality::cloth},
             {"fps_limit", &GraphicsQuality::frameRateLimit}}};
 
         constexpr std::array<std::pair<std::string_view, AntiAliasingMode>, 5> k_antiAliasingNames{{

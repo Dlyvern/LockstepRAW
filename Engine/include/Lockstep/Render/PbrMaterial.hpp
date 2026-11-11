@@ -84,6 +84,53 @@ namespace lockstep::render
     // Number of SurfaceDetail layers besides None.
     inline constexpr uint32_t k_surfaceDetailKinds{4};
 
+    // How a lit material scatters light, on top of the metallic-roughness model (an Engine
+    // extension; Game picks it per material, e.g. by material or node name).
+    // Standard: plain metallic-roughness.
+    // Skin:     subsurface scattering approximated per light: light wraps past the terminator and
+    //           shadows bleed red, thin silhouettes glow when back-lit. Applies only to pixels whose
+    //           base colour looks like skin (warm, bright, clearly redder than green), so gear, hair
+    //           and eyes sharing a face texture stay standard.
+    // Fabric:   an added sheen lobe (Charlie distribution): soft rim highlights of cloth fibres at
+    //           grazing angles (uniforms, curtains, sofas, mattresses).
+    // Screen:   an emissive display (monitor, TV, laptop, vending machine panel): the emission gets
+    //           scanlines, a slow rolling band and a faint shimmer, and may scroll
+    //           (SurfaceEffectSettings::screens). Dim or flicker it per instance with the draw's
+    //           emissive scale.
+    enum class ShadingModel : uint8_t
+    {
+        Standard = 0,
+        Skin,
+        Fabric,
+        Screen
+    };
+
+    // A material's shading model and its parameters (see ShadingModel).
+    // model:          the shading model.
+    // strength:       skin: scatter amount (1 typical, 0 to 2); fabric: sheen intensity (1 typical,
+    //                 0 to 2).
+    // sheenRoughness: fabric: width of the sheen lobe, 0.2 (tight satin rim) to 1 (fuzzy cotton).
+    //                 screen: `strength` is how strongly the screen effects show (0 to 2).
+    // scroll:         screen: how fast the emissive image scrolls up, in UV units per second (0 for
+    //                 still content; the screen's UVs should span the whole texture).
+    // terminal:       screen: show an Engine-generated terminal image (rows of dim text, a title
+    //                 bar, a blinking cursor) tinted by the emissive texture, for screens whose
+    //                 texture is plain.
+    // decalRelief:    alpha-blended decals drawn with Renderer::submitDecal(): height of the relief
+    //                 the base colour alpha describes, in UV units (positive raised, e.g. 0.01 for a
+    //                 blood film's rim; negative dented, e.g. -0.03 for a bullet hole). The relief
+    //                 shades the decal and darkens the uncovered surface below where it faces away
+    //                 from the lights, and its normal and roughness reach the G-buffer. 0 is off.
+    struct MaterialShading
+    {
+        ShadingModel model{ShadingModel::Standard};
+        float strength{1.0f};
+        float sheenRoughness{0.6f};
+        float decalRelief{0.0f};
+        float scroll{0.0f};
+        bool terminal{false};
+    };
+
     // A glTF 2.0 metallic-roughness material. Any texture may be left invalid; the factor alone
     // is used then. Textures are sampled with TEXCOORD_0.
     // baseColor / baseColorFactor:   albedo; the texture is sRGB, multiplied by the linear factor.
@@ -101,6 +148,8 @@ namespace lockstep::render
     //                                occlusion mapping; heightScale is the depth from 1 to 0 in UV units
     //                                (1 is one texture repeat); 0 or no texture disables parallax.
     // detail / detailScale:          the micro-detail layer and how often it repeats per UV unit.
+    // shading:                       the shading model (Standard by default; see MaterialShading).
+    //                                Not cooked; Game sets it (Renderer::setMaterialShading()).
     struct PbrMaterialDescription
     {
         TextureHandle baseColor{};
@@ -128,6 +177,8 @@ namespace lockstep::render
 
         SurfaceDetail detail{SurfaceDetail::None};
         float detailScale{1.0f};
+
+        MaterialShading shading{};
     };
 } //namespace lockstep::render
 

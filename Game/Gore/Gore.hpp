@@ -1,6 +1,8 @@
 #ifndef LOCKSTEP_GAME_GORE_GORE_HPP
 #define LOCKSTEP_GAME_GORE_GORE_HPP
 
+#include "Characters/CharacterStains.hpp"
+#include "Effects/BulletHoles.hpp"
 #include "Gore/BloodAssets.hpp"
 #include "Gore/BloodBursts.hpp"
 #include "Gore/BloodDecals.hpp"
@@ -82,6 +84,8 @@ namespace game
     // bursts:      how the particle blood of a hit looks.
     // burstEffects: the blood particle effects (in the game's particle system).
     // headBursts:  gibs, spurting necks and the look of head bursts.
+    // stains:      how blood, dirt and rain show on characters' bodies.
+    // holes:       bullet holes in the level (drawn under the blood).
     struct GoreState
     {
         GoreTuning tuning{};
@@ -99,6 +103,8 @@ namespace game
         BloodBurstTuning bursts{};
         BloodBurstEffects burstEffects{};
         HeadBursts headBursts{};
+        CharacterStainTuning stains{};
+        BulletHoles holes{};
     };
 
     // Shows this frame's gore: applies pending events (droplets and particle blood scaled by the

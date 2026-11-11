@@ -87,15 +87,36 @@ namespace lockstep::debug
             changed |= ImGui::Checkbox("Parallax", &quality.parallax);
             changed |= ImGui::Checkbox("Parallax self-shadow from local lights", &quality.parallaxLocalShadows);
             changed |= ImGui::Checkbox("Surface detail", &quality.surfaceDetail);
+            changed |= ImGui::Checkbox("Skin scattering", &quality.skinScattering);
+            changed |= ImGui::Checkbox("Fabric sheen", &quality.fabricSheen);
+            changed |= ImGui::Checkbox("Character blood, dirt and rain", &quality.characterSurfaces);
+            changed |= ImGui::Checkbox("Decal relief", &quality.decalRelief);
+            changed |= ImGui::Checkbox("Tube lights##quality", &quality.tubeLights);
+            changed |= ImGui::Checkbox("Light profiles##quality", &quality.lightProfiles);
+            changed |= ImGui::Checkbox("Soft shadows##quality", &quality.softShadows);
+            changed |= ImGui::Checkbox("Bounce light##quality", &quality.irradianceVolume);
+            changed |= ImGui::SliderFloat("Min shadow caster (texels)", &quality.shadowCasterTexels, 0.0f, 16.0f, "%.1f");
             changed |= ImGui::Checkbox("Motion blur", &quality.motionBlur);
             changed |= ImGui::Checkbox("Depth of field", &quality.depthOfField);
             changed |= ImGui::Checkbox("Lens effects", &quality.lensEffects);
             changed |= ImGui::Checkbox("Bloom##quality", &quality.bloom);
+            changed |= ImGui::Checkbox("Lens flares##quality", &quality.lensFlares);
+            changed |= ImGui::Checkbox("Bokeh##quality", &quality.bokeh);
             changed |= ImGui::Checkbox("Mirrors##quality", &quality.planarReflections);
             changed |= ImGui::SliderFloat("Mirror resolution", &quality.reflectionResolution, 0.25f, 2.0f, "%.2f");
             changed |= sliderUnsigned("Scope resolution cap", quality.scopeResolution, 256, 1024);
             changed |= sliderUnsigned("Particle budget", quality.particleBudget, 1000, 50000);
             ImGui::TextDisabled("Particle budget applies when Game creates its particles (restart).");
+            changed |= sliderUnsigned("Decal budget", quality.decalBudget, 16, 512);
+            changed |= sliderUnsigned("Screen lights", quality.screenLights, 0,
+                static_cast<int>(render::k_maxScreenLights));
+            changed |= ImGui::Checkbox("Dripping water and ripples", &quality.waterRipples);
+            changed |= ImGui::Checkbox("Volumetric clouds##quality", &quality.volumetricClouds);
+            changed |= ImGui::Checkbox("Rain on the lens##quality", &quality.lensRain);
+            changed |= ImGui::Checkbox("Lightning shadows##quality", &quality.lightningShadows);
+            changed |= ImGui::Checkbox("Foliage wind##quality", &quality.foliageWind);
+            changed |= ImGui::Checkbox("Blowing litter##quality", &quality.windDebris);
+            changed |= ImGui::Checkbox("Cloth##quality", &quality.cloth);
             changed |= sliderUnsigned("Frame rate limit (0 = off)", quality.frameRateLimit, 0, 300);
 
             return changed;

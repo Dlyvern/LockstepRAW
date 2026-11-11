@@ -1,7 +1,9 @@
 #include "Level/SceneLevel.hpp"
 
+#include "Cloth/Curtains.hpp"
 #include "Presentation/LevelAmbience.hpp"
 #include "Presentation/LevelLook.hpp"
+#include "Presentation/MaterialLooks.hpp"
 
 #include <Lockstep/Assets/FileSystem.hpp>
 #include <Lockstep/Physics/PhysicsWorld.hpp>
@@ -250,6 +252,7 @@ namespace game
         }
 
         SceneLevel level{.scene = std::move(scene).value(), .collision = {}, .blockers = {}};
+        applyMaterialLooks(renderer, level.scene);
         auto collision = assets::createSceneCollision(physics, level.scene);
 
         if (!collision)
@@ -258,6 +261,7 @@ namespace game
         }
 
         level.collision = std::move(collision).value();
+        removeClothColliders(level, physics);
 
         for (const assets::SceneNode& node : level.scene.nodes)
         {

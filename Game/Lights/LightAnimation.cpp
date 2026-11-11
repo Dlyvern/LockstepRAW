@@ -220,6 +220,10 @@ namespace game
         }
 
         loadLightBuzz(animation.buzz, engine.audio, engine.files);
+        animation.screens.tuning.maxLights = engine.renderer.graphicsQuality().screenLights;
+        const uint32_t screenLights = presentScreens(animation.screens, engine.renderer, scene, eye, worldSeconds);
+        const std::size_t levelLights = lockstep::render::k_maxLocalLights - std::min(screenLights,
+            lockstep::render::k_maxLocalLights);
 
         if (needsRebuild(animation, *scene))
         {
@@ -232,14 +236,14 @@ namespace game
         {
             stopLightBuzz(animation.buzz, engine.audio);
             setLampLevels(animation, *scene, false);
-            submitLevelLights(engine.renderer, *scene, eye);
+            submitLevelLights(engine.renderer, *scene, eye, {}, levelLights);
             return;
         }
 
         animation.seconds += static_cast<double>(worldSeconds);
         const std::vector<BuzzSource> tubes = animateLights(animation, *scene);
         setLampLevels(animation, *scene, true);
-        submitLevelLights(engine.renderer, *scene, eye, animation.overrides);
+        submitLevelLights(engine.renderer, *scene, eye, animation.overrides, levelLights);
         updateLightBuzz(animation.buzz, engine.audio, tubes, eye, animation.seconds);
     }
 
@@ -251,6 +255,7 @@ namespace game
             return;
         }
 
+        screensDevSection(animation.screens);
         LightAnimationSettings& settings = animation.settings;
         ImGui::Checkbox("Animate lights", &settings.isEnabled);
         ImGui::Checkbox("Dim lamp meshes with their light", &settings.dimLamps);

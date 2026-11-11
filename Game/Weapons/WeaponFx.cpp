@@ -32,6 +32,7 @@ namespace game
         constexpr uint32_t k_npcKeyBase{0x10000u};
         constexpr uint8_t k_maxShotsPerFrame{3};
         constexpr float k_tracerRange{150.0f};
+        constexpr float k_remoteImpactRange{60.0f};
         constexpr std::size_t k_maxLandingSounds{4};
         constexpr math::Vec3 k_up{0.0f, 1.0f, 0.0f};
         constexpr float k_muzzleReach{0.55f};
@@ -223,7 +224,7 @@ namespace game
                 }
 
                 const std::optional<WeaponSocket> socket = npcWeaponSocket(state.npcLooks, look.entity);
-                Shot shot{.key = k_npcKeyBase + look.entity.index, .socket = socket};
+                Shot shot{.key = k_npcKeyBase + look.entity.index, .socket = socket, .weapon = WeaponKind::M4};
                 shot.position = socket ? socket->muzzle : drawnPlacement(look).position + k_up * 1.4f;
                 addShots(shots, look.shotCount, seen->second, shot);
             }
@@ -245,7 +246,13 @@ namespace game
                 .ignore = ignore});
         }
 
-        math::Vec3 tracerEnd(const GameState& state, EngineContext& engine, const Shot& shot, const WeaponFxFrame& frame)
+        struct ShotTrace
+        {
+            math::Vec3 end{0.0f, 0.0f, 0.0f};
+            std::optional<physics::RaycastHit> hit{};
+        };
+
+        ShotTrace traceShot(const GameState& state, EngineContext& engine, const Shot& shot, const WeaponFxFrame& frame)
         {
             math::Vec3 origin = shot.position;
             math::Vec3 direction = shot.socket ? shot.socket->forward : frame.aim;
@@ -261,7 +268,21 @@ namespace game
             direction = math::normalize(direction);
             const std::optional<physics::RaycastHit> hit = engine.physics.raycast(origin, direction, k_tracerRange, ignore);
 
-            return hit ? hit->point : origin + direction * k_tracerRange;
+            return ShotTrace{.end = hit ? hit->point : origin + direction * k_tracerRange, .hit = hit};
+        }
+
+        void addRemoteImpact(GameState& state, const Shot& shot, const ShotTrace& trace, const WeaponFxFrame& frame)
+        {
+            if (!trace.hit || trace.hit->body.isNull() || math::length(trace.hit->point - frame.eye) > k_remoteImpactRange)
+            {
+                return;
+            }
+
+            state.combatAudio.impacts.push_back(CombatImpact{.point = trace.hit->point,
+                .normal = trace.hit->normal,
+                .body = trace.hit->body,
+                .isRemote = true,
+                .weapon = shot.weapon});
         }
 
         void showShots(GameState& state, EngineContext& engine, WeaponFx& fx, const WeaponFxFrame& frame,
@@ -298,10 +319,21 @@ namespace game
                 }
 
                 const int every = std::max(fx.muzzle.tuning.tracerEvery, 1);
+                const bool isTracer = particles != nullptr && shot.ordinal % every == 0;
 
-                if (particles != nullptr && shot.ordinal % every == 0)
+                if (isTracer || !shot.isLocal)
                 {
-                    fireTracer(fx.muzzle, *particles, shot.socket->muzzle, tracerEnd(state, engine, shot, frame));
+                    const ShotTrace trace = traceShot(state, engine, shot, frame);
+
+                    if (!shot.isLocal)
+                    {
+                        addRemoteImpact(state, shot, trace, frame);
+                    }
+
+                    if (isTracer)
+                    {
+                        fireTracer(fx.muzzle, *particles, shot.socket->muzzle, trace.end);
+                    }
                 }
 
                 if (fx.tuning.casings)

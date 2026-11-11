@@ -99,12 +99,34 @@ Create a module folder only when there is code for it.
   lens effects (depth of field, per-pixel motion blur from the velocity buffer with viewmodel
   pixels reduced and not smeared into the world, chromatic aberration; `LensPasses.cpp`,
   `shaders/lens_effects.glsl`), film grain and dither. Game drives DoF strength from bullet-time
-  (`Game/Presentation/LensEffects`); `LevelLook` sets the lens defaults. Shadow atlas 4096x2048:
+  (`Game/Presentation/LensEffects`); `LevelLook` sets the lens defaults. DoF is bokeh-shaped
+  (`DepthOfFieldSettings::apertureBlades`/`bokehHighlights`: polygon aperture, bright taps
+  outweigh dim ones). Lens flares (`LensFlareSettings`, `LensFlare.cpp`, `shaders/lens_flare.frag`):
+  quarter-res pass after the bloom down chain: ghosts + halo mirrored from pixels far above the
+  exposure (bloomDown2; viewmodel depth masked), plus sun glare (veil + starburst, occluded by depth
+  taps, sunset boost); added into bloomUp1 (`bloom_up_flare.frag`, its 4th input), so it needs bloom.
+  Animated surfaces (`Lockstep/Render/SurfaceEffects.hpp`, `shaders/surface_effects.glsl`):
+  `ShadingModel::Screen` materials get scanlines/rolling band/shimmer/scroll; `Renderer::submitDripPuddle`
+  (8 nearest) makes a wet glossy puddle with drop ripple rings on upward floors. Shadow atlas 4096x2048:
   sun cascades left half, 16 local light tiles (512) right half. The atlas is persistent
   (`ShadowPass.cpp`, `ShadowCache.cpp`): a tile is re-rendered only when its key (tile matrix +
   every caster's mesh/material/model) changed or it holds a skinned caster; cascades 3-4 keep
   their matrix for a frame (staggered refresh) unless the camera turned/moved or the sun changed.
   Static casters are drawn instanced (one call per mesh + shadow material run per tile).
+  Static casters smaller than `ShadowDetailSettings::minCasterTexels` (quality `shadowCasterTexels`)
+  in a tile are skipped. Soft shadows (`SoftShadowSettings`, `shaders/soft_shadows.glsl`): PCSS
+  blocker search on raw atlas depth (set 2 slot 2, so pbr.frag's BRDF LUT is material binding 21),
+  penumbra from sun size / light radius, rotated Vogel-disk compare taps. Local light shapes
+  (`LightShapeSettings`, `shaders/light_shapes.glsl`): `PointLight::tubeLength` line lights (exact
+  unclipped line irradiance for diffuse, representative point + roughness widening for specular;
+  shadow from the centre; fog and particles treat them as points) and `LightProfile` emission
+  profiles (Engine-generated R8 atlas, material binding 16). Bounce light: `Renderer::setIrradianceVolume`
+  takes the cooked probe grid (`Scene::irradiance`, from `--gi`; Game's `applyLevelAmbientZones` sets
+  it); the CPU combines local + sun x sun radiance (only while the frame sun matches the baked one)
+  + sky bounce x mean sky radiance into 3 RGBA16F L1 textures + sky visibility (bindings 17-20,
+  slices along z stacked in y, re-uploaded only when sun/sky change); pbr.frag
+  (`shaders/irradiance_volume.glsl`) adds it to ambient diffuse and specular, and inside the volume
+  sky visibility replaces the zones' IBL dimming and only `fillKept` of the zone fill remains.
 - **Particles:** `Lockstep/Render/Particles.hpp` `ParticleSystem` (CPU sim, Game-owned, budget
   20k): effects from a description (atlas frames, blend Alpha/Additive, Lit/Unlit, billboard or
   velocity-stretched, curves), emitters and `burst()`. Drawn by the `particles` graph pass after
@@ -113,6 +135,14 @@ Create a module folder only when there is code for it.
   Never in mirrors or shadow maps. Presentation only, like audio: spawn from `frame()`/confirmed
   events, simulate with the World-domain delta. Game effects in `Game/Effects/` (procedural
   sprite atlas; impacts come from `CombatAudio::impacts`/`shots`, no second ray).
+- **Atmosphere** (`Lockstep/Render/AtmosphereSettings.hpp`; Game animates it in `Game/Weather/`): clouds
+  (volumetric half-res raymarch through a slab with a tiling 2D noise, composited into sky pixels before
+  indirect lighting; Low uses a flat noise layer; coverage greys the sky IBL), foliage wind (masked
+  static draws outside interior zones sway in `pbr_vertex.glsl`/`wind.glsl`; shadows keep the rest pose),
+  lightning (sky/cloud flash, optional bolt; while it outshines the sun it is the frame's directional
+  light with shadows, the sky keeps `skySunDirection`), lens rain (`LensRain` CPU drop sim, Game-owned,
+  drawn after the output pass; drops land only under open sky). Game: `Wind`, `Lightning` (thunder
+  delayed by distance/343 s), `LensDrops`. Dev: Weather and Graphics sections, `--dev-lightning-drill`.
 - **Characters:** skinned glTF (Mixamo skeleton) cooked into `.model` + skinned `.mesh` (level
   format v3). Animation is presentation-only, derived from replicated movement, never replicated.
   Source in `Content/source/characters/<name>/` (Mixamo FBX clips retargeted in Blender onto the
@@ -150,6 +180,24 @@ Create a module folder only when there is code for it.
   normal map (Poly Haven `<id>_nor[_gl]_<res>` -> `<dir>/<id>/<id>_disp_<res>.jpg|png`, or
   `<name>_normal` -> `<dir>/<name>_height.*`), stretched to 0-1, BC4, depth in metres by material
   name; detail layer by material/texture name words; both scaled by measured metres per UV.
+  Shading models (`MaterialShading` in PbrMaterial.hpp, not cooked; Game sets them after loading
+  with `Renderer::setMaterialShading`, rules in `Game/Presentation/MaterialLooks`): Skin
+  (per-light wrapped, red-shifted diffuse with softened normals and back-lit glow, only on pixels
+  whose albedo looks like skin; character material names `face`/`skin`/`hand`/`head` but not
+  `headgear`), Fabric (Charlie sheen; character `body`/`robber`/`tac_set`/`uniform`/`cloth`, level
+  nodes `mattress`/`sofa`/`curtain`/`pillow`/`blanket`/`carpet`/`towel`/`trashbag`... not `frame`),
+  and decal relief (`decalRelief`: the decal's base colour alpha is a height field; it tilts the
+  decal's normal, darkens the uncovered surface below where the relief faces away from the
+  lights, and writes the decal's normal/roughness into the G-buffer; blood decals raised, bullet
+  holes `Game/Effects/BulletHoles` dented; per surface look `BulletHoleLooks`: concrete, plaster,
+  tile, wood, metal, glass star crack, fabric, from `shotMaterialOfBody` + `surfaceOfBody`; size by
+  calibre; holes also from partner/NPC shots (WeaponFx adds one muzzle ray per remote shot to
+  `CombatAudio::impacts`, `isRemote`); a hole is dropped when its body is gone (broken pane) or moved). Character surfaces (`Lockstep/Render/CharacterSurface.hpp`):
+  per frame `Renderer::submitCharacterSurface` (soak, grime, up to 8 bind-pose blood/dirt stains,
+  stored in the joint buffer) passed to `submitSkinned`/`SkinnedInstance::submit`; with a surface
+  the world wetness is replaced by max(soak, outdoor rain). Game: `Characters/CharacterStains`,
+  stains from gore events (`Gore/BodyStainEvents`; dev `--dev-bloody-npcs`). Code in
+  `shaders/material_shading.glsl`; toggles `MaterialShadingSettings` + GraphicsQuality.
   `Content/source/scripts/ph_fetch.py` downloads `disp` maps. Hospital cook:
   `--height-dir Content/source/hospital/ph`.
 - **Shipping content:** source assets (glTF from Blender or packs) are cooked offline by
@@ -163,6 +211,10 @@ Create a module folder only when there is code for it.
     Textures are capped by the size of the objects using them: `--texels-per-metre N` (default
     1024, so a 0.3 m prop gets 512 and a 2 m bed 2048), `--max-texture-size N` (default 2048;
     tiling surfaces with UVs beyond 0-1 use it), `--no-auto-cap` to disable.
+    `--gi` bakes an irradiance probe grid (`<name>/irradiance`, `Tools/Cooker/IrradianceBake`) over the
+    `Zone_Interior_*` boxes: `--gi-spacing m` (1), `--gi-sun <azimuthDeg>,<elevationDeg>` (match the
+    level's LevelLook sun; none = no sun term), `--gi-rays n` (256), `--gi-bounces n` (3). Hospital A:
+    `--gi --gi-sun -120,6` (~20 s). Recook with `--gi` after moving geometry or static lights.
   - Third-party assets: every new one gets a line in `CREDITS.md` (CC BY ones must be credited
     in the shipped game).
   - Pack: `LockstepCooker pack Content/cooked/<name> Content/cooked/<name>.pak [--zstd-level 9]`
@@ -224,6 +276,13 @@ Create a module folder only when there is code for it.
   axis-aligned) dim the sky's image-based light inside and add a fill light (per pixel; blends in
   over `blendDistance` inside the faces). Point/spot lights whose object name contains `_Shadow`
   cast shadows (nearest 4 per frame; a point light costs 6 atlas tiles of 16, a spot 1).
+  Light shapes (`Game/Presentation/LevelLights`): a point light named `_Tube` is a fluorescent tube
+  along the object's local X, its X scale the length in metres (Blender: rotate the light so X runs
+  along the fixture, scale X to the tube length); `_Downlight`, `_WallWash`, `_Grille`,
+  `_Fluorescent` pick an emission profile around the light's local -Z (+X is the profile's side;
+  tubes default to `_Fluorescent`). Hospital A's ceiling troffers are 1.1 m tubes
+  (`Content/source/scripts/hosp_tubes.py` converts a hospital .blend and exports it). The GI bake
+  skips `_Flicker`/`_Siren`/`_Pulse`/`_NoBounce` lights (animated lights don't bounce).
   Animated lights (tags combine with `_Shadow`, e.g. `L_Ward_Flicker_Shadow`; `Game/Lights/`,
   presentation only, World time so bullet-time slows them): `_Flicker` a failing fluorescent tube
   (mostly on, dropouts/stutters, sometimes off 1-2 s, quiet 3D buzz + crackles),
@@ -242,7 +301,20 @@ Create a module folder only when there is code for it.
   `Level_Weather_Rain` makes a level rainy (`Game/Weather/`: streaks, splashes, wet surfaces and
   puddles outdoors, rain sound, overcast look; presentation only, World time); `--weather rain|clear`
   overrides it, and the Game dev panel has a Weather section. Particle markers: empties named
-  `Fx_Steam_*`, `Fx_Smoke_*`, `Fx_Dust_*` (ceiling dust trickle) emit along their Blender +Z.
+  `Fx_Steam_*`, `Fx_Smoke_*`, `Fx_Dust_*` (ceiling dust trickle) emit along their Blender +Z. Cloth: objects named `Cloth_*` (e.g. `Cloth_Curtain_07`) are hanging cloth
+  panels (thin vertical sheet, origin at the top edge's centre): Game hides the mesh and draws a
+  simulated pleated sheet (`Game/Cloth/`, Verlet, top row pinned, presentation only, within 14 m of the
+  camera); people push through, the local player's bullets kick it, wind moves outdoor ones; their
+  colliders are removed at load on every machine. Hospital A's curtains come from
+  `Content/source/scripts/split_curtains.py` (don't rerun the old `level_fix2.py`). Dev: `--dev-shake-cloth`.
+  `Fx_Drip_*` empties 2-3 cm under a ceiling are leaks (`Game/Effects/Drips`): drops fall to the floor
+  found by a ray, splash, plink and ripple a small puddle. Glowing screens: an empty named
+  `Screen_*` at the middle of a display, facing its Blender -Y (Front view looks at the screen);
+  emissive meshes within 0.35 m (or under it) become the screen (`ShadingModel::Screen`, flicker via
+  emissive scale) and the nearest ones get an unshadowed spot light (`Game/Lights/Screens`, budget
+  `GraphicsQuality::screenLights`, reserved before the level lights). Tags: `_Flicker`, `_Off`,
+  `_Scroll`, `_Image` (keep the authored image; default is a procedural terminal tinted by it), `_Panel` (vending machine/sign: light, no scanlines), colour `_Blue`/`_Green`/`_Amber`/
+  `_Red`/`_White`. Hospital A markers come from `Content/source/scripts/hosp_a_screens_drips.py`.
 - **Levels:** `Content/source/apartment/` (the flat) is linked into
   `Content/source/district/district.blend` (building, stairs, street, park, car) at second-floor
   height; export the district by making the linked instances real, exporting, and reloading.
@@ -278,7 +350,8 @@ Create a module folder only when there is code for it.
   settings file (`--settings <file>`, default `~/.config/LockstepRAW/settings.ini`: `preset = ...`
   plus per-field overrides and `window_width`/`window_height`), else High. Dev Graphics panel >
   Quality: preset dropdown (live), every field, "Save to settings file". Engine logs GPU memory at
-  startup, after Game init and after 30 frames. Scene passes go through `addScaledPass()`
+  startup, after Game init and after 30 frames. Group D fields: `lensFlares`, `bokeh`, `decalBudget`
+  (bullet holes kept), `screenLights`, `waterRipples` (drips). Scene passes go through `addScaledPass()`
   (`RenderScale.cpp`) so their outputs follow the render scale.
 
 ## Code style
@@ -371,7 +444,8 @@ timeout 5 ./build/debug/bin/LockstepGame     # exit code 124 = ran until timeout
      `drawInstanced(mesh, material, count, firstInstance)` (used by the shadow atlas cache).
   4. No cubemap, array or per-mip attachments.
   5. No `PassRecorder::setViewport` (only scissor).
-  6. Only 4 pass-input slots (auto exposure reaches tonemapping through bloomUp1's alpha).
+  6. Only 4 pass-input slots (auto exposure reaches tonemapping through bloomUp1's alpha; lens flares
+     through bloomUp1's colour).
   7. No pre-record upload hook (may be moot: `DynamicBuffer::update` before `execute()` now
      lands in that frame; check before asking).
   8. A depth prepass read by SSAO and then loaded by the lit pass forms a graph cycle.

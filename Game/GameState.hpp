@@ -3,6 +3,7 @@
 
 #include "Audio/CombatAudio.hpp"
 #include "Breakables/BreakableGlass.hpp"
+#include "Cloth/Curtains.hpp"
 #include "Audio/Footsteps.hpp"
 #include "Characters/NpcPlaceholders.hpp"
 #include "Characters/PawnCharacters.hpp"
@@ -10,6 +11,7 @@
 #include "Echo/EchoRecording.hpp"
 #include "Effects/Effects.hpp"
 #include "Presentation/DevCapture.hpp"
+#include "Presentation/MaterialLooks.hpp"
 #include "Weapons/WeaponCatalog.hpp"
 #include "Weapons/WeaponFx.hpp"
 #include "Effects/GlassShatter.hpp"
@@ -22,6 +24,7 @@
 #include "Level/Arena.hpp"
 #include "Level/SceneLevel.hpp"
 #include "Melee/KickPresentation.hpp"
+#include "Effects/Drips.hpp"
 #include "Lights/LightAnimation.hpp"
 #include "Npcs/NavGrid.hpp"
 #include "Npcs/Npc.hpp"
@@ -191,14 +194,17 @@ namespace lockstep::app
         game::KickEffects kicks{};
         game::CombatAudio combatAudio{};
         game::Effects effects{};
+        game::Drips drips{};
         game::WeaponFx weaponFx{};
         game::DevCapture devCapture{};
+        game::MaterialTimingDrill materialDrill{};
         game::FlashlightState flashlights{};
         game::WeaponFeedback weaponFeedback{};
         game::BreakableGlass glass{};
         game::GlassShatter glassShatter{};
         game::LightAnimation lightAnimation{};
         game::Weather weather{};
+        game::Curtains curtains{};
         std::optional<game::Intro> intro{};
         game::Shell shell{};
         Settings settings{};

@@ -52,6 +52,13 @@ namespace lockstep::render
     // Returns: the sampler the lit shaders read the shadow atlas through (hardware comparison).
     [[nodiscard]] vela::graphics::SamplerDescription shadowCompareSampler();
 
+    // Returns: the sampler the lit shaders read raw shadow atlas depths through (nearest, no
+    //          comparison; the soft shadow blocker search).
+    [[nodiscard]] vela::graphics::SamplerDescription shadowDepthSampler();
+
+    // Set 2 slot pbr.frag reads the shadow atlas's raw depth from (shadowDepthSampler()).
+    inline constexpr uint32_t k_shadowDepthSlot{2};
+
     // Loads two staged shaders and creates a material from them.
     // context:      the GPU context.
     // vertexFile:   vertex shader .spv file name.

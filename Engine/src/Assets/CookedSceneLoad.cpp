@@ -1,8 +1,10 @@
 #include "Lockstep/Assets/FileSystem.hpp"
 #include "Lockstep/Assets/Scene.hpp"
+#include "Lockstep/Core/Log.hpp"
 #include "Lockstep/Render/Renderer.hpp"
 
 #include "CookedFormat.hpp"
+#include "CookedIrradiance.hpp"
 #include "DecodedTexture.hpp"
 #include "OrderedWork.hpp"
 
@@ -384,6 +386,33 @@ namespace lockstep::assets
             scene.stats.meshCount = static_cast<uint32_t>(scene.meshes.size());
             scene.stats.instanceCount = static_cast<uint32_t>(scene.instances.size());
         }
+
+        std::optional<render::IrradianceVolume> loadIrradiance(const FileSystem& files, std::string_view levelPath)
+        {
+            const std::size_t slash = levelPath.rfind('/');
+            const std::string folder(slash == std::string_view::npos ? std::string_view{} : levelPath.substr(0, slash + 1));
+            const std::string path = folder + std::string(k_irradianceFileName);
+
+            if (!files.exists(path))
+            {
+                return std::nullopt;
+            }
+
+            auto bytes = files.read(path);
+            auto volume = bytes ? readCookedIrradiance(bytes.value(), path)
+                : Result<render::IrradianceVolume>(bytes.error());
+
+            if (!volume)
+            {
+                log(LogLevel::Warning, "Assets", "irradiance skipped: " + volume.error().message);
+                return std::nullopt;
+            }
+
+            log(LogLevel::Info, "Assets", "irradiance volume '" + path + "': " + std::to_string(volume.value().countX)
+                + " x " + std::to_string(volume.value().countY) + " x " + std::to_string(volume.value().countZ) + " probes");
+
+            return std::move(volume).value();
+        }
     } //namespace
 
     Result<Scene> loadCookedScene(render::Renderer& renderer, const FileSystem& files, std::string_view path,
@@ -443,6 +472,7 @@ namespace lockstep::assets
         }
 
         placeInstances(scene, level.value());
+        scene.irradiance = loadIrradiance(files, path);
         scene.stats.loadSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         return scene;

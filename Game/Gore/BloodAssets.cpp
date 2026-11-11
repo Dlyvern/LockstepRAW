@@ -29,6 +29,8 @@ namespace game
         constexpr uint32_t k_dropSeed{3301};
         constexpr float k_wetRoughness{0.18f};
         constexpr float k_poolRoughness{0.08f};
+        constexpr float k_bloodRelief{0.004f};
+        constexpr float k_poolRelief{0.002f};
         constexpr lockstep::math::Vec4 k_dropletColour{0.16f, 0.004f, 0.003f, 1.0f};
         constexpr std::string_view k_goreScene{"characters/gore/scene"};
         constexpr std::string_view k_bloodNode{"Blood_Splat"};
@@ -90,6 +92,24 @@ namespace game
                 .roughnessFactor = roughness,
                 .alphaMode = render::AlphaMode::Blend,
                 .doubleSided = true});
+        }
+
+        void applyBloodRelief(render::Renderer& renderer, const BloodAssets& assets)
+        {
+            const render::MaterialShading film{.decalRelief = k_bloodRelief};
+
+            for (const render::MaterialHandle material : assets.splatters)
+            {
+                renderer.setMaterialShading(material, film);
+            }
+
+            for (const render::MaterialHandle material : assets.runs)
+            {
+                renderer.setMaterialShading(material, film);
+            }
+
+            renderer.setMaterialShading(assets.pool, render::MaterialShading{.decalRelief = k_poolRelief});
+            renderer.setMaterialShading(assets.drop, film);
         }
 
         lockstep::Result<render::MeshHandle> createRunQuad(render::Renderer& renderer, float share)
@@ -236,6 +256,7 @@ namespace game
         }
 
         assets.dropletLook = dropletLook.value();
+        applyBloodRelief(renderer, assets);
 
         return assets;
     }

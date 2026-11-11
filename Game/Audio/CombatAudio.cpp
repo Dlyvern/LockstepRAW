@@ -34,7 +34,7 @@ namespace game
         constexpr float k_exitVolume{0.6f};
         constexpr float k_sirenDistance{120.0f};
         constexpr float k_thunderDistance{300.0f};
-        constexpr float k_minThunderRain{0.3f};
+        constexpr float k_farThunderDistance{9000.0f};
 
         std::optional<std::string> findFile(const lockstep::assets::FileSystem& files, const std::string& stem)
         {
@@ -201,29 +201,22 @@ namespace game
         void playThunder(CombatAudio& combat, audio::AudioSystem& audioSystem, const CombatAudioFrame& frame,
             float indoor)
         {
-            const CombatAudioTuning& tuning = combat.tuning;
-
-            if (frame.rain < k_minThunderRain || combat.bank.thunder.empty())
+            if (combat.bank.thunder.empty())
             {
                 return;
             }
 
-            combat.thunderSeconds -= frame.worldSeconds;
-
-            if (combat.thunderSeconds > 0.0f)
+            for (const ThunderCue& cue : frame.thunder)
             {
-                return;
+                const auto pick = static_cast<std::size_t>(nextRandom(combat) % combat.bank.thunder.size());
+                const math::Vec3 flat{cue.direction.x, 0.4f, cue.direction.z};
+                const float far = std::clamp(cue.distance / k_farThunderDistance, 0.0f, 1.0f);
+                static_cast<void>(audioSystem.play(combat.bank.thunder[pick], audio::PlayDescription{.bus = audio::Bus::World,
+                    .volume = combat.tuning.thunderVolume * cue.loudness * randomRange(combat, 0.8f, 1.0f)
+                        * (1.0f - 0.4f * indoor),
+                    .pitch = randomRange(combat, 1.05f, 1.15f) - 0.3f * far,
+                    .position = frame.listener + math::normalize(flat) * k_thunderDistance}));
             }
-
-            const auto pick = static_cast<std::size_t>(nextRandom(combat) % combat.bank.thunder.size());
-            const float angle = randomRange(combat, 0.0f, 6.2832f);
-            const math::Vec3 where = frame.listener
-                + math::Vec3{std::cos(angle), 0.4f, std::sin(angle)} * k_thunderDistance;
-            static_cast<void>(audioSystem.play(combat.bank.thunder[pick], audio::PlayDescription{.bus = audio::Bus::World,
-                .volume = tuning.thunderVolume * frame.rain * randomRange(combat, 0.6f, 1.0f) * (1.0f - 0.4f * indoor),
-                .pitch = randomRange(combat, 0.85f, 1.1f),
-                .position = where}));
-            combat.thunderSeconds = randomRange(combat, tuning.thunderMinSeconds, tuning.thunderMaxSeconds);
         }
 
         void updateAmbience(CombatAudio& combat, audio::AudioSystem& audioSystem, const CombatAudioFrame& frame)
@@ -321,7 +314,7 @@ namespace game
                     const bool isLast = index + 1 == path.impacts.size();
                     const bool isFlesh = !impact.controller.isNull() || (landedHit && isLast && !impact.isExit);
                     combat.impacts.push_back(CombatImpact{.point = impact.point, .normal = impact.normal,
-                        .body = impact.body, .isFlesh = isFlesh, .isExit = impact.isExit});
+                        .body = impact.body, .isFlesh = isFlesh, .isExit = impact.isExit, .weapon = weapon});
                     playAt(combat, audioSystem, impactSounds(combat.bank, impact, isFlesh), impact.point,
                         combat.tuning.impactVolume * (impact.isExit ? k_exitVolume : 1.0f), audio::Bus::World);
                 }

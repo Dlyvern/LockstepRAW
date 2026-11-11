@@ -23,6 +23,7 @@ const float k_reflectorAlignment = 0.995;
 const vec3 k_zoneDebugTint = vec3(1.0, 0.1, 0.9);
 const float k_decalBlend = 2.0;
 const float k_minGlassCoverage = 0.02;
+const uint k_softCascades = 2u;
 
 layout(push_constant) uniform DrawConstants
 {
@@ -33,6 +34,7 @@ layout(push_constant) uniform DrawConstants
     vec4 surface;
     vec4 flags;
     vec4 detail;
+    vec4 shading;
 } draw;
 
 layout(set = 0, binding = 0) uniform Camera
@@ -51,7 +53,8 @@ layout(set = 1, binding = 4) uniform sampler2D emissiveTexture;
 
 layout(set = 2, binding = 0) uniform sampler2DShadow shadowAtlas;
 layout(set = 2, binding = 1) uniform sampler2D environmentAtlas;
-layout(set = 2, binding = 2) uniform sampler2D brdfLut;
+layout(set = 2, binding = 2) uniform sampler2D shadowDepth;
+layout(set = 1, binding = 21) uniform sampler2D brdfLut;
 layout(set = 2, binding = 3) uniform sampler2D planarReflection;
 
 layout(location = 0) in vec3 inWorldPosition;
@@ -60,6 +63,7 @@ layout(location = 2) in vec3 inNormal;
 layout(location = 3) in vec4 inTangent;
 layout(location = 4) in vec4 inCurrentClip;
 layout(location = 5) in vec4 inPreviousClip;
+layout(location = 6) in vec3 inObjectPosition;
 
 #include "surface_detail.glsl"
 
@@ -122,6 +126,8 @@ float tileShadow(uint tile, vec3 position, float spacing)
     return filteredShadow(uv, ndc.z, spacing);
 }
 
+#include "soft_shadows.glsl"
+
 float sunShadow(vec3 position, vec3 geometryNormal, out int cascade)
 {
     cascade = -1;
@@ -131,7 +137,9 @@ float sunShadow(vec3 position, vec3 geometryNormal, out int cascade)
     {
         float texel = frame.cascadeTexelSize[index];
         vec3 biased = position + geometryNormal * (texel * frame.shadowParams.z);
-        float lit = tileShadow(index, biased, 1.0);
+        float lit = frame.shadowSoftness.x > 0.5 && index < k_softCascades
+            ? tileShadowSoft(index, biased, frame.shadowSoftness.w)
+            : tileShadow(index, biased, 1.0);
 
         if (lit >= 0.0)
         {
@@ -171,7 +179,9 @@ float localShadow(LocalLight light, vec3 position, vec3 geometryNormal, float li
         tile += cubeFace(biased - light.positionRange.xyz);
     }
 
-    float lit = tileShadow(tile, biased, frame.localShadowParams.x);
+    float lit = frame.shadowSoftness.x > 0.5 ? tileShadowSoft(tile, biased,
+            max(frame.localShadowSoftness.x, light.tube.w * 0.5))
+        : tileShadow(tile, biased, frame.localShadowParams.x);
 
     return lit < 0.0 ? 1.0 : lit;
 }
@@ -219,12 +229,21 @@ vec3 fresnelSchlick(vec3 f0, float cosine)
     return f0 + (1.0 - f0) * factor;
 }
 
+#include "material_shading.glsl"
+#include "surface_effects.glsl"
+
 // Outgoing radiance from one light, added to `diffuse` and `specular`. Light colours are scaled so
 // that a white Lambert surface facing a light of intensity 1 reflects exactly 1 (the pi of the
 // Lambert BRDF is folded in).
 void shadeLight(Surface surface, vec3 toLight, vec3 lightColor, inout vec3 diffuse, inout vec3 specular)
 {
     float nDotL = dot(surface.normal, toLight);
+
+    if ((g_shadingModel != 0.0 || g_isReliefDecal)
+        && shadeMaterialLight(surface, toLight, lightColor, nDotL, diffuse, specular))
+    {
+        return;
+    }
 
     if (nDotL <= 0.0)
     {
@@ -247,6 +266,9 @@ void shadeLight(Surface surface, vec3 toLight, vec3 lightColor, inout vec3 diffu
 
     diffuse += diffuseTerm * lightColor * nDotL;
 }
+
+#include "light_shapes.glsl"
+#include "irradiance_volume.glsl"
 
 float distanceFalloff(float lightDistance, float range)
 {
@@ -389,18 +411,30 @@ void main()
     float roughness = clamp(metallicRoughness.g * draw.surface.y + g_detailRoughness, k_minRoughness, 1.0);
     float metallic = clamp(metallicRoughness.b * draw.surface.x, 0.0, 1.0);
     float occlusion = 1.0 + draw.surface.z * (surfaceTexture(occlusionTexture).r - 1.0);
-    vec3 emissive = surfaceTexture(emissiveTexture).rgb * draw.emissiveNormalScale.rgb;
+    vec3 emissive = screenEmission(surfaceTexture(emissiveTexture).rgb) * draw.emissiveNormalScale.rgb;
     float interior = frame.zoneParams.x > 0.0 ? interiorWeight(inWorldPosition, geometryNormal) : 0.0;
     vec3 shadingNormal = perturbedNormal(geometryNormal, inWorldPosition);
     bool isGlass = isBlended && draw.flags.y < k_decalBlend - 0.5;
     float wet = 0.0;
     float puddle = 0.0;
 
-    if (frame.wetness.x > 0.0 && draw.flags.z != k_viewModelView && draw.flags.z != k_sightWindowView && !isGlass)
+    if (floatBitsToUint(draw.shading.w) != 0u)
+    {
+        wet = applyCharacterSurface(inObjectPosition, 1.0 - interior, baseColor.rgb, roughness, metallic);
+    }
+    else if (frame.wetness.x > 0.0 && draw.flags.z != k_viewModelView && draw.flags.z != k_sightWindowView && !isGlass)
     {
         applyWetness(inWorldPosition, geometryNormal, 1.0 - interior, cameraDistance, baseColor.rgb, roughness,
             metallic, shadingNormal, wet, puddle);
     }
+
+    if (draw.flags.z != k_viewModelView && draw.flags.z != k_sightWindowView && !isGlass)
+    {
+        applyDripPuddles(inWorldPosition, geometryNormal, baseColor.rgb, roughness, shadingNormal);
+    }
+
+    prepareDecalRelief(geometryNormal, shadingNormal, inWorldPosition);
+    prepareMaterialShading(baseColor.rgb, metallic, geometryNormal, inWorldPosition);
 
     Surface surface;
     surface.normal = shadingNormal;
@@ -443,13 +477,16 @@ void main()
         vec3 offset = light.positionRange.xyz - inWorldPosition;
         float lightDistance = length(offset);
 
-        if (lightDistance >= light.positionRange.w)
+        bool isTube = light.tube.w > 0.0;
+
+        if (lightDistance >= light.positionRange.w + light.tube.w)
         {
             continue;
         }
 
         vec3 toLight = offset / max(lightDistance, 1e-4);
-        float attenuation = distanceFalloff(lightDistance, light.positionRange.w);
+        float attenuation = isTube ? 1.0 : distanceFalloff(lightDistance, light.positionRange.w);
+        attenuation *= lightProfileFactor(light, -toLight);
 
         if (light.cosInnerKind.y == k_spotLight)
         {
@@ -472,6 +509,12 @@ void main()
             attenuation *= parallaxSelfShadow(toLight);
         }
 
+        if (isTube)
+        {
+            shadeTubeLight(surface, light, inWorldPosition, attenuation, direct, specular);
+            continue;
+        }
+
         shadeLight(surface, toLight, light.color.rgb * attenuation, direct, specular);
     }
 
@@ -481,15 +524,20 @@ void main()
     float specularOcclusion = clamp(pow(surface.nDotV + occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + occlusion,
         0.0, 1.0);
     vec3 ambientSpecular = vec3(0.0);
+    IrradianceSample bounce = sampleIrradianceVolume(inWorldPosition, geometryNormal);
+    vec3 reflectedView = reflect(-toCamera, surface.normal);
 
     if (frame.iblParams.w > 0.0)
     {
         vec3 irradiance = textureLod(environmentAtlas, environmentAtlasUv(k_irradianceTile, surface.normal), 0.0).rgb;
-        vec3 reflected = reflect(-toCamera, surface.normal);
-        float diffuseScale = frame.iblParams.x * mix(1.0, frame.zoneLight.x, interior);
-        float specularScale = frame.iblParams.y * mix(1.0, frame.zoneLight.y, interior);
+        vec3 reflected = reflectedView;
+        float diffuseScale = frame.iblParams.x * mix(mix(1.0, frame.zoneLight.x, interior),
+            irradianceSkyFactor(bounce, surface.normal), bounce.weight);
+        float specularScale = frame.iblParams.y * mix(mix(1.0, frame.zoneLight.y, interior),
+            irradianceSkyFactor(bounce, reflected), bounce.weight);
 
         ambient += surface.diffuseColor * (1.0 - specularColor) * irradiance * occlusion * diffuseScale;
+        ambient += materialAmbient(surface, irradiance * occlusion * diffuseScale);
 
         if (frame.counts.y != 0u)
         {
@@ -498,9 +546,30 @@ void main()
         }
     }
 
-    if (interior > 0.0)
+    if (bounce.weight > 0.0)
     {
-        vec3 fill = frame.zoneFill.rgb * interior;
+        vec3 bounceLight = irradianceBounce(bounce, surface.normal) * bounce.weight;
+        ambient += surface.diffuseColor * (1.0 - specularColor) * bounceLight * occlusion;
+
+        if (frame.counts.y != 0u)
+        {
+            ambientSpecular += specularColor * irradianceBounce(bounce, reflectedView) * bounce.weight
+                * specularOcclusion;
+        }
+
+        if (frame.irradianceParams.x > 1.5)
+        {
+            direct = vec3(0.0);
+            specular = vec3(0.0);
+            emissive = vec3(0.0);
+            ambient = bounceLight;
+            ambientSpecular = vec3(0.0);
+        }
+    }
+
+    if (interior > 0.0 && frame.irradianceParams.x < 1.5)
+    {
+        vec3 fill = frame.zoneFill.rgb * interior * mix(1.0, frame.irradianceParams.w, bounce.weight);
         ambient += surface.diffuseColor * (1.0 - specularColor) * fill * occlusion;
 
         if (frame.counts.y != 0u)
@@ -576,10 +645,7 @@ void main()
 
     if (draw.flags.y > k_decalBlend - 0.5)
     {
-        outColor = vec4(color, baseColor.a);
-        outAmbient = vec4(ambient, baseColor.a);
-        outSurfaceNormal = vec4(0.0);
-        outSurfaceSpecular = vec4(ambientSpecular, baseColor.a);
+        decalOutputs(color, ambient, ambientSpecular, baseColor.a, viewNormal, roughness);
         return;
     }
 

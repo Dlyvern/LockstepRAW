@@ -172,7 +172,7 @@ namespace lockstep::render
     }
 
     void Renderer::submitSkinned(MeshHandle mesh, MaterialHandle material, const math::Transform& transform,
-        JointPalette palette, const math::Aabb& localBounds, RenderLayers layers)
+        JointPalette palette, const math::Aabb& localBounds, RenderLayers layers, CharacterSurfaceId surface)
     {
         if (m_state->meshes.isStale(mesh) || m_state->materials.isStale(material))
         {
@@ -206,6 +206,7 @@ namespace lockstep::render
             .cameraDistance = 0.0f,
             .layers = layers,
             .isReflector = false,
-            .jointBase = palette.first});
+            .jointBase = palette.first,
+            .characterSurface = surface});
     }
 } //namespace lockstep::render

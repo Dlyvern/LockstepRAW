@@ -163,7 +163,9 @@ namespace game
 
         const float worldSeconds = frameSeconds;
         lockstep::assets::submitScene(engine.renderer, state.level->scene);
-        presentWeather(state, engine, worldSeconds, frameSeconds);
+        presentWeather(state, engine, WeatherView{.eye = camera.position,
+            .forward = lockstep::math::normalize(camera.target - camera.position), .playerSeconds = 0.0f},
+            worldSeconds, frameSeconds);
         presentEffects(state, engine, camera.position, worldSeconds, frameSeconds);
         presentLevelLights(state.lightAnimation, engine, &state.level->scene, camera.position, worldSeconds);
 

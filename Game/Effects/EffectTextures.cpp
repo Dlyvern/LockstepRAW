@@ -149,6 +149,33 @@ namespace game
             return flameColour((1.0f - across) * (1.0f - u * 0.6f), alpha);
         }
 
+        Texel paperTexel(float u, float v)
+        {
+            const float dx = std::abs(u - 0.5f) * 2.0f;
+            const float dy = std::abs(v - 0.5f) * 2.0f;
+            const float torn = 0.72f + 0.2f * fractalNoise(u * 9.0f, v * 9.0f, 211u);
+            const float coverage = std::clamp((torn - std::max(dx * 0.95f, dy * 0.8f)) * 30.0f, 0.0f, 1.0f);
+            const float crease = 0.85f + 0.15f * std::abs(std::sin((u + v * 0.6f) * 9.0f));
+            const float print = std::fmod(v * 14.0f, 1.0f) < 0.18f && dx < 0.6f ? 0.8f : 1.0f;
+            const float light = std::clamp(crease * print * (0.85f + 0.15f * fractalNoise(u * 20.0f, v * 20.0f, 223u)),
+                0.3f, 1.0f);
+
+            return Texel{.red = 0.92f * light, .green = 0.9f * light, .blue = 0.84f * light, .alpha = coverage};
+        }
+
+        Texel leafTexel(float u, float v)
+        {
+            const float along = (u - 0.5f) * 2.0f;
+            const float across = (v - 0.5f) * 2.0f;
+            const float halfWidth = 0.55f * std::sqrt(std::max(1.0f - along * along, 0.0f)) * (1.0f - 0.3f * along);
+            const float edge = halfWidth * (0.85f + 0.15f * fractalNoise(u * 14.0f, v * 4.0f, 241u));
+            const float coverage = std::clamp((edge - std::abs(across)) * 25.0f, 0.0f, 1.0f);
+            const float rib = std::abs(across) < 0.04f ? 0.6f : 1.0f;
+            const float shade = rib * (0.75f + 0.25f * fractalNoise(u * 10.0f, v * 10.0f, 251u));
+
+            return Texel{.red = 0.42f * shade, .green = 0.28f * shade, .blue = 0.14f * shade, .alpha = coverage};
+        }
+
         Texel cellTexel(uint32_t frame, float u, float v)
         {
             if (frame >= k_flashFrame && frame < k_flashFrame + k_flashFrames)
@@ -179,6 +206,16 @@ namespace game
             if (frame >= k_chunkFrame && frame < k_chunkFrame + k_chunkFrames)
             {
                 return chunkTexel(u, v, frame - k_chunkFrame);
+            }
+
+            if (frame == k_paperFrame)
+            {
+                return paperTexel(u, v);
+            }
+
+            if (frame == k_leafFrame)
+            {
+                return leafTexel(u, v);
             }
 
             return Texel{};

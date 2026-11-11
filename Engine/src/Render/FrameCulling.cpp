@@ -93,9 +93,35 @@ namespace lockstep::render
             return radius >= k_minLocalCasterAngle * math::length((bounds.min + bounds.max) * 0.5f - light);
         }
 
-        bool castsIntoTile(const DrawItem& item, uint32_t tile, const PreparedLighting& prepared,
-            const ShadowSettings& settings)
+        bool coversEnoughTexels(const DrawItem& item, uint32_t tile, const PreparedLighting& prepared,
+            float minTexels)
         {
+            if (minTexels <= 0.0f || item.material->kind == MeshKind::Skinned)
+            {
+                return true;
+            }
+
+            const float diameter = math::length(item.worldBounds.max - item.worldBounds.min);
+            float texelSize = prepared.tiles[tile].texelSize;
+
+            if (tile >= k_sunShadowTiles)
+            {
+                const math::Vec4& sphere = prepared.casterSpheres[tile - k_sunShadowTiles];
+                const math::Vec3 centre = (item.worldBounds.min + item.worldBounds.max) * 0.5f;
+                texelSize *= std::max(math::length(centre - math::Vec3{sphere.x, sphere.y, sphere.z}), k_localShadowNear);
+            }
+
+            return diameter >= texelSize * minTexels;
+        }
+
+        bool castsIntoTile(const DrawItem& item, uint32_t tile, const PreparedLighting& prepared,
+            const ShadowSettings& settings, float minTexels)
+        {
+            if (!coversEnoughTexels(item, tile, prepared, minTexels))
+            {
+                return false;
+            }
+
             if (tile >= k_sunShadowTiles)
             {
                 return castsIntoLocalTile(item.worldBounds, prepared.casterSpheres[tile - k_sunShadowTiles]);
@@ -329,7 +355,9 @@ namespace lockstep::render
         for (uint32_t light = 0; light < lightCount; ++light)
         {
             const float* sphere = lighting.lights[light].positionRange;
-            lightSpheres[light] = math::Vec4{sphere[0], sphere[1], sphere[2], sphere[3]};
+            const float* tube = lighting.lights[light].tube;
+            const float halfLength = std::sqrt(tube[0] * tube[0] + tube[1] * tube[1] + tube[2] * tube[2]);
+            lightSpheres[light] = math::Vec4{sphere[0], sphere[1], sphere[2], sphere[3] + halfLength};
         }
 
         const std::span<const math::Vec4> lights(lightSpheres.data(), lightCount);
@@ -372,7 +400,7 @@ namespace lockstep::render
 
             for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
             {
-                if (!tileActive[tile] || !castsIntoTile(item, tile, prepared, state.settings.shadows)
+                if (!tileActive[tile] || !castsIntoTile(item, tile, prepared, state.settings.shadows, state.settings.shadowDetail.minCasterTexels)
                     || (cull && !intersects(tileFrusta[tile], item.worldBounds)))
                 {
                     continue;

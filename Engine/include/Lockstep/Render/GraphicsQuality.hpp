@@ -34,6 +34,9 @@ namespace lockstep::render
     // Most lights GraphicsQuality::volumetricFogLights can allow.
     inline constexpr uint32_t k_maxVolumetricFogLights{16};
 
+    // Most screen lights GraphicsQuality::screenLights can allow.
+    inline constexpr uint32_t k_maxScreenLights{8};
+
     // Range of a set frame rate limit or cap, in frames per second.
     inline constexpr uint32_t k_minFrameRateLimit{20};
     inline constexpr uint32_t k_maxFrameRateLimit{1000};
@@ -74,15 +77,42 @@ namespace lockstep::render
     // parallaxLocalShadows: parallax relief also shadows itself from point and spot lights (off:
     //                      from the sun only; each local light costs a height-map march).
     // surfaceDetail:       allow the micro-detail layer.
+    // skinScattering:      allow subsurface scattering on skin materials (ShadingModel::Skin).
+    // fabricSheen:         allow the sheen lobe on fabric materials (ShadingModel::Fabric).
+    // characterSurfaces:   allow blood, dirt and rain soak on characters (CharacterSurface).
+    // decalRelief:         allow decal relief (MaterialShading::decalRelief).
+    // tubeLights:          shade tube lights as lines (off: points at their centre).
+    // lightProfiles:       allow light emission profiles (LightProfile).
+    // softShadows:         allow contact-hardening soft shadows (SoftShadowSettings; their tap
+    //                      counts follow effectSteps).
+    // irradianceVolume:    allow baked bounce light (IrradianceVolumeSettings).
+    // shadowCasterTexels:  static casters smaller than this many shadow texels across are skipped
+    //                      (ShadowDetailSettings::minCasterTexels, the larger of the two wins), 0 to 16.
     // motionBlur:          allow motion blur.
     // depthOfField:        allow depth of field.
     // lensEffects:         allow chromatic aberration and lens dirt.
     // bloom:               allow bloom.
+    // lensFlares:          allow lens flares and sun glare (LensFlareSettings; need bloom).
+    // bokeh:               depth of field blurs into aperture shapes with bright highlights
+    //                      (DepthOfFieldSettings::apertureBlades, bokehHighlights; off: a plain disc).
     // planarReflections:   allow mirrors.
     // reflectionResolution: multiplier on PlanarReflectionSettings::resolutionScale.
     // scopeResolution:     most texels per side of the scope view, 256 to 1024.
     // particleBudget:      particles Game should allow alive at once (read by Game when it creates
     //                      its ParticleSystem).
+    // decalBudget:         bullet holes and similar impact decals Game should keep at once (read by
+    //                      Game every frame).
+    // screenLights:        most glowing screens (monitors, TVs, vending machines) Game should turn
+    //                      into lights per frame, 0 to k_maxScreenLights; they share the frame's
+    //                      k_maxLocalLights with every other point and spot light.
+    // waterRipples:        allow dripping water, splashes and ripple rings (read by Game).
+    // volumetricClouds:    raymarch the clouds (CloudSettings::volumetric; off: the flat cloud layer
+    //                      drawn with the sky); their steps follow effectSteps.
+    // lensRain:            allow rain drops on the lens (LensRainSettings).
+    // lightningShadows:    lightning flashes cast sun-like shadows (LightningSettings::castsShadows).
+    // foliageWind:         allow foliage swaying in the wind (WindSettings).
+    // windDebris:          allow litter and leaves blowing in the wind (read by Game).
+    // cloth:               allow simulated cloth such as curtains (read by Game; off: they hang still).
     // frameRateLimit:      most frames per second the run loop renders, 0 for no limit, else 20 to
     //                      1000 (on top of the present mode; see Renderer::frameRateLimit()).
     struct GraphicsQuality
@@ -105,14 +135,34 @@ namespace lockstep::render
         bool parallax{true};
         bool parallaxLocalShadows{false};
         bool surfaceDetail{true};
+        bool skinScattering{true};
+        bool fabricSheen{true};
+        bool characterSurfaces{true};
+        bool decalRelief{true};
+        bool tubeLights{true};
+        bool lightProfiles{true};
+        bool softShadows{true};
+        bool irradianceVolume{true};
+        float shadowCasterTexels{2.0f};
         bool motionBlur{true};
         bool depthOfField{true};
         bool lensEffects{true};
         bool bloom{true};
+        bool lensFlares{true};
+        bool bokeh{true};
         bool planarReflections{true};
         float reflectionResolution{1.0f};
         uint32_t scopeResolution{512};
         uint32_t particleBudget{20000};
+        uint32_t decalBudget{160};
+        uint32_t screenLights{4};
+        bool waterRipples{true};
+        bool volumetricClouds{true};
+        bool lensRain{true};
+        bool lightningShadows{true};
+        bool foliageWind{true};
+        bool windDebris{true};
+        bool cloth{true};
         uint32_t frameRateLimit{0};
     };
 

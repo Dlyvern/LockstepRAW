@@ -40,7 +40,7 @@ vec3 sunsetGlow(vec3 direction, vec3 toSun)
 // Radiance arriving from `direction` (unit, pointing away from the viewer), without the sun disk.
 vec3 skyRadiance(vec3 direction)
 {
-    vec3 toSun = -frame.sunDirection.xyz;
+    vec3 toSun = -frame.skySunDirection.xyz;
     float cosTheta = max(direction.y, 0.0);
     float cosGamma = clamp(dot(direction, toSun), -1.0, 1.0);
     float gamma = acos(cosGamma);

@@ -1,6 +1,8 @@
 #include "Lockstep/Render/Renderer.hpp"
 
+#include "Atmosphere.hpp"
 #include "FrameCulling.hpp"
+#include "MaterialShading.hpp"
 #include "FrameGraph.hpp"
 #include "PlanarReflections.hpp"
 #include "RenderScale.hpp"
@@ -9,6 +11,7 @@
 #include "ShaderLoader.hpp"
 #include "ShadowMaterials.hpp"
 #include "Skinning.hpp"
+#include "SurfaceEffectsPacking.hpp"
 #include "OverlayPass.hpp"
 #include "VelaConversions.hpp"
 #include "ViewModel.hpp"
@@ -419,6 +422,19 @@ namespace lockstep::render
         m_state->ambientZones.assign(zones.begin(), zones.end());
     }
 
+    Status Renderer::setIrradianceVolume(const IrradianceVolume* volume)
+    {
+        return render::setIrradianceVolume(*m_state, volume);
+    }
+
+    void Renderer::submitLensDroplets(std::span<const LensDroplet> droplets)
+    {
+        AtmosphereState& atmosphere = m_state->atmosphere;
+        const std::size_t count = std::min<std::size_t>(droplets.size(), k_maxLensDroplets);
+        atmosphere.lensDroplets.assign(droplets.begin(), droplets.begin() + static_cast<std::ptrdiff_t>(count));
+        atmosphere.lensDropletFrame = m_state->frameIndex;
+    }
+
     void Renderer::setGraphicsQuality(const GraphicsQuality& quality)
     {
         m_state->quality = clampedQuality(quality);
@@ -486,13 +502,17 @@ namespace lockstep::render
             LightingView{.camera = state.camera, .aspectRatio = state.aspectRatio,
                 .viewProjection = state.temporal.viewProjection, .zones = state.ambientZones,
                 .shadowAtlasWidth = state.shadowAtlasWidth});
+        packAtmosphere(state.prepared.lighting, state.settings, state.atmosphere, state.frameIndex);
+        packSurfaceEffects(state);
         holdFarCascades(state);
+        updateIrradianceVolume(state);
         writeCameraMotion(state);
         prepareViewModel(state);
         assignPreviousModels(state);
         prepareReflection(state);
         prepareScope(state);
         buildDrawLists(state, state.temporal.viewProjection, state.temporal.viewModelViewProjection);
+        resolveMaterialShading(state);
         prepareSight(state);
         state.graph->setView(state.view, state.projection);
 
@@ -525,6 +545,11 @@ namespace lockstep::render
 
         if (frame)
         {
+            frame = updateCloudScale(state);
+        }
+
+        if (frame)
+        {
             frame = updateScopeResolution(state);
         }
 
@@ -550,8 +575,10 @@ namespace lockstep::render
         endTemporalFrame(state);
         state.draws.clear();
         state.jointData.clear();
+        state.characterSurfaceCount = 0;
         state.drawLists.clear();
         state.lights.clear();
+        state.dripPuddles.clear();
         state.reflectors.clear();
         state.scopeView.reset();
         state.sight.reset();

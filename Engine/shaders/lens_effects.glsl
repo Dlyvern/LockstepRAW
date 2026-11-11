@@ -6,7 +6,8 @@
 // constants.depthOfField: x strength (0 off), y focus distance in metres (0 the screen centre),
 //                         z sharp band as a share of the focus distance, w blur growth.
 // constants.lens:         x largest blur radius in pixels, y disc taps, z red/blue separation at the
-//                         corners in pixels (0 off).
+//                         corners in pixels (0 off), w bokeh highlight weight (0 a plain average).
+// constants.bokeh:        x aperture blades (0 a round disc), y polygon rotation in radians.
 // constants.depthParams:  x, y the projection's [2][2] and [3][2]; z the depth value below which a
 //                         pixel is the viewmodel.
 
@@ -75,9 +76,36 @@ float circleOfConfusion(float depth, float focus)
     return blur * constants.lens.x * constants.depthOfField.x;
 }
 
-// Disc gather: a tap counts when its own blur reaches this pixel; taps behind the pixel are limited
-// to its blur so sharp foreground does not smear onto blurry background. Sharp pixels skip the
-// gather (blurry foreground does not spill onto them; cheaper).
+// Radius of the aperture polygon in the direction `angle`, relative to its circumscribed circle
+// (1 at the corners); 1 everywhere for a round aperture.
+float apertureEdge(float angle)
+{
+    float blades = constants.bokeh.x;
+
+    if (blades < 3.0)
+    {
+        return 1.0;
+    }
+
+    float sector = 6.2831853 / blades;
+    float within = mod(angle - constants.bokeh.y, sector) - sector * 0.5;
+
+    return cos(sector * 0.5) / cos(within);
+}
+
+// How much a tap counts in the bokeh average: bright taps outweigh dim ones, as an unclipped
+// highlight would, so blurred lights keep their brightness and the aperture's shape.
+float bokehWeight(vec3 color)
+{
+    float brightness = max(max(color.r, color.g), color.b);
+
+    return 1.0 + constants.lens.w * brightness * brightness * brightness * brightness;
+}
+
+// Disc gather over the aperture shape (a polygon or a disc, fixed on screen; the per-pixel jitter
+// only turns the sample spiral): a tap counts when its own blur reaches this pixel; taps behind the
+// pixel are limited to its blur so sharp foreground does not smear onto blurry background. Sharp
+// pixels skip the gather (blurry foreground does not spill onto them; cheaper).
 vec3 depthOfField(vec3 center, vec2 uv)
 {
     float focus = focusDistance();
@@ -91,8 +119,9 @@ vec3 depthOfField(vec3 center, vec2 uv)
 
     float radius = constants.lens.x * constants.depthOfField.x;
     float taps = min(constants.lens.y, k_maxDiscTaps);
-    vec3 sum = center;
-    float weight = 1.0;
+    float centerWeight = bokehWeight(center);
+    vec3 sum = center * centerWeight;
+    float weight = centerWeight;
     float rotation = interleavedGradientNoise(gl_FragCoord.xy) * 6.2831853;
 
     for (float index = 0.0; index < k_maxDiscTaps; index += 1.0)
@@ -104,7 +133,8 @@ vec3 depthOfField(vec3 center, vec2 uv)
 
         float distanceFromCenter = sqrt((index + 0.5) / taps) * radius;
         float angle = index * k_goldenAngle + rotation;
-        vec2 tapUv = uv + vec2(cos(angle), sin(angle)) * distanceFromCenter * constants.inverseSize;
+        vec2 offset = vec2(cos(angle), sin(angle)) * distanceFromCenter * apertureEdge(angle);
+        vec2 tapUv = uv + offset * constants.inverseSize;
         float tapDepth = textureLod(depthTexture, tapUv, 0.0).r;
         float tapBlur = circleOfConfusion(tapDepth, focus);
 
@@ -114,8 +144,10 @@ vec3 depthOfField(vec3 center, vec2 uv)
         }
 
         float reach = clamp(tapBlur - distanceFromCenter + 1.0, 0.0, 1.0);
-        sum += lensSource(tapUv) * reach;
-        weight += reach;
+        vec3 tap = lensSource(tapUv);
+        float tapWeight = reach * bokehWeight(tap);
+        sum += tap * tapWeight;
+        weight += tapWeight;
     }
 
     return sum / weight;

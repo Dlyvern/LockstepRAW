@@ -2,6 +2,7 @@
 #define LOCKSTEP_GAME_NPCS_NPC_PRESENTATION_HPP
 
 #include "Archetypes.hpp"
+#include "Characters/CharacterStains.hpp"
 #include "Characters/Locomotion.hpp"
 #include "Npcs/HitReactions.hpp"
 #include "Npcs/NpcMessages.hpp"
@@ -51,6 +52,7 @@ namespace game
     // severedLimbs: limbs cut off it (see Gore/SeveredLimbs.hpp); their parts are hidden and
     //               stump caps shown. A ragdoll drops the bodies of these limbs.
     // reaction:     procedural hit reaction on top of its animation while alive.
+    // stains:       blood, dirt and rain on its body.
     struct NpcLook
     {
         lockstep::world::EntityId entity{};
@@ -68,6 +70,7 @@ namespace game
         lockstep::anim::PartMask gearParts{lockstep::anim::k_allParts};
         lockstep::anim::LimbMask severedLimbs{0};
         HitReaction reaction{};
+        BodyStains stains{};
     };
 
     // The weapon found on one model NPCs are drawn with.

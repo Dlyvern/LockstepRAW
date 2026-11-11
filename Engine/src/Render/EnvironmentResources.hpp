@@ -22,6 +22,8 @@ namespace lockstep::render
     //              computed on the CPU at startup.
     // surfaceDetail: the micro-detail layers, indexed by SurfaceDetail minus one (k_surfaceDetailKinds
     //              of them; see SurfaceTextures.hpp), repeating, mipmapped, anisotropic.
+    // lightProfiles: the emission profile atlas (LightProfiles.hpp), repeating in u, clamped in v.
+    // blackFloat:  one RGBA16F texel of zero (irradiance volume bindings while none is set).
     // lensDirt:    the lens dirt bloom lights up (see SurfaceTextures.hpp), clamped, mipmapped.
     struct EnvironmentResources
     {
@@ -31,6 +33,8 @@ namespace lockstep::render
         vela::graphics::Texture brdfLut;
         std::vector<vela::graphics::Texture> surfaceDetail;
         vela::graphics::Texture lensDirt;
+        vela::graphics::Texture lightProfiles;
+        vela::graphics::Texture blackFloat;
 
         // Creates the textures (the procedural ones are generated on worker threads).
         // context: the GPU context.

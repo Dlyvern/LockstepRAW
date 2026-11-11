@@ -449,7 +449,7 @@ namespace game
         state.eye = input.eye;
         const math::Transform placed{.position = state.eye + state.camera * state.view.position,
             .rotation = state.camera * state.view.rotation};
-        state.instance.submit(renderer, skinned, placed, render::k_viewModelLayer);
+        state.instance.submit(renderer, skinned, placed, render::k_viewModelLayer, anim::k_allParts, state.surface);
     }
 
     float viewModelZoom(const ViewModelState& state)

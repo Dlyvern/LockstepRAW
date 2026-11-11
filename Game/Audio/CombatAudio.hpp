@@ -5,6 +5,7 @@
 #include "Player/PlayerStatus.hpp"
 #include "Weapons/Penetration.hpp"
 #include "Weapons/ShotAim.hpp"
+#include "Weather/Lightning.hpp"
 
 #include <Lockstep/Audio/AudioTypes.hpp>
 #include <Lockstep/Core/Math.hpp>
@@ -88,8 +89,8 @@ namespace game
     // rainVolume:      the rain loop outdoors in full rain.
     // rainIndoorVolume: the muffled rain loop indoors in full rain.
     // rainHeardIndoors: how much of the outdoor rain loop still comes through indoors.
-    // thunderVolume:   distant thunder.
-    // thunderMinSeconds, thunderMaxSeconds: pause between thunder rolls (World time).
+    // thunderVolume:   thunder of a near strike (farther ones are quieter; the weather's lightning
+    //                  decides when it rolls).
     struct CombatAudioTuning
     {
         float shotVolume{0.9f};
@@ -111,8 +112,6 @@ namespace game
         float rainIndoorVolume{0.45f};
         float rainHeardIndoors{0.12f};
         float thunderVolume{0.7f};
-        float thunderMinSeconds{20.0f};
-        float thunderMaxSeconds{60.0f};
     };
 
     // An axis-aligned interior box (a level's Zone_Interior_* node), for the ambience.
@@ -122,13 +121,17 @@ namespace game
         math::Vec3 max{0.0f, 0.0f, 0.0f};
     };
 
-    // A bullet impact combat audio found this frame (the local player's shots), for visual effects.
-    // A round that goes through something gives an impact on both faces.
+    // A bullet impact found this frame, for visual effects: combat audio adds the local player's
+    // shots (traced as the host traces them); the weapon details add the partner's and NPCs' shots
+    // (one ray along the drawn muzzle, isRemote). A round that goes through something gives an
+    // impact on both faces.
     // point, normal: where the ray hit and the surface normal there (for an exit face, the
     //               direction the round left in).
     // body:          the static or dynamic body hit (null for a character controller).
     // isFlesh:       it hit a character.
     // isExit:        the far face of something the round went through.
+    // isRemote:      fired by the partner or an NPC.
+    // weapon:        the weapon that fired it (NPC rifles count as the M4).
     struct CombatImpact
     {
         math::Vec3 point{0.0f, 0.0f, 0.0f};
@@ -136,6 +139,8 @@ namespace game
         lockstep::physics::BodyId body{};
         bool isFlesh{false};
         bool isExit{false};
+        bool isRemote{false};
+        WeaponKind weapon{WeaponKind::M4};
     };
 
     // A gunshot combat audio heard this frame, for visual effects.
@@ -175,7 +180,8 @@ namespace game
     // npcs:           the armed NPCs.
     // listener:       the listener position (camera).
     // rain:           how hard it rains, 0 (no rain sounds) to 1.
-    // worldSeconds:   World time since the previous frame (thunder timing).
+    // thunder:        thunder arriving this frame (the weather's lightning strikes).
+    // worldSeconds:   World time since the previous frame.
     // seconds:        Player time since the previous frame.
     struct CombatAudioFrame
     {
@@ -195,6 +201,7 @@ namespace game
         std::span<const NpcShotSource> npcs{};
         math::Vec3 listener{0.0f, 0.0f, 0.0f};
         float rain{0.0f};
+        std::span<const ThunderCue> thunder{};
         float worldSeconds{0.0f};
         float seconds{0.0f};
     };
@@ -210,10 +217,10 @@ namespace game
     // indoorWeight:  0 outdoors to 1 indoors, eased.
     // interiors:     the level's interior boxes; `scene` is the scene they came from.
     // sirenSeconds:  time to the next distant siren.
-    // thunderSeconds: World time to the next thunder roll while it rains.
     // random:        presentation-only random state.
     // hasLast:       the counters above are valid (false after loading).
-    // impacts, shots: what updateCombatAudio() found this frame (replaced every call).
+    // impacts, shots: what updateCombatAudio() found this frame (replaced every call; the weapon
+    //                details then add the remote shots' impacts, see CombatImpact).
     struct CombatAudio
     {
         CombatSoundBank bank{};
@@ -232,7 +239,6 @@ namespace game
         std::vector<InteriorBox> interiors{};
         const lockstep::assets::Scene* scene{nullptr};
         float sirenSeconds{30.0f};
-        float thunderSeconds{12.0f};
         uint32_t random{0x2545F491u};
         bool hasLast{false};
         std::vector<CombatImpact> impacts{};

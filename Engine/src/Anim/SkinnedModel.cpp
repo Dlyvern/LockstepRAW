@@ -92,7 +92,7 @@ namespace lockstep::anim
     }
 
     void SkinnedInstance::submit(render::Renderer& renderer, const SkinnedModel& model, const math::Transform& transform,
-        render::RenderLayers layers, PartMask parts) const
+        render::RenderLayers layers, PartMask parts, render::CharacterSurfaceId surface) const
     {
         if (m_skin.empty() || m_skin.size() != model.skeleton.joints.size())
         {
@@ -110,9 +110,34 @@ namespace lockstep::anim
             if (isDrawn)
             {
                 renderer.submitSkinned(model.parts[index].mesh, model.parts[index].material, transform, palette,
-                    m_bounds, layers);
+                    m_bounds, layers, surface);
             }
         }
+    }
+
+    math::Vec3 SkinnedInstance::bindPosition(const math::Vec3& modelPoint) const
+    {
+        if (m_joints.empty() || m_skin.size() != m_joints.size())
+        {
+            return modelPoint;
+        }
+
+        std::size_t nearest = 0;
+        float nearestDistance = std::numeric_limits<float>::max();
+
+        for (std::size_t joint = 0; joint < m_joints.size(); ++joint)
+        {
+            const math::Vec3 position{m_joints[joint][3][0], m_joints[joint][3][1], m_joints[joint][3][2]};
+            const float distance = math::lengthSquared(position - modelPoint);
+
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearest = joint;
+            }
+        }
+
+        return math::transformPoint(math::inverse(m_skin[nearest]), modelPoint);
     }
 
     const Pose& SkinnedInstance::pose() const noexcept

@@ -1,5 +1,8 @@
 #include "EnvironmentResources.hpp"
 
+#include "Lockstep/Render/Lighting.hpp"
+
+#include "LightProfiles.hpp"
 #include "SurfaceTextures.hpp"
 #include "VelaConversions.hpp"
 
@@ -262,12 +265,39 @@ namespace lockstep::render
             return lensDirt.error();
         }
 
+        const std::vector<uint8_t> profileTexels = lightProfileTexels();
+        vela::graphics::ImageData profileImage{};
+        profileImage.pixels = std::as_bytes(std::span(profileTexels));
+        profileImage.width = k_lightProfileWidth;
+        profileImage.height = k_lightProfileHeight * k_lightProfileCount;
+        profileImage.format = vela::graphics::TextureFormat::R8Unorm;
+        vela::graphics::SamplerDescription profileSampler = clampedSampler();
+        profileSampler.addressU = vela::graphics::AddressMode::Repeat;
+        profileSampler.mipMode = vela::graphics::MipMode::Nearest;
+        auto lightProfiles = vela::graphics::Texture::create(context, profileImage, profileSampler);
+
+        if (!lightProfiles)
+        {
+            return toError(lightProfiles.error());
+        }
+
+        const std::array<uint16_t, 4> black{};
+        auto blackFloat = createTexture(context, std::as_bytes(std::span(black)), 1,
+            vela::graphics::TextureFormat::RGBA16Float);
+
+        if (!blackFloat)
+        {
+            return blackFloat.error();
+        }
+
         return EnvironmentResources{
             .whiteSrgb = std::move(whiteSrgb).value(),
             .whiteLinear = std::move(whiteLinear).value(),
             .flatNormal = std::move(flatNormal).value(),
             .brdfLut = std::move(brdfLut).value(),
             .surfaceDetail = std::move(surfaceDetail).value(),
-            .lensDirt = std::move(lensDirt).value()};
+            .lensDirt = std::move(lensDirt).value(),
+            .lightProfiles = std::move(lightProfiles).value(),
+            .blackFloat = std::move(blackFloat).value()};
     }
 } //namespace lockstep::render

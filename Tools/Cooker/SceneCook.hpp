@@ -3,11 +3,13 @@
 
 #include <Lockstep/Core/Result.hpp>
 
+#include "IrradianceBake.hpp"
 #include "SurfaceRules.hpp"
 #include "TextureCaps.hpp"
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace lockstep::cooker
@@ -30,6 +32,8 @@ namespace lockstep::cooker
     // singleSided: opaque materials are cooked single-sided whatever glTF says (--single-sided);
     //          masked and blended ones keep it. For closed models such as characters, whose
     //          Blender export marks every material double-sided: back faces then cost no shading.
+    // irradiance: bake an irradiance probe volume into "<name>/irradiance" (--gi, see
+    //          bakeIrradiance()); nothing means no bake and no file.
     struct CookOptions
     {
         std::filesystem::path source;
@@ -42,6 +46,7 @@ namespace lockstep::cooker
         std::filesystem::path wound;
         SurfaceRuleOptions surfaces{};
         bool singleSided{false};
+        std::optional<IrradianceBakeOptions> irradiance{};
     };
 
     // Cooks a glTF scene into engine-ready files: meshes in PbrVertex layout, textures in their

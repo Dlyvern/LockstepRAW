@@ -1,6 +1,7 @@
 #ifndef LOCKSTEP_GAME_CHARACTERS_NPC_PLACEHOLDERS_HPP
 #define LOCKSTEP_GAME_CHARACTERS_NPC_PLACEHOLDERS_HPP
 
+#include "Characters/CharacterStains.hpp"
 #include "Characters/GearLooks.hpp"
 #include "Characters/PawnCharacters.hpp"
 #include "Dialogue/Dialogue.hpp"
@@ -53,6 +54,7 @@ namespace game
     // isStarted:   the clip was started (at `phase`).
     // cooldown:    Player seconds until they may speak again.
     // isNear:      the local player stood within reach on the last tick.
+    // stains:      rain soak and grime on its body (blood only with the stain drill).
     struct NpcPlaceholder
     {
         std::string name;
@@ -66,6 +68,7 @@ namespace game
         bool isStarted{false};
         float cooldown{0.0f};
         bool isNear{false};
+        BodyStains stains{};
     };
 
     // A level's NPC placeholders and the random state that picks their lines.

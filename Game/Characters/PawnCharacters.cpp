@@ -367,7 +367,7 @@ namespace game
         const anim::PartMask hidden = kriss ? kriss->parts : 0;
         pawn.instance.submit(renderer, model, placement, layers,
             gearMask(armed != nullptr ? armed->body.gearMasks : characters->unarmed.gearMasks, playerGearLook(owner))
-                & ~hidden);
+                & ~hidden, pawn.stains.surface);
 
         if (gun != nullptr && kriss && kriss->hand < pawn.instance.jointMatrices().size())
         {
@@ -390,7 +390,7 @@ namespace game
             pawn.instance.submit(renderer, model,
                 firstPersonBodyPlacement(placement, characters->firstPersonBody, *firstPerson,
                     hipPosition(pawn, placement), kickExtension),
-                k_firstPersonBodyLayer, parts);
+                k_firstPersonBodyLayer, parts, pawn.stains.surface);
         }
     }
 

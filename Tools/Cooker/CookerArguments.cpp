@@ -34,6 +34,10 @@ namespace lockstep::cooker
         constexpr std::string_view k_limbs{"--limbs"};
         constexpr std::string_view k_noSurfaceDetail{"--no-surface-detail"};
         constexpr std::string_view k_singleSided{"--single-sided"};
+        constexpr std::string_view k_gi{"--gi"};
+        constexpr uint32_t k_minGiRays{16};
+        constexpr uint32_t k_maxGiRays{4096};
+        constexpr uint32_t k_maxGiBounces{8};
 
         struct ParsedFlags
         {
@@ -56,7 +60,7 @@ namespace lockstep::cooker
                 }
 
                 if (argument == k_noAutoCap || argument == k_limbs || argument == k_noSurfaceDetail
-                    || argument == k_singleSided)
+                    || argument == k_singleSided || argument == k_gi)
                 {
                     parsed.flags.emplace_back(argument, std::string_view{});
                     continue;
@@ -117,6 +121,81 @@ namespace lockstep::cooker
             return CookerCommand{options};
         }
 
+        Result<math::Vec2> parseSun(std::string_view value)
+        {
+            const std::size_t comma = value.find(',');
+
+            if (comma == std::string_view::npos)
+            {
+                return invalid("--gi-sun needs <azimuth>,<elevation> in degrees");
+            }
+
+            auto azimuth = parseNumber<float>("--gi-sun", value.substr(0, comma));
+            auto elevation = parseNumber<float>("--gi-sun", value.substr(comma + 1));
+
+            if (!azimuth || !elevation || !std::isfinite(azimuth.value()) || !(elevation.value() > -90.0f)
+                || !(elevation.value() < 90.0f))
+            {
+                return invalid("--gi-sun needs <azimuth>,<elevation> in degrees, elevation within -90 to 90");
+            }
+
+            return math::Vec2{azimuth.value(), elevation.value()};
+        }
+
+        Result<bool> parseGiFlag(std::string_view flag, std::string_view value, IrradianceBakeOptions& options)
+        {
+            if (flag == "--gi-spacing")
+            {
+                auto spacing = parseNumber<float>(flag, value);
+
+                if (!spacing || !(spacing.value() >= 0.1f) || !std::isfinite(spacing.value()))
+                {
+                    return invalid("--gi-spacing must be at least 0.1");
+                }
+
+                options.spacing = spacing.value();
+            }
+            else if (flag == "--gi-sun")
+            {
+                auto sun = parseSun(value);
+
+                if (!sun)
+                {
+                    return sun.error();
+                }
+
+                options.sun = sun.value();
+            }
+            else if (flag == "--gi-rays")
+            {
+                auto rays = parseNumber<uint32_t>(flag, value);
+
+                if (!rays || rays.value() < k_minGiRays || rays.value() > k_maxGiRays)
+                {
+                    return invalid("--gi-rays must be 16 to 4096");
+                }
+
+                options.rays = rays.value();
+            }
+            else if (flag == "--gi-bounces")
+            {
+                auto bounces = parseNumber<uint32_t>(flag, value);
+
+                if (!bounces || bounces.value() < 1 || bounces.value() > k_maxGiBounces)
+                {
+                    return invalid("--gi-bounces must be 1 to 8");
+                }
+
+                options.bounces = bounces.value();
+            }
+            else
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         Result<CookerCommand> parseCook(const ParsedFlags& parsed)
         {
             if (parsed.positional.size() != 1)
@@ -126,6 +205,9 @@ namespace lockstep::cooker
 
             CookOptions options{};
             options.source = parsed.positional[0];
+            IrradianceBakeOptions irradiance{};
+            bool bakesIrradiance = false;
+            bool hasGiSettings = false;
 
             for (const auto& [flag, value] : parsed.flags)
             {
@@ -205,6 +287,18 @@ namespace lockstep::cooker
                 {
                     options.singleSided = true;
                 }
+                else if (flag == k_gi)
+                {
+                    bakesIrradiance = true;
+                }
+                else if (auto isGiFlag = parseGiFlag(flag, value, irradiance); !isGiFlag)
+                {
+                    return isGiFlag.error();
+                }
+                else if (isGiFlag.value())
+                {
+                    hasGiSettings = true;
+                }
                 else
                 {
                     return invalid("unknown option " + std::string(flag));
@@ -214,6 +308,16 @@ namespace lockstep::cooker
             if (options.out.empty() || options.name.empty())
             {
                 return invalid("cook needs --out and --name");
+            }
+
+            if (hasGiSettings && !bakesIrradiance)
+            {
+                return invalid("--gi-* options need --gi");
+            }
+
+            if (bakesIrradiance)
+            {
+                options.irradiance = irradiance;
             }
 
             return CookerCommand{options};

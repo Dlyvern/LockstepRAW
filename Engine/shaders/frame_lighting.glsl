@@ -4,6 +4,7 @@
 const uint k_maxLocalLights = 16u;
 const uint k_maxShadowTiles = 20u;
 const uint k_maxAmbientZones = 16u;
+const uint k_maxDripPuddles = 8u;
 const uint k_lightCellsX = 32u;
 const uint k_lightCellsY = 18u;
 const float k_spotLight = 1.0;
@@ -14,6 +15,8 @@ struct LocalLight
     vec4 color;
     vec4 directionCosOuter;
     vec4 cosInnerKind;
+    vec4 tube;
+    vec4 profile;
 };
 
 struct AmbientZone
@@ -75,6 +78,8 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     vec4 sightDirection;
     vec4 sightReticle;
     vec4 sightShape;
+    vec4 surfaceEffects;
+    vec4 dripPuddles[k_maxDripPuddles * 2];
     uvec4 counts;
     LocalLight lights[k_maxLocalLights];
     vec4 zoneParams;
@@ -83,4 +88,22 @@ layout(set = 1, binding = FRAME_LIGHTING_BINDING, std430) readonly buffer FrameL
     AmbientZone zones[k_maxAmbientZones];
     vec4 lightCellScale;
     uint lightCells[k_lightCellsX * k_lightCellsY];
+    vec4 irradianceParams;
+    vec4 irradianceOrigin;
+    vec4 irradianceScale;
+    vec4 irradianceCounts;
+    vec4 shadowSoftness;
+    vec4 localShadowSoftness;
+    vec4 shadowTileDepth[k_maxShadowTiles];
+    vec4 skySunDirection;
+    vec4 skySunRadiance;
+    vec4 wind;
+    vec4 windPrevious;
+    vec4 cloudParams;
+    vec4 cloudShape;
+    vec4 cloudLight;
+    vec4 cloudMarch;
+    vec4 lightningFlash;
+    vec4 lightningDirection;
+    vec4 lightningBolt;
 } frame;

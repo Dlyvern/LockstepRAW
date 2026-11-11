@@ -169,11 +169,47 @@ namespace game
             settings.screenSpaceReflections.maxRoughness = 0.6f;
             settings.screenSpaceReflections.maxDistance = 35.0f;
         }
+
+        render::CloudSettings cloudLook(LookPreset preset)
+        {
+            render::CloudSettings clouds{};
+
+            switch (preset)
+            {
+                case LookPreset::Day:
+                {
+                    clouds.coverage = 0.35f;
+                    break;
+                }
+                case LookPreset::Evening:
+                {
+                    clouds.coverage = 0.45f;
+                    clouds.ambient = {0.8f, 0.8f, 0.9f};
+                    break;
+                }
+                case LookPreset::Sunset:
+                {
+                    clouds.coverage = 0.45f;
+                    clouds.silverLining = 0.75f;
+                    clouds.ambient = {0.85f, 0.8f, 0.85f};
+                    break;
+                }
+                case LookPreset::Night:
+                {
+                    clouds.coverage = 0.55f;
+                    clouds.ambient = {1.6f, 1.4f, 1.3f};
+                    break;
+                }
+            }
+
+            return clouds;
+        }
     } //namespace
 
     void applyLookPreset(render::RenderSettings& settings, LookPreset preset)
     {
         applyGrade(settings);
+        settings.clouds = cloudLook(preset);
 
         switch (preset)
         {

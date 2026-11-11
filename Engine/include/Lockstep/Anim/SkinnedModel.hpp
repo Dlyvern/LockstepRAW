@@ -8,6 +8,7 @@
 #include "Lockstep/Anim/Skeleton.hpp"
 #include "Lockstep/Core/Bounds.hpp"
 #include "Lockstep/Core/Transform.hpp"
+#include "Lockstep/Render/CharacterSurface.hpp"
 #include "Lockstep/Render/Resources.hpp"
 #include "Lockstep/Render/Views.hpp"
 
@@ -118,8 +119,17 @@ namespace lockstep::anim
         // transform: world placement of the model.
         // layers:    render layers the draws are on.
         // parts:     which parts to draw (e.g. without a helmet); all by default.
+        // surface:   the character surface (blood, dirt, rain) drawn over every part; see
+        //            Renderer::submitCharacterSurface().
         void submit(render::Renderer& renderer, const SkinnedModel& model, const math::Transform& transform,
-            render::RenderLayers layers = render::k_defaultRenderLayer, PartMask parts = k_allParts) const;
+            render::RenderLayers layers = render::k_defaultRenderLayer, PartMask parts = k_allParts,
+            render::CharacterSurfaceId surface = render::k_noCharacterSurface) const;
+
+        // Maps a point on or near the posed body back into the bind pose, through the joint
+        // nearest to it, e.g. to place a render::SurfaceStain where a bullet hit.
+        // modelPoint: the point in model space (world point times the inverse of the placement).
+        // Returns:    the point in the bind pose, or `modelPoint` before the first update().
+        [[nodiscard]] math::Vec3 bindPosition(const math::Vec3& modelPoint) const;
 
         // Returns: the current pose (local joint transforms).
         [[nodiscard]] const Pose& pose() const noexcept;

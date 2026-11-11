@@ -5,7 +5,10 @@
 #include "Lockstep/Core/Transform.hpp"
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Render/Camera.hpp"
+#include "Lockstep/Render/CharacterSurface.hpp"
 #include "Lockstep/Render/GraphicsQuality.hpp"
+#include "Lockstep/Render/IrradianceVolume.hpp"
+#include "Lockstep/Render/LensRain.hpp"
 #include "Lockstep/Render/Lighting.hpp"
 #include "Lockstep/Render/PbrMaterial.hpp"
 #include "Lockstep/Render/PresentMode.hpp"
@@ -148,6 +151,20 @@ namespace lockstep::render
         [[nodiscard]] Result<MaterialHandle> createMaterial(const PbrMaterialDescription& description,
             MeshKind kind = MeshKind::Static);
 
+        // Changes the shading model of a lit material (see MaterialShading), e.g. skin for a face or
+        // fabric for curtains, picked by Game after a level or model was loaded. Every draw with the
+        // material changes from the next render().
+        // material: a lit material. Invalid, stale or unlit handles are ignored.
+        // shading:  the shading model and its parameters.
+        // Returns:  true if the material was changed.
+        bool setMaterialShading(MaterialHandle material, const MaterialShading& shading);
+
+        // Queues a character surface (blood, dirt, rain soak) for the next render(), for that
+        // character's submitSkinned() draws to pass. At most k_maxCharacterSurfaces per frame.
+        // surface: the layers; stainCount is capped at k_maxSurfaceStains.
+        // Returns: its id for this frame, or k_noCharacterSurface when the budget is used up.
+        [[nodiscard]] CharacterSurfaceId submitCharacterSurface(const CharacterSurface& surface);
+
         // Destroys a mesh (static or skinned). The handle, and every copy of it, is stale at once;
         // the GPU memory is released once every frame in flight that could draw it has finished
         // (draws submitted earlier this frame still render). Submitting a stale handle is a bug:
@@ -253,8 +270,11 @@ namespace lockstep::render
         // palette:     this frame's joint palette from submitJointPalette().
         // localBounds: model-space bounds of the posed mesh, for culling.
         // layers:      the render layers it is on.
+        // surface:     the character surface drawn over it (submitCharacterSurface() this frame), or
+        //              k_noCharacterSurface.
         void submitSkinned(MeshHandle mesh, MaterialHandle material, const math::Transform& transform,
-            JointPalette palette, const math::Aabb& localBounds, RenderLayers layers = k_defaultRenderLayer);
+            JointPalette palette, const math::Aabb& localBounds, RenderLayers layers = k_defaultRenderLayer,
+            CharacterSurfaceId surface = k_noCharacterSurface);
 
         // Queues a planar reflector (a mirror) for the next render(). Up to k_maxPlanarReflectors
         // are kept per frame; the nearest visible one within RenderSettings::reflections.maxDistance
@@ -288,11 +308,29 @@ namespace lockstep::render
         // light: the light.
         void submitLight(const SpotLight& light);
 
+        // Queues a drip puddle for the next render() (see DripPuddle). Each frame shades the
+        // k_maxDripPuddles nearest the camera (SurfaceEffectSettings::dripPuddles).
+        // puddle: the puddle.
+        void submitDripPuddle(const DripPuddle& puddle);
+
         // Replaces the interior ambient zones (see AmbientZone and InteriorAmbientSettings). They stay
         // until replaced; pass an empty span when a level is unloaded. Any number may be set; each
         // frame shades with the k_maxFrameAmbientZones nearest the camera.
         // zones: the zones, copied.
         void setAmbientZones(std::span<const AmbientZone> zones);
+
+        // Replaces the baked irradiance volume lit surfaces inside it sample for bounce light (see
+        // IrradianceVolume, IrradianceVolumeSettings). It stays until replaced; pass null when its
+        // level is unloaded.
+        // volume:  the volume, copied; null for none.
+        // Returns: success, or InvalidArgument for a malformed volume (the previous one is then
+        //          removed), or an upload error.
+        [[nodiscard]] Status setIrradianceVolume(const IrradianceVolume* volume);
+
+        // Queues the rain drops on the lens for the next render() only (see LensRain and
+        // LensRainSettings), replacing earlier ones this frame.
+        // droplets: the drops, copied (at most k_maxLensDroplets are drawn).
+        void submitLensDroplets(std::span<const LensDroplet> droplets);
 
         // Queues screen text for the next render() only, like submit(). Text is drawn after
         // tonemapping and anti-aliasing, before the dev tools overlay, in submission order, all in

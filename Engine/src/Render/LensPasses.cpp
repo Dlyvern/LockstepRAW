@@ -21,6 +21,9 @@ namespace lockstep::render
         constexpr float k_referenceHeight{1080.0f};
         constexpr float k_maxBlurTaps{16.0f};
         constexpr float k_maxDiscTaps{48.0f};
+        constexpr uint32_t k_minApertureBlades{3};
+        constexpr uint32_t k_maxApertureBlades{8};
+        constexpr float k_maxBokehHighlights{8.0f};
 
         enum class OutputFilter : uint32_t
         {
@@ -37,7 +40,7 @@ namespace lockstep::render
             float dither;
             uint32_t frameIndex;
             float sharpness;
-            float padding[2];
+            float bokeh[2];
             float grain[4];
             float motionBlur[4];
             float depthOfField[4];
@@ -101,7 +104,8 @@ namespace lockstep::render
                 .dither = settings.tonemap.dither ? k_ditherAmplitude : 0.0f,
                 .frameIndex = state.frameIndex,
                 .sharpness = antiAliasing.sharpness,
-                .padding = {0.0f, 0.0f},
+                .bokeh = {static_cast<float>(focus.apertureBlades >= k_minApertureBlades
+                    ? std::min(focus.apertureBlades, k_maxApertureBlades) : 0u), focus.apertureRotation},
                 .grain = {grain.enabled ? std::max(grain.intensity, 0.0f) : 0.0f, std::clamp(grain.response, 0.0f, 1.0f),
                     std::clamp(grain.size, 1.0f, 3.0f), 0.0f},
                 .motionBlur = {blur.enabled ? std::clamp(blur.intensity, 0.0f, 1.0f) : 0.0f,
@@ -112,7 +116,8 @@ namespace lockstep::render
                     std::max(focus.blurScale, 0.0f)},
                 .lens = {std::max(focus.maxRadius, 0.0f) * pixelScale,
                     std::clamp(static_cast<float>(focus.samples), 8.0f, k_maxDiscTaps),
-                    aberration.enabled ? std::max(aberration.intensity, 0.0f) * pixelScale : 0.0f, 0.0f},
+                    aberration.enabled ? std::max(aberration.intensity, 0.0f) * pixelScale : 0.0f,
+                    std::clamp(focus.bokehHighlights, 0.0f, k_maxBokehHighlights)},
                 .depthParams = {state.unjitteredProjection[2][2], state.unjitteredProjection[3][2],
                     k_viewModelDepthScale, 0.0f}};
         }

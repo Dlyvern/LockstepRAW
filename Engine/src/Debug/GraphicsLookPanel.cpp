@@ -100,6 +100,22 @@ namespace lockstep::debug
             ImGui::Checkbox("Show wetness (blue) and puddles (cyan)", &wetness.debugView);
         }
 
+        void drawMaterialShading(render::MaterialShadingSettings& materials)
+        {
+            if (!header("Skin, fabric, character stains, decal relief"))
+            {
+                return;
+            }
+
+            ImGui::Checkbox("Skin scattering", &materials.skin);
+            ImGui::SliderFloat("Skin scatter", &materials.skinScatter, 0.0f, 2.0f, "%.2f");
+            ImGui::Checkbox("Fabric sheen", &materials.fabricSheen);
+            ImGui::SliderFloat("Sheen intensity", &materials.sheenIntensity, 0.0f, 2.0f, "%.2f");
+            ImGui::Checkbox("Character blood, dirt and rain", &materials.characterSurfaces);
+            ImGui::Checkbox("Decal relief", &materials.decalRelief);
+            ImGui::SliderFloat("Decal relief scale", &materials.decalReliefScale, 0.0f, 3.0f, "%.2f");
+        }
+
         void drawAutoExposure(render::AutoExposureSettings& exposure)
         {
             if (!header("Auto exposure"))
@@ -162,6 +178,7 @@ namespace lockstep::debug
         drawInteriorAmbient(settings.interiorAmbient, zoneCount);
         drawVolumetricFog(settings.volumetricFog);
         drawWetness(settings.wetness);
+        drawMaterialShading(settings.materials);
         drawAutoExposure(settings.autoExposure);
         drawColorGrading(settings.colorGrading);
         drawFilmEffects(settings.vignette, settings.filmGrain);

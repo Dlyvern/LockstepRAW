@@ -84,6 +84,12 @@ namespace lockstep::render
     // maxRadius:      largest blur radius in pixels (at 1080p; scales with the window height).
     // samples:        taps of the disc kernel, 8 to 48.
     // preview:        apply at full strength whatever `strength` is (dev tools, for tuning).
+    // apertureBlades: bokeh shape: 0 a round disc, 5 to 8 a polygon with that many blades
+    //                 (6 gives hexagonal highlights).
+    // apertureRotation: turn of the polygon, radians.
+    // bokehHighlights: how much bright pixels outweigh dim ones in the blur, 0 (plain average) to
+    //                 8, so out-of-focus lights spread into crisp bright shapes instead of greying
+    //                 out.
     struct DepthOfFieldSettings
     {
         bool enabled{false};
@@ -94,6 +100,9 @@ namespace lockstep::render
         float maxRadius{8.0f};
         uint32_t samples{16};
         bool preview{false};
+        uint32_t apertureBlades{6};
+        float apertureRotation{0.2f};
+        float bokehHighlights{3.0f};
     };
 } //namespace lockstep::render
 

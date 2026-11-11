@@ -9,6 +9,7 @@ add_library(LockstepEngine STATIC
     src/App/Run.cpp
     src/Assets/BlockCompression.cpp
     src/Assets/CookedFormat.cpp
+    src/Assets/CookedIrradiance.cpp
     src/Assets/CookedLevelFile.cpp
     src/Assets/CookedModelFile.cpp
     src/Assets/CookedSceneLoad.cpp
@@ -62,13 +63,21 @@ add_library(LockstepEngine STATIC
     src/Platform/Input.cpp
     src/Platform/VelaInput.cpp
     src/Platform/Window.cpp
+    src/Render/Atmosphere.cpp
+    src/Render/CloudNoise.cpp
     src/Render/EnvironmentResources.cpp
+    src/Render/IrradianceVolume.cpp
+    src/Render/LightProfiles.cpp
     src/Render/FontAtlas.cpp
     src/Render/FrameCapture.cpp
     src/Render/ExposurePasses.cpp
     src/Render/FrameCulling.cpp
     src/Render/FrameLighting.cpp
+    src/Render/LensFlare.cpp
+    src/Render/SurfaceEffectsPacking.cpp
     src/Render/LensPasses.cpp
+    src/Render/LensRain.cpp
+    src/Render/LensRainPass.cpp
     src/Render/FrameGraph.cpp
     src/Render/FramePasses.cpp
     src/Render/GraphicsConfig.cpp
@@ -76,6 +85,7 @@ add_library(LockstepEngine STATIC
     src/Render/IndirectLighting.cpp
     src/Render/ParticlePass.cpp
     src/Render/ParticleSystem.cpp
+    src/Render/MaterialShading.cpp
     src/Render/PbrResources.cpp
     src/Render/PlanarReflections.cpp
     src/Render/PngWriter.cpp
@@ -128,6 +138,7 @@ target_compile_features(LockstepEngine PUBLIC cxx_std_20)
 # own ImGui panels in `#if LOCKSTEP_DEV_TOOLS`, and imgui is public so those panels can include it.
 if(LOCKSTEP_DEV_TOOLS)
     target_sources(LockstepEngine PRIVATE
+        src/Debug/AtmospherePanel.cpp
         src/Debug/DevTools.cpp
         src/Debug/EnginePanel.cpp
         src/Debug/FrameTimeHistory.cpp
@@ -138,6 +149,7 @@ if(LOCKSTEP_DEV_TOOLS)
         src/Debug/ImGuiInput.cpp
         src/Debug/ImGuiOverlayPass.cpp
         src/Debug/IndirectLightingPanel.cpp
+        src/Debug/LightingFeaturesPanel.cpp
         src/Debug/NetPanel.cpp
         src/Debug/QualityPanel.cpp
     )
@@ -217,12 +229,18 @@ set(ENGINE_SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_fog.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_fog_temporal.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_fog_composite.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/clouds.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/clouds_composite.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lens_rain.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lens_rain.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gtao.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/occlusion_blur.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_trace.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_resolve.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_source.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/indirect_composite.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lens_flare.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_up_flare.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_prefilter.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_down.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_up.frag

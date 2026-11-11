@@ -21,7 +21,6 @@ namespace lockstep::render
     {
         constexpr uint32_t k_shadowAtlasSlot{0};
         constexpr uint32_t k_environmentSlot{1};
-        constexpr uint32_t k_brdfLutSlot{2};
         constexpr uint32_t k_planarReflectionSlot{3};
         constexpr uint32_t k_minScopeResolution{256};
         constexpr uint32_t k_minScopeTexels{64};
@@ -320,7 +319,7 @@ namespace lockstep::render
         recorder.setScissor(0, 0, scope.texels, scope.texels);
         recorder.bindAttachment(k_shadowAtlasSlot, std::string(k_shadowMapAttachment), shadowCompareSampler());
         recorder.bindAttachment(k_environmentSlot, std::string(k_environmentAttachment));
-        recorder.bindTexture(k_brdfLutSlot, m_state->environment.brdfLut);
+        recorder.bindAttachment(k_shadowDepthSlot, std::string(k_shadowMapAttachment), shadowDepthSampler());
         recorder.bindTexture(k_planarReflectionSlot, m_state->environment.whiteLinear);
 
         for (const uint32_t index : scope.opaque)

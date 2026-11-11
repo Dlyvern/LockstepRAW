@@ -1,5 +1,7 @@
 #include "Gore/Gore.hpp"
 
+#include "Gore/BodyStainEvents.hpp"
+
 #include "GameState.hpp"
 #include "Player/LocalPlayer.hpp"
 
@@ -511,6 +513,11 @@ namespace game
                     showParticleBlood(state, shown, isBodyHit);
                 }
 
+                if (!isBodyHit || isPushed || isOwnBodyHit)
+                {
+                    stainStruckBody(state, engine, localEntity(engine, event.target), shown);
+                }
+
                 if (!isBodyHit)
                 {
                     flinch(state, engine, event);
@@ -569,6 +576,12 @@ namespace game
             drawPiece(engine.renderer, piece, alpha);
         }
 
+        presentBulletHoles(gore.holes, engine.renderer, BulletHoleFrame{.physics = &engine.physics,
+            .level = state.level ? &*state.level : nullptr,
+            .impacts = state.combatAudio.impacts,
+            .unpaintable = gore.decals.unpaintable,
+            .quad = assets.decalQuad,
+            .budget = engine.renderer.graphicsQuality().decalBudget});
         drawDecals(engine.renderer, gore.decals, assets.decalQuad,
             assets.hasRuns ? std::span<const lockstep::render::MeshHandle>(assets.runQuads)
                            : std::span<const lockstep::render::MeshHandle>());
@@ -587,6 +600,7 @@ namespace game
         gore.stumps.clear();
         gore.pooled.clear();
         gore.decals.decals.clear();
+        clearBulletHoles(gore.holes);
         gore.spray.droplets.clear();
         gore.pending.clear();
     }

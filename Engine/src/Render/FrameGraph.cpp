@@ -1,5 +1,6 @@
 #include "FrameGraph.hpp"
 
+#include "Atmosphere.hpp"
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
 #include "IndirectLighting.hpp"
@@ -117,6 +118,11 @@ namespace lockstep::render
 
     Status buildFrameGraph(RendererState& state)
     {
+        if (auto created = createAtmosphereResources(state); !created)
+        {
+            return created;
+        }
+
         auto graph = vela::graphics::RenderGraph::create(state.context);
 
         if (!graph)
@@ -186,6 +192,11 @@ namespace lockstep::render
             return added;
         }
 
+        if (auto added = addCloudPasses(graph.value(), state); !added)
+        {
+            return added;
+        }
+
         if (auto added = addIndirectLightingPasses(graph.value(), state); !added)
         {
             return added;
@@ -210,6 +221,11 @@ namespace lockstep::render
         }
 
         if (auto added = addPostPasses(graph.value(), state); !added)
+        {
+            return added;
+        }
+
+        if (auto added = addLensRainPass(graph.value(), state); !added)
         {
             return added;
         }

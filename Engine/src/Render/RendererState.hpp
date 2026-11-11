@@ -12,9 +12,11 @@
 #include "Lockstep/Render/RenderSettings.hpp"
 #include "Lockstep/Render/Resources.hpp"
 
+#include "Atmosphere.hpp"
 #include "EnvironmentResources.hpp"
 #include "FrameLighting.hpp"
 #include "FrameParticles.hpp"
+#include "IrradianceVolume.hpp"
 #include "PlanarReflections.hpp"
 #include "ScopeView.hpp"
 #include "ShadowCache.hpp"
@@ -82,6 +84,8 @@ namespace lockstep::render
     // detail:              x parallax height scale (0 without a height map), y the SurfaceDetail
     //                      layer (0 none), z detail repeats per UV unit, w the draw's local light
     //                      mask (DrawItem::lightMask, bit pattern, set when recorded).
+    // shading:             the draw's shading model, strength, model parameter and character
+    //                      surface (DrawItem::shading, set when recorded; material_shading.glsl).
     struct PbrFactors
     {
         float baseColorFactor[4]{1.0f, 1.0f, 1.0f, 1.0f};
@@ -89,6 +93,7 @@ namespace lockstep::render
         float surface[4]{0.0f, 1.0f, 1.0f, -1.0f};
         float flags[4]{0.0f, 0.0f, 0.0f, 0.0f};
         float detail[4]{0.0f, 0.0f, 1.0f, 0.0f};
+        float shading[4]{0.0f, 0.0f, 0.0f, 0.0f};
     };
 
     // A texture and how many living or retired materials bind it; a destroyed texture is
@@ -112,6 +117,7 @@ namespace lockstep::render
     // alphaMode:    opaque, masked or blended; blended draws are sorted after opaque ones and
     //               cast no shadows.
     // factors:      the constants pushed with each draw (lit only).
+    // shadingModel: the shading model Game chose (lit only; see Renderer::setMaterialShading()).
     struct MaterialRecord
     {
         vela::graphics::Material material;
@@ -122,6 +128,7 @@ namespace lockstep::render
         MeshKind kind{MeshKind::Static};
         AlphaMode alphaMode{AlphaMode::Opaque};
         PbrFactors factors{};
+        MaterialShading shadingModel{};
     };
 
     // One submitted draw, valid until the end of the frame's render().
@@ -139,6 +146,10 @@ namespace lockstep::render
     // emissiveScale:  multiplier on the material's emissive factor for this draw.
     // lightMask:      bit i set when local light i of the frame's lighting block can reach the
     //                 draw's bounds (set by buildDrawLists(); the lit shader only visits those).
+    // characterSurface: skinned draws: the character surface queued for it (0 none, else its
+    //                 first vec4 in the joint buffer plus 1).
+    // shading:        PbrFactors::shading of the draw, resolved from its material, the character
+    //                 surface and the frame's settings (resolveMaterialShading()).
     struct DrawItem
     {
         const vela::graphics::Mesh* mesh{nullptr};
@@ -155,6 +166,8 @@ namespace lockstep::render
         uint32_t jointBase{0};
         float emissiveScale{1.0f};
         uint32_t lightMask{0xFFFFFFFFu};
+        uint32_t characterSurface{0};
+        std::array<float, 4> shading{};
     };
 
     // Indices into RendererState::draws chosen for one frame.
@@ -302,17 +315,21 @@ namespace lockstep::render
 
         std::vector<DrawItem> draws;
         std::vector<math::Mat4> jointData;
+        uint32_t characterSurfaceCount{0};
         FrameDrawLists drawLists;
         FrameLights lights;
+        std::vector<DripPuddle> dripPuddles;
         std::vector<PlanarReflector> reflectors;
         std::vector<AmbientZone> ambientZones;
         PreparedLighting prepared;
         ShadowCache shadowCache;
+        IrradianceVolumeState irradiance;
         PreparedReflection reflection;
         std::optional<ScopeView> scopeView;
         std::optional<HolographicSight> sight;
         PreparedScope scope;
         FrameParticles particles;
+        AtmosphereState atmosphere;
         TemporalState temporal;
         RenderSettings requestedSettings{};
         RenderSettings settings{};

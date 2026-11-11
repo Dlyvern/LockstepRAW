@@ -259,6 +259,26 @@ namespace game
 
             return effect;
         }
+
+        render::ParticleEffectDescription litter(render::TextureHandle atlas)
+        {
+            render::ParticleEffectDescription effect = atlasEffect(atlas, k_paperFrame, 2);
+            effect.spawnRate = 6.0f;
+            effect.lifetime = {3.5f, 6.0f};
+            effect.speed = {0.2f, 1.0f};
+            effect.coneAngle = 1.2f;
+            effect.spawnExtent = {7.0f, 0.6f, 7.0f};
+            effect.drag = 1.4f;
+            effect.jitter = 7.0f;
+            effect.size = {0.1f, 0.12f, 0.1f, 0.5f};
+            effect.sizeScale = {0.5f, 1.3f};
+            effect.color = {{0.8f, 0.78f, 0.72f, 0.0f}, {0.8f, 0.78f, 0.72f, 1.0f}, {0.8f, 0.78f, 0.72f, 0.0f}, 0.15f};
+            effect.spin = {2.0f, 9.0f};
+            effect.softness = 0.02f;
+            effect.diesInExclusionBoxes = true;
+
+            return effect;
+        }
     } //namespace
 
     float rainStreakStretch()
@@ -281,7 +301,8 @@ namespace game
             {&ids.dustFall, dustFall(atlas)},
             {&ids.stress, stress(atlas)},
             {&ids.rainStreaks, rainStreaks(atlas)},
-            {&ids.rainSplash, rainSplash(atlas)}};
+            {&ids.rainSplash, rainSplash(atlas)},
+            {&ids.litter, litter(atlas)}};
 
         for (const auto& [id, description] : effects)
         {

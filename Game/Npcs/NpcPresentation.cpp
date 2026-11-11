@@ -158,7 +158,8 @@ namespace game
 
             const auto driven = updateNpcRagdoll(physics, *look.ragdoll, alpha, seconds);
             look.instance.updateDriven(model, look.ragdoll->placement, driven, seconds);
-            look.instance.submit(renderer, model, look.ragdoll->placement, render::k_defaultRenderLayer, parts);
+            look.instance.submit(renderer, model, look.ragdoll->placement, render::k_defaultRenderLayer, parts,
+                look.stains.surface);
             return true;
         }
 
@@ -243,7 +244,8 @@ namespace game
 
             look.modelTransform = math::Transform{.position = foot,
                 .rotation = facing * math::angleAxis(-0.5f * math::k_pi * fall * fall, k_modelRight)};
-            look.instance.submit(renderer, *model, look.modelTransform, render::k_defaultRenderLayer, parts);
+            look.instance.submit(renderer, *model, look.modelTransform, render::k_defaultRenderLayer, parts,
+                look.stains.surface);
             return;
         }
 
@@ -264,7 +266,8 @@ namespace game
         look.modelTransform = math::Transform{.position = foot,
             .rotation = facing,
             .scale = math::Vec3{1.0f, squash, 1.0f}};
-        look.instance.submit(renderer, *model, look.modelTransform, render::k_defaultRenderLayer, parts);
+        look.instance.submit(renderer, *model, look.modelTransform, render::k_defaultRenderLayer, parts,
+            look.stains.surface);
     }
 
     void endNpcLooks(NpcLooks& looks, lockstep::physics::PhysicsWorld& physics, render::Renderer& renderer, float alpha,

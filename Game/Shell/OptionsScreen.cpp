@@ -169,6 +169,29 @@ namespace game
             }
 
             qualityToggle(state, engine, column, "opt.contact", "CONTACT SHADOWS", quality.contactShadows);
+            qualityToggle(state, engine, column, "opt.softshadows", "SOFT SHADOWS", quality.softShadows);
+        }
+
+        void drawMaterials(GameState& state, EngineContext& engine, ui::Column& column)
+        {
+            render::GraphicsQuality& quality = state.shell.options.quality;
+            sectionHeading(state.shell.ui, column, "MATERIALS");
+            qualityToggle(state, engine, column, "opt.skin", "SKIN SCATTERING", quality.skinScattering);
+            qualityToggle(state, engine, column, "opt.sheen", "FABRIC SHEEN", quality.fabricSheen);
+            qualityToggle(state, engine, column, "opt.stains", "BLOOD AND RAIN ON CHARACTERS", quality.characterSurfaces);
+            qualityToggle(state, engine, column, "opt.decalrelief", "DECAL RELIEF", quality.decalRelief);
+        }
+
+        void drawWeather(GameState& state, EngineContext& engine, ui::Column& column)
+        {
+            render::GraphicsQuality& quality = state.shell.options.quality;
+            sectionHeading(state.shell.ui, column, "WEATHER");
+            qualityToggle(state, engine, column, "opt.clouds", "VOLUMETRIC CLOUDS", quality.volumetricClouds);
+            qualityToggle(state, engine, column, "opt.lensrain", "RAIN ON THE LENS", quality.lensRain);
+            qualityToggle(state, engine, column, "opt.lightning", "LIGHTNING SHADOWS", quality.lightningShadows);
+            qualityToggle(state, engine, column, "opt.foliage", "SWAYING FOLIAGE", quality.foliageWind);
+            qualityToggle(state, engine, column, "opt.litter", "BLOWING LITTER", quality.windDebris);
+            qualityToggle(state, engine, column, "opt.cloth", "MOVING CLOTH", quality.cloth);
         }
 
         void drawGraphics(GameState& state, EngineContext& engine, ui::Column& column)
@@ -205,12 +228,30 @@ namespace game
 
             qualityToggle(state, engine, column, "opt.ssr", "SCREEN-SPACE REFLECTIONS", quality.screenSpaceReflections);
             qualityToggle(state, engine, column, "opt.ao", "AMBIENT OCCLUSION", quality.ambientOcclusion);
+            qualityToggle(state, engine, column, "opt.bounce", "BOUNCE LIGHTING", quality.irradianceVolume);
+            qualityToggle(state, engine, column, "opt.tubes", "AREA LIGHTS", quality.tubeLights);
+            qualityToggle(state, engine, column, "opt.profiles", "LIGHT PATTERNS", quality.lightProfiles);
             qualityToggle(state, engine, column, "opt.bloom", "BLOOM", quality.bloom);
             qualityToggle(state, engine, column, "opt.blur", "MOTION BLUR", quality.motionBlur);
             qualityToggle(state, engine, column, "opt.dof", "DEPTH OF FIELD", quality.depthOfField);
             qualityToggle(state, engine, column, "opt.lens", "LENS EFFECTS", quality.lensEffects);
+            qualityToggle(state, engine, column, "opt.flares", "LENS FLARES", quality.lensFlares);
+            qualityToggle(state, engine, column, "opt.bokeh", "BOKEH", quality.bokeh);
+            qualityToggle(state, engine, column, "opt.drips", "DRIPPING WATER", quality.waterRipples);
+
+            constexpr std::array<uint32_t, 5> k_screenLights{0, 2, 4, 6, 8};
+            const std::vector<std::string> screenNames{"OFF", "2", "4", "6", "8"};
+            qualityChoice<uint32_t>(state, engine, column, "opt.screens", "GLOWING SCREEN LIGHTS", quality.screenLights,
+                k_screenLights, screenNames);
+
+            constexpr std::array<uint32_t, 4> k_decalBudgets{48, 96, 160, 320};
+            const std::vector<std::string> decalNames{"FEW", "SOME", "MANY", "MOST"};
+            qualityChoice<uint32_t>(state, engine, column, "opt.holes", "BULLET HOLES KEPT", quality.decalBudget,
+                k_decalBudgets, decalNames);
             qualityToggle(state, engine, column, "opt.mirrors", "MIRRORS", quality.planarReflections);
             qualityToggle(state, engine, column, "opt.parallax", "PARALLAX SURFACES", quality.parallax);
+            drawMaterials(state, engine, column);
+            drawWeather(state, engine, column);
             drawFog(state, engine, column);
             drawShadows(state, engine, column);
 

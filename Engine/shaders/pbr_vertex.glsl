@@ -3,6 +3,7 @@
 
 #define FRAME_LIGHTING_BINDING 5
 #include "frame_lighting.glsl"
+#include "wind.glsl"
 
 // draw.flags.z: 0 the camera view, 1 the planar reflection view, 2 the camera view of the
 // rendered planar reflector's surface, 3 the camera view of a viewmodel draw, 4 the scope view,
@@ -23,6 +24,7 @@ layout(push_constant) uniform DrawConstants
     vec4 surface;
     vec4 flags;
     vec4 detail;
+    vec4 shading;
 } draw;
 
 layout(set = 0, binding = 0) uniform Camera
@@ -51,6 +53,7 @@ layout(location = 2) out vec3 outNormal;
 layout(location = 3) out vec4 outTangent;
 layout(location = 4) out vec4 outCurrentClip;
 layout(location = 5) out vec4 outPreviousClip;
+layout(location = 6) out vec3 outObjectPosition;
 
 void main()
 {
@@ -67,10 +70,22 @@ void main()
     mat3 linear = mat3(model);
 
     outWorldPosition = worldPosition.xyz;
+    outObjectPosition = inPosition;
     outUv = inUv;
     outNormal = transpose(inverse(linear)) * inNormal;
     outTangent = vec4(linear * inTangent.xyz, inTangent.w);
     vec4 previousWorldPosition = previousModel * vec4(inPosition, 1.0);
+
+#ifndef SKINNED
+    if (draw.surface.w >= 0.0 && frame.wind.z > 0.0 && draw.flags.z != k_viewModelView
+        && draw.flags.z != k_scopeLensView && draw.flags.z != k_sightWindowView && !isInsideAmbientZone(model[3].xyz))
+    {
+        worldPosition.xyz += windOffset(frame.wind, worldPosition.xyz, model[3].xyz, worldPosition.y - model[3].y);
+        previousWorldPosition.xyz += windOffset(frame.windPrevious, previousWorldPosition.xyz, previousModel[3].xyz,
+            previousWorldPosition.y - previousModel[3].y);
+        outWorldPosition = worldPosition.xyz;
+    }
+#endif
 
     if (draw.flags.z == k_viewModelView || draw.flags.z == k_scopeLensView || draw.flags.z == k_sightWindowView)
     {

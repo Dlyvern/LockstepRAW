@@ -2,8 +2,13 @@
 #define LOCKSTEP_RENDER_RENDER_SETTINGS_HPP
 
 #include "Lockstep/Core/Math.hpp"
+#include "Lockstep/Render/AtmosphereSettings.hpp"
 #include "Lockstep/Render/DetailSettings.hpp"
 #include "Lockstep/Render/IndirectLightingSettings.hpp"
+#include "Lockstep/Render/LensFlareSettings.hpp"
+#include "Lockstep/Render/SurfaceEffects.hpp"
+#include "Lockstep/Render/LightingFeatureSettings.hpp"
+#include "Lockstep/Render/MaterialShadingSettings.hpp"
 #include "Lockstep/Render/WetnessSettings.hpp"
 
 #include <cstdint>
@@ -486,7 +491,18 @@ namespace lockstep::render
         ChromaticAberrationSettings chromaticAberration{};
         LensDirtSettings lensDirt{};
         DepthOfFieldSettings depthOfField{};
+        LensFlareSettings lensFlare{};
+        SurfaceEffectSettings surfaceEffects{};
         WetnessSettings wetness{};
+        MaterialShadingSettings materials{};
+        LightShapeSettings lightShapes{};
+        SoftShadowSettings softShadows{};
+        IrradianceVolumeSettings irradianceVolume{};
+        ShadowDetailSettings shadowDetail{};
+        WindSettings wind{};
+        CloudSettings clouds{};
+        LightningSettings lightning{};
+        LensRainSettings lensRain{};
     };
 } //namespace lockstep::render
 

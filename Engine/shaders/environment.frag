@@ -6,6 +6,10 @@
 #include "octahedral.glsl"
 #include "sky_model.glsl"
 
+layout(set = 1, binding = 1) uniform sampler2D cloudNoise;
+
+#include "clouds.glsl"
+
 const float k_pi = 3.14159265359;
 const uint k_specularSamples = 32u;
 const uint k_irradianceSamples = 64u;
@@ -29,7 +33,7 @@ mat3 basisAround(vec3 n)
     return mat3(tangent, bitangent, n);
 }
 
-vec3 irradianceOverPi(vec3 n)
+vec3 irradianceOverPi(vec3 n, vec3 cloudColor)
 {
     mat3 basis = basisAround(n);
     vec3 sum = vec3(0.0);
@@ -40,13 +44,14 @@ vec3 irradianceOverPi(vec3 n)
         float phi = 2.0 * k_pi * xi.y;
         float cosTheta = sqrt(1.0 - xi.x);
         float sinTheta = sqrt(xi.x);
-        sum += skyRadiance(basis * vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta));
+        vec3 direction = basis * vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+        sum += overcastSky(direction, skyRadiance(direction), cloudColor);
     }
 
     return sum / float(k_irradianceSamples);
 }
 
-vec3 prefiltered(vec3 n, float roughness)
+vec3 prefiltered(vec3 n, float roughness, vec3 cloudColor)
 {
     mat3 basis = basisAround(n);
     float alpha = roughness * roughness;
@@ -65,7 +70,7 @@ vec3 prefiltered(vec3 n, float roughness)
 
         if (nDotL > 0.0)
         {
-            sum += skyRadiance(l) * nDotL;
+            sum += overcastSky(l, skyRadiance(l), cloudColor) * nDotL;
             weight += nDotL;
         }
     }
@@ -80,18 +85,26 @@ void main()
     vec2 local = vec2(pixel.x - tile * k_environmentTileSize, pixel.y) / k_environmentTileSize;
     vec3 direction = octahedralDecode(local);
     vec3 radiance;
+    vec3 skyLight = cloudSkyLight();
+    vec3 cloudColor = cloudAverageRadiance(skyLight);
 
     if (tile >= k_irradianceTile)
     {
-        radiance = irradianceOverPi(direction);
+        radiance = irradianceOverPi(direction, cloudColor);
     }
     else if (tile < 0.5)
     {
-        radiance = skyRadiance(direction);
+        radiance = skyRadiance(direction) + lightningGlow(direction);
+
+        if (frame.cloudShape.w > 0.0)
+        {
+            vec4 layer = flatCloudLayer(direction, skyLight, 1.0);
+            radiance = radiance * (1.0 - layer.a) + layer.rgb;
+        }
     }
     else
     {
-        radiance = prefiltered(direction, tile / (k_specularLevels - 1.0));
+        radiance = prefiltered(direction, tile / (k_specularLevels - 1.0), cloudColor);
     }
 
     outColor = vec4(radiance, 1.0);

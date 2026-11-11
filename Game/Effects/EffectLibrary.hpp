@@ -34,6 +34,7 @@ namespace game
         lockstep::render::ParticleEffectId stress{};
         lockstep::render::ParticleEffectId rainStreaks{};
         lockstep::render::ParticleEffectId rainSplash{};
+        lockstep::render::ParticleEffectId litter{};
     };
 
     // Returns: the rain streak effect's stretch at normal speed, in seconds of motion.

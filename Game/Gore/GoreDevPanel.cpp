@@ -164,6 +164,8 @@ namespace game
         bloodBurstDevSection(state.gore.bursts);
         headBurstDevSection(state.gore.headBursts.tuning);
         hitReactionDevSection(state.npcLooks.reactionTuning);
+        characterStainsDevSection(state.gore.stains);
+        bulletHolesDevSection(state.gore.holes);
         const GoreState& gore = state.gore;
         ImGui::Text("Pieces %zu  stumps %zu  decals %zu  droplets %zu%s", gore.pieces.size(), gore.stumps.size(),
             gore.decals.decals.size(), gore.spray.droplets.size(), gore.assets ? "" : "  (blood unavailable)");

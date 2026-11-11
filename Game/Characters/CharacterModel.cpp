@@ -1,5 +1,7 @@
 #include "Characters/CharacterModel.hpp"
 
+#include "Presentation/MaterialLooks.hpp"
+
 #include <Lockstep/Assets/FileSystem.hpp>
 
 #include <iostream>
@@ -42,6 +44,7 @@ namespace game
             return std::nullopt;
         }
 
+        applyMaterialLooks(renderer, loaded.value());
         const std::optional<uint32_t> index = findModel(loaded.value(), model);
 
         if (!index)

@@ -6,6 +6,7 @@
 #include "Lockstep/Core/Math.hpp"
 #include "Lockstep/Core/Result.hpp"
 #include "Lockstep/Core/Transform.hpp"
+#include "Lockstep/Render/IrradianceVolume.hpp"
 #include "Lockstep/Render/PbrMaterial.hpp"
 #include "Lockstep/Render/Resources.hpp"
 
@@ -191,6 +192,9 @@ namespace lockstep::assets
     //                  deduplicated.
     // stats:           counts, timing and memory.
     // resources:       the GPU resources the load created, for releaseScene().
+    // irradiance:      baked indirect light probes of a cooked level (the level folder's
+    //                  "irradiance" file, written by LockstepCooker --gi); nothing for an imported
+    //                  glTF or a level cooked without it. CPU data only; nothing is uploaded.
     struct Scene
     {
         std::vector<SceneMesh> meshes;
@@ -204,6 +208,7 @@ namespace lockstep::assets
         std::vector<std::string> warnings;
         SceneStats stats{};
         SceneResources resources;
+        std::optional<render::IrradianceVolume> irradiance;
     };
 
     // Settings for importGltf().

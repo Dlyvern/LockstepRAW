@@ -4,6 +4,7 @@
 #include "Effects/Effects.hpp"
 
 #include "GameState.hpp"
+#include "Gore/BodyStainEvents.hpp"
 #include "Gore/CorpseHits.hpp"
 #include "Lights/LightAnimation.hpp"
 #include "Player/LocalPlayer.hpp"
@@ -377,6 +378,8 @@ namespace game
                 .statuses = state.local.statuses,
                 .listener = eye,
                 .rain = rainSoundAmount(state.weather),
+                .thunder = state.weather.tuning.sound ? std::span<const ThunderCue>(state.weather.lightning.due)
+                    : std::span<const ThunderCue>{},
                 .worldSeconds = playerSeconds * engine.timeDomains.scale(world::TimeDomain::World),
                 .seconds = playerSeconds};
 
@@ -391,12 +394,14 @@ namespace game
             const std::vector<NpcShotSource> npcs = npcShotSources(state, engine, isClient);
             frame.npcs = npcs;
             updateCombatAudio(state.combatAudio, engine.audio, frame);
+            presentLevelCurtains(state, engine, frame, playerSeconds * engine.timeDomains.scale(world::TimeDomain::World));
         }
     } //namespace
 
     void presentFrame(GameState& state, EngineContext& engine, const FrameInfo& frameInfo)
     {
         updateCursorCapture(engine.window, frameInfo.input, !isShellBlockingInput(state.shell));
+        updateMaterialTimingDrill(state.materialDrill, engine.renderer);
         updateDevCapture(state.devCapture, engine.renderer,
             DevCaptureEvents{.isReloading = state.local.statuses[localPawnIndex(engine)].isReloading,
                 .isSwitching = shownWeapon(state).isSwitching});
@@ -437,6 +442,7 @@ namespace game
         std::vector<FootstepPawn> steps;
         const float worldSeconds = frameInfo.frameSeconds * engine.timeDomains.scale(world::TimeDomain::World);
         beginNpcLooks(state.npcLooks);
+        prepareCharacterStains(state, engine, worldSeconds);
 
         if (isClient)
         {
@@ -485,7 +491,10 @@ namespace game
         }
 
         presentFootsteps(state, engine, steps, localPawn, head, playerSeconds);
-        presentWeather(state, engine, worldSeconds, frameInfo.frameSeconds);
+        const bool isFlying = state.flyCamera.isActive;
+        presentWeather(state, engine, WeatherView{.eye = isFlying ? state.flyCamera.position : view.eye,
+            .forward = isFlying ? lookDirection(state.flyCamera.yaw, state.flyCamera.pitch) : view.cameraDirection,
+            .playerSeconds = playerSeconds}, worldSeconds, frameInfo.frameSeconds);
         presentViewModel(state, engine, localPawn ? std::optional<math::Vec3>(view.eye) : std::nullopt, head, look,
             playerSeconds);
         presentCombatAudio(state, engine, steps, localPawn, view.eye, view.direction, playerSeconds, isClient);
@@ -498,6 +507,8 @@ namespace game
                 localPawn ? head.fovOffset : 0.0f).verticalFov,
             .playerSeconds = playerSeconds,
             .worldSeconds = worldSeconds});
+        presentDrips(state.drips, state, engine, state.flyCamera.isActive ? state.flyCamera.position : view.eye,
+            worldSeconds);
         presentEffects(state, engine, state.flyCamera.isActive ? state.flyCamera.position : view.eye, worldSeconds,
             frameInfo.frameSeconds);
         presentToys(state, engine, frameInfo.alpha, localPawn ? std::optional<View>(view) : std::nullopt);

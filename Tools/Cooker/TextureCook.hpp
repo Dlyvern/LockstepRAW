@@ -15,6 +15,17 @@
 
 namespace lockstep::cooker
 {
+    // The average of a texture's base level, for offline lighting that uses per-material constants.
+    // colour:   mean linear RGB (colour textures are converted from sRGB first; data textures as
+    //           stored, 0-1). For an alpha-masked colour texture, the mean over the texels that pass
+    //           the cutoff.
+    // coverage: share of texels passing the alpha cutoff (1 without a cutoff).
+    struct TextureMean
+    {
+        math::Vec3 colour{1.0f, 1.0f, 1.0f};
+        float coverage{1.0f};
+    };
+
     // A texture in its final GPU form.
     // file:             the .tex file contents.
     // format:           the block format chosen for the usage.
@@ -25,6 +36,7 @@ namespace lockstep::cooker
     // uncappedBytes:    GPU memory all levels would take at the source size.
     // meanSquaredError: encoding error of the base level against the decoded source (see
     //                   blockError()).
+    // mean:             average colour and alpha coverage of the source (see TextureMean).
     struct CookedTexture
     {
         std::vector<std::byte> file;
@@ -37,6 +49,7 @@ namespace lockstep::cooker
         uint32_t sourceHeight{0};
         uint64_t uncappedBytes{0};
         double meanSquaredError{0.0};
+        TextureMean mean{};
     };
 
     // usage:   what the texture holds.

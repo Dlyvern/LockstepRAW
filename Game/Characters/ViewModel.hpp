@@ -7,6 +7,7 @@
 
 #include <Lockstep/Anim/SkinnedModel.hpp>
 #include <Lockstep/Core/Math.hpp>
+#include <Lockstep/Render/CharacterSurface.hpp>
 #include <Lockstep/Core/Result.hpp>
 #include <Lockstep/Core/Transform.hpp>
 
@@ -253,6 +254,7 @@ namespace game
     // eye:        the camera position it was placed with.
     // opticAim:   aiming through the mounted optic, or nothing for iron sights.
     // tuning:     feel settings.
+    // surface:    the character surface (rain soak) drawn over the arms this frame.
     struct ViewModelState
     {
         lockstep::anim::SkinnedInstance instance{};
@@ -290,6 +292,7 @@ namespace game
         math::Vec3 eye{0.0f, 0.0f, 0.0f};
         std::optional<ViewModelOpticAim> opticAim{};
         ViewModelTuning tuning{};
+        lockstep::render::CharacterSurfaceId surface{lockstep::render::k_noCharacterSurface};
     };
 
     // What drives the viewmodel this frame.

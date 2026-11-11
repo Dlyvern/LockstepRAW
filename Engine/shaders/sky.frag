@@ -5,6 +5,10 @@
 #include "frame_lighting.glsl"
 #include "sky_model.glsl"
 
+layout(set = 1, binding = 1) uniform sampler2D cloudNoise;
+
+#include "clouds.glsl"
+
 layout(set = 0, binding = 0) uniform Camera
 {
     mat4 view;
@@ -39,12 +43,20 @@ void main()
 {
     vec3 direction = normalize(inFarPoint.xyz / inFarPoint.w - camera.position.xyz);
     vec3 radiance = skyRadiance(direction);
-    float cosSun = dot(direction, -frame.sunDirection.xyz);
+    float cosSun = dot(direction, -frame.skySunDirection.xyz);
 
     if (frame.sunDisk.w > 0.0 && direction.y > 0.0)
     {
         float edge = 1.0 - frame.sunDisk.w;
         radiance += frame.sunDisk.rgb * smoothstep(frame.sunDisk.w - edge * 0.3, frame.sunDisk.w + edge * 0.3, cosSun);
+    }
+
+    radiance += lightningGlow(direction) + lightningBolt(direction);
+
+    if (frame.cloudShape.w == k_cloudModeFlat)
+    {
+        vec4 layer = flatCloudLayer(direction, cloudSkyLight(), 0.0);
+        radiance = radiance * (1.0 - layer.a) + layer.rgb;
     }
 
     outColor = vec4(radiance, 1.0);

@@ -13,6 +13,7 @@ namespace game
         lockstep::render::FogSettings fog{};
         lockstep::render::VolumetricFogSettings volumetricFog{};
         lockstep::render::ColorGradingSettings colorGrading{};
+        lockstep::render::CloudSettings clouds{};
     };
 
     // settings: the render settings with the level's look applied.
@@ -21,7 +22,8 @@ namespace game
 
     // Writes a blend of the level's look towards its rainy variant into the render settings: a
     // weaker, greyer sun behind a hazier sky, a dimmer sunset glow, thicker distance fog and haze
-    // (cool grey), and slightly less saturation.
+    // (cool grey), a low, dark, nearly closed cloud deck, and slightly less saturation. The clouds'
+    // drift offset is left alone (the wind owns it).
     // settings: the render settings to write.
     // base:     the level's look before rain.
     // amount:   0 the level's look as it was, 1 fully overcast.

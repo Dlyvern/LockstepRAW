@@ -31,6 +31,12 @@ namespace game
         constexpr float k_rainSaturationScale{0.85f};
         constexpr float k_rainContrastScale{0.95f};
         constexpr float k_hideSunDiskAbove{0.5f};
+        constexpr float k_rainCloudCoverage{0.93f};
+        constexpr float k_rainCloudDensity{1.6f};
+        constexpr float k_rainCloudBase{800.0f};
+        constexpr math::Vec3 k_rainCloudAmbient{0.5f, 0.52f, 0.58f};
+        constexpr float k_rainCloudSilverLining{0.3f};
+        constexpr float k_rainCloudSunLight{0.45f};
 
         float mixed(float from, float to, float amount)
         {
@@ -79,6 +85,16 @@ namespace game
             haze.ambientIntensity = mixed(base.volumetricFog.ambientIntensity,
                 std::max(base.volumetricFog.ambientIntensity, k_rainHazeAmbient), amount);
         }
+
+        void blendClouds(render::CloudSettings& clouds, const render::CloudSettings& base, float amount)
+        {
+            clouds.coverage = mixed(base.coverage, std::max(base.coverage, k_rainCloudCoverage), amount);
+            clouds.density = mixed(base.density, std::max(base.density, k_rainCloudDensity), amount);
+            clouds.baseHeight = mixed(base.baseHeight, std::min(base.baseHeight, k_rainCloudBase), amount);
+            clouds.ambient = mixed(base.ambient, k_rainCloudAmbient, amount);
+            clouds.silverLining = mixed(base.silverLining, k_rainCloudSilverLining, amount);
+            clouds.sunLight = mixed(base.sunLight, k_rainCloudSunLight, amount);
+        }
     } //namespace
 
     RainLookBase captureRainLookBase(const render::RenderSettings& settings)
@@ -87,7 +103,8 @@ namespace game
             .ibl = settings.ibl,
             .fog = settings.fog,
             .volumetricFog = settings.volumetricFog,
-            .colorGrading = settings.colorGrading};
+            .colorGrading = settings.colorGrading,
+            .clouds = settings.clouds};
     }
 
     void applyRainLook(render::RenderSettings& settings, const RainLookBase& base, float amount)
@@ -95,6 +112,7 @@ namespace game
         const float clamped = std::clamp(amount, 0.0f, 1.0f);
         blendSky(settings, base, clamped);
         blendFog(settings, base, clamped);
+        blendClouds(settings.clouds, base.clouds, clamped);
         settings.colorGrading = base.colorGrading;
         settings.colorGrading.saturation = base.colorGrading.saturation * mixed(1.0f, k_rainSaturationScale, clamped);
         settings.colorGrading.contrast = base.colorGrading.contrast * mixed(1.0f, k_rainContrastScale, clamped);

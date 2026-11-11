@@ -9,6 +9,7 @@
 
 #include <Vela/Graphics/VertexLayout.hpp>
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <span>
@@ -27,7 +28,6 @@ namespace lockstep::render
         constexpr uint32_t k_lightingSlot{0};
         constexpr uint32_t k_shadowAtlasSlot{0};
         constexpr uint32_t k_environmentSlot{1};
-        constexpr uint32_t k_brdfLutSlot{2};
         constexpr uint32_t k_planarReflectionSlot{3};
         constexpr uint32_t k_fullscreenTriangleVertices{3};
         constexpr float k_decalBlend{2.0f};
@@ -39,7 +39,7 @@ namespace lockstep::render
             PbrFactors factors;
         };
 
-        static_assert(sizeof(PbrDrawConstants) == 208);
+        static_assert(sizeof(PbrDrawConstants) == 224);
 
         vela::graphics::AttachmentSlot clearedSlot(std::string_view name, vela::graphics::TextureFormat format)
         {
@@ -82,6 +82,16 @@ namespace lockstep::render
         return sampler;
     }
 
+    vela::graphics::SamplerDescription shadowDepthSampler()
+    {
+        vela::graphics::SamplerDescription sampler = shadowCompareSampler();
+        sampler.minFilter = vela::graphics::Filter::Nearest;
+        sampler.magFilter = vela::graphics::Filter::Nearest;
+        sampler.compareOp = vela::graphics::DepthCompare::None;
+
+        return sampler;
+    }
+
     void recordSceneDraw(vela::graphics::PassRecorder& recorder, const DrawItem& item, PbrView view)
     {
         if (item.material->shading == Shading::Unlit)
@@ -101,6 +111,7 @@ namespace lockstep::render
 
         constants.factors.flags[3] = static_cast<float>(item.jointBase);
         constants.factors.detail[3] = std::bit_cast<float>(item.lightMask);
+        std::copy(item.shading.begin(), item.shading.end(), constants.factors.shading);
 
         for (uint32_t channel = 0; channel < 3; ++channel)
         {
@@ -155,6 +166,11 @@ namespace lockstep::render
         }
 
         if (auto bound = material.value().setStorageBuffer(k_lightingSlot, state.lightBuffer); !bound)
+        {
+            return toError(bound.error());
+        }
+
+        if (auto bound = material.value().setTexture(k_cloudNoiseSlot, *state.atmosphere.cloudNoise); !bound)
         {
             return toError(bound.error());
         }
@@ -218,6 +234,11 @@ namespace lockstep::render
             return toError(bound.error());
         }
 
+        if (auto bound = material.value().setTexture(k_cloudNoiseSlot, *state.atmosphere.cloudNoise); !bound)
+        {
+            return toError(bound.error());
+        }
+
         return std::unique_ptr<LitScenePass>(new LitScenePass(state, std::move(material).value()));
     }
 
@@ -271,7 +292,7 @@ namespace lockstep::render
     {
         recorder.bindAttachment(k_shadowAtlasSlot, std::string(k_shadowMapAttachment), shadowCompareSampler());
         recorder.bindAttachment(k_environmentSlot, std::string(k_environmentAttachment));
-        recorder.bindTexture(k_brdfLutSlot, m_state->environment.brdfLut);
+        recorder.bindAttachment(k_shadowDepthSlot, std::string(k_shadowMapAttachment), shadowDepthSampler());
         recorder.bindAttachment(k_planarReflectionSlot, std::string(k_reflectionColorAttachment));
 
         auto drawList = [this, &recorder](const std::vector<uint32_t>& list)

@@ -3,6 +3,7 @@
 
 #include "Characters/ArmedCrouch.hpp"
 #include "Characters/CharacterModel.hpp"
+#include "Characters/CharacterStains.hpp"
 #include "Characters/FirstPersonBody.hpp"
 #include "Characters/HeldGuns.hpp"
 #include "Characters/KickPose.hpp"
@@ -143,6 +144,7 @@ namespace game
     // reaction:      procedural hit reaction on top of its animation (other players only).
     // reactionRig:   the joints it turns on the model last drawn.
     // weapon:        the loadout weapon it was last drawn holding.
+    // stains:        blood, dirt and rain on its body.
     struct PawnCharacter
     {
         lockstep::anim::SkinnedInstance instance{};
@@ -159,6 +161,7 @@ namespace game
         HitReaction reaction{};
         ReactionRig reactionRig{};
         WeaponKind weapon{WeaponKind::M4};
+        BodyStains stains{};
     };
 
     // The armed body, its two locomotion sets, its crouch (nothing when the model lacks the

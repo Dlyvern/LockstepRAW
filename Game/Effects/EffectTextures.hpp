@@ -18,6 +18,8 @@ namespace game
     // k_smokeFrame:  first of k_smokeFrames soft, noisy smoke/dust puffs (white, density in alpha).
     // k_dotFrame:    a soft round dot (motes, dust grains, embers).
     // k_sparkFrame:  a small hot core with a soft falloff (sparks; stretched along their motion).
+    // k_paperFrame:  a torn, creased scrap of paper (off-white, faint print lines).
+    // k_leafFrame:   a dry leaf (brown, a darker midrib).
     // k_chunkFrame:  first of k_chunkFrames irregular hard-edged debris chips, lit from above.
     // k_flashFrame:  first of k_flashFrames muzzle flashes seen from the front: a hot core with
     //                ragged petals (white-yellow centre, orange edges).
@@ -27,6 +29,8 @@ namespace game
     inline constexpr uint32_t k_smokeFrames{4};
     inline constexpr uint32_t k_dotFrame{4};
     inline constexpr uint32_t k_sparkFrame{5};
+    inline constexpr uint32_t k_paperFrame{6};
+    inline constexpr uint32_t k_leafFrame{7};
     inline constexpr uint32_t k_chunkFrame{8};
     inline constexpr uint32_t k_chunkFrames{4};
     inline constexpr uint32_t k_flashFrame{12};

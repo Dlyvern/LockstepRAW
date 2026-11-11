@@ -4,12 +4,16 @@
 # so the game never links them.
 add_executable(LockstepCooker
     main.cpp
+    BakeScene.cpp
     BlockEncoders.cpp
     CookerArguments.cpp
     CookerOutput.cpp
+    IrradianceBake.cpp
+    IrradianceGrid.cpp
     LimbCaps.cpp
     LimbSplit.cpp
     PakWriter.cpp
+    RayTracer.cpp
     SceneCook.cpp
     SceneSource.cpp
     SurfaceRules.cpp

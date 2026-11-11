@@ -28,12 +28,18 @@ namespace lockstep::render
     // cosInnerKind:      x cosine of the inner angle, y 0 for point or 1 for spot, z its first
     //                    shadow atlas tile (-1 for none; a point light's six faces follow it), w the
     //                    shadow lookup's normal offset per metre of distance from the light.
+    //                    A point light's directionCosOuter.xyz is its profile axis.
+    // tube:              xyz half the tube (centre to one end, world), zero for a point or spot;
+    //                    w the spread of its highlight (tube length over 2), 0 for none.
+    // profile:           xyz the profile's +X side, w the LightProfile (0 none) as a float.
     struct GpuLocalLight
     {
         float positionRange[4];
         float color[4];
         float directionCosOuter[4];
         float cosInnerKind[4];
+        float tube[4];
+        float profile[4];
     };
 
     // One interior ambient zone as pbr.frag reads it: xyz of the box's minimum and maximum corner.
@@ -104,6 +110,11 @@ namespace lockstep::render
     //                    holographic sight is drawn.
     // sightReticle:      rgb the reticle's radiance, w the ring's angular radius.
     // sightShape:        x half the ring's angular width, y the dot's angular radius, zw unused.
+    // surfaceEffects:    x screen animation seconds (SurfaceEffectSettings::time, wrapped), y drip
+    //                    puddles in dripPuddles, z scanline depth (0 when screens are not animated),
+    //                    w ripple slope (shaders/surface_effects.glsl).
+    // dripPuddles:       per drip puddle, nearest the camera first: xyz centre, w radius; then x
+    //                    seconds since the last drop, y seconds between drops, z strength, w unused.
     // counts:            x local lights, y 1 if specular is on, z bit mask of the local lights that
     //                    scatter in volumetric fog (VolumetricFogSettings::maxLights nearest the
     //                    camera), w 1 if parallax relief shadows itself from local lights.
@@ -118,6 +129,34 @@ namespace lockstep::render
     // lightCells:        per screen cell (row-major, top row first), bit i set when local light i
     //                    can reach a pixel of that cell (its bounding sphere's screen rectangle
     //                    overlaps the cell). Only the camera's screen reads it.
+    // irradianceParams:  x 1 if an irradiance volume is sampled, y its intensity, z normal offset in
+    //                    metres, w share of the interior fill light kept inside the volume.
+    // irradianceOrigin:  xyz world position of the first probe, w the volume's fade-in distance at
+    //                    its faces in metres.
+    // irradianceScale:   xyz probes per metre along x, y, z, w probes along z.
+    // irradianceCounts:  xyz probes along x, y, z, w the sky visibility's strength (1 full).
+    // shadowSoftness:    x 1 for contact-hardening soft shadows, y blocker search taps, z filter
+    //                    taps, w the sun's angular size factor (penumbra metres per metre).
+    // localShadowSoftness: x local light source radius in metres, y largest penumbra in texels,
+    //                    zw unused.
+    // shadowTileDepth:   per atlas tile: x 1 for an orthographic tile (sun), y metres per unit of
+    //                    depth (orthographic) or the near plane (perspective), z the far plane
+    //                    (perspective), w texels per metre at 1 m (perspective) or per metre
+    //                    (orthographic).
+    // skySunDirection:   xyz direction the sky's sunlight travels (the sky keeps its sun while a
+    //                    lightning flash is the frame's light), w unused.
+    // skySunRadiance:    rgb the sky's sun colour times intensity (zero without a sun), w unused.
+    // wind, windPrevious: this and last frame's wind: xy unit direction (x, z), z speed times sway
+    //                    (0 off), w animation seconds (shaders/wind.glsl).
+    // cloudParams:       x coverage, y density, z cloud base above the camera in metres, w thickness.
+    // cloudShape:        xy noise offset in metres, z noise tiles per metre, w 0 no clouds, 1 the
+    //                    flat layer, 2 volumetric.
+    // cloudLight:        rgb ambient multiplier, w silver lining.
+    // cloudMarch:        x sunlight multiplier, y image-based light influence, z raymarch steps, w
+    //                    this frame's sample jitter (0..1).
+    // lightningFlash:    rgb flash radiance added to the sky around the strike, w flash amount.
+    // lightningDirection: xyz unit direction towards the strike, w bolt visibility.
+    // lightningBolt:     x the bolt's shape seed, yzw unused.
     struct GpuFrameLighting
     {
         math::Mat4 shadowTileViewProjection[k_maxShadowTiles]{};
@@ -171,6 +210,8 @@ namespace lockstep::render
         float sightDirection[4];
         float sightReticle[4];
         float sightShape[4];
+        float surfaceEffects[4];
+        float dripPuddles[k_maxDripPuddles * 2][4];
         uint32_t counts[4];
         GpuLocalLight lights[k_maxLocalLights];
         float zoneParams[4];
@@ -179,12 +220,32 @@ namespace lockstep::render
         GpuAmbientZone zones[k_maxFrameAmbientZones];
         float lightCellScale[4];
         uint32_t lightCells[k_lightCells];
+        float irradianceParams[4];
+        float irradianceOrigin[4];
+        float irradianceScale[4];
+        float irradianceCounts[4];
+        float shadowSoftness[4];
+        float localShadowSoftness[4];
+        float shadowTileDepth[k_maxShadowTiles][4];
+        float skySunDirection[4];
+        float skySunRadiance[4];
+        float wind[4];
+        float windPrevious[4];
+        float cloudParams[4];
+        float cloudShape[4];
+        float cloudLight[4];
+        float cloudMarch[4];
+        float lightningFlash[4];
+        float lightningDirection[4];
+        float lightningBolt[4];
     };
 
-    static_assert(sizeof(GpuLocalLight) == 64);
+    static_assert(sizeof(GpuLocalLight) == 96);
     static_assert(sizeof(GpuAmbientZone) == 32);
-    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 7 * 64 + 43 * 16 + k_maxLocalLights * 64
-        + 3 * 16 + k_maxFrameAmbientZones * 32 + 16 + k_lightCells * 4);
+    static_assert(sizeof(GpuFrameLighting) == k_maxShadowTiles * 80 + 7 * 64 + 43 * 16 + k_maxLocalLights * 96
+        + 3 * 16 + k_maxFrameAmbientZones * 32 + 16 + k_lightCells * 4 + 6 * 16 + k_maxShadowTiles * 16
+        + 11 * 16
+        + 16 + k_maxDripPuddles * 32);
 
     // The lights submitted for one frame.
     // directional: the directional light, if one was submitted.

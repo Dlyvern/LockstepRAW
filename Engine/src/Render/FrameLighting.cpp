@@ -1,5 +1,6 @@
 #include "FrameLighting.hpp"
 
+#include "Atmosphere.hpp"
 #include "FrameCulling.hpp"
 #include "SkyModel.hpp"
 
@@ -26,20 +27,39 @@ namespace lockstep::render
             target[3] = w;
         }
 
-        void packPoint(GpuLocalLight& target, const PointLight& light)
+        math::Vec3 unitOr(const math::Vec3& direction, const math::Vec3& fallback)
+        {
+            const float length = math::length(direction);
+
+            return length > 1e-5f ? direction * (1.0f / length) : fallback;
+        }
+
+        void packProfile(GpuLocalLight& target, LightProfile profile, const math::Vec3& side, bool enabled)
+        {
+            const float index = enabled ? static_cast<float>(profile) : 0.0f;
+            store(target.profile, unitOr(side, math::Vec3{1.0f, 0.0f, 0.0f}), index);
+        }
+
+        void packPoint(GpuLocalLight& target, const PointLight& light, const LightShapeSettings& shapes)
         {
             store(target.positionRange, light.position, light.range);
             store(target.color, light.color * light.intensity, std::max(light.volumetric, 0.0f));
-            store(target.directionCosOuter, math::Vec3{0.0f, 0.0f, 0.0f}, -1.0f);
+            store(target.directionCosOuter, unitOr(light.profileAxis, math::Vec3{0.0f, -1.0f, 0.0f}), -1.0f);
             store(target.cosInnerKind, math::Vec3{1.0f, k_pointKind, k_noShadow}, 0.0f);
+
+            const float halfLength = shapes.tubeLights ? std::max(light.tubeLength, 0.0f) * 0.5f : 0.0f;
+            store(target.tube, unitOr(light.tubeAxis, math::Vec3{1.0f, 0.0f, 0.0f}) * halfLength, halfLength);
+            packProfile(target, light.profile, light.profileSide, shapes.profiles);
         }
 
-        void packSpot(GpuLocalLight& target, const SpotLight& light)
+        void packSpot(GpuLocalLight& target, const SpotLight& light, const LightShapeSettings& shapes)
         {
             store(target.positionRange, light.position, light.range);
             store(target.color, light.color * light.intensity, std::max(light.volumetric, 0.0f));
             store(target.directionCosOuter, math::normalize(light.direction), std::cos(light.outerAngle));
             store(target.cosInnerKind, math::Vec3{std::cos(light.innerAngle), k_spotKind, k_noShadow}, 0.0f);
+            store(target.tube, math::Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+            packProfile(target, light.profile, light.profileSide, shapes.profiles);
         }
 
         std::optional<DirectionalLight> frameSun(const FrameLights& lights, const RenderSettings& settings)
@@ -169,6 +189,8 @@ namespace lockstep::render
                         ? fitPointShadowFace(*candidate.point, face, tile + face, view.shadowAtlasWidth)
                         : fitSpotShadow(*candidate.spot, tile + face, view.shadowAtlasWidth);
                     prepared.casterSpheres[tile + face - k_sunShadowTiles] = {position.x, position.y, position.z, range};
+                    store(prepared.lighting.shadowTileDepth[tile + face], math::Vec3{0.0f, k_localShadowNear, range},
+                        1.0f / std::max(prepared.tiles[tile + face].texelSize, 1e-6f));
                 }
 
                 GpuLocalLight& gpu = prepared.lighting.lights[candidate.slot];
@@ -191,6 +213,13 @@ namespace lockstep::render
             store(gpu.localShadowParams, math::Vec3{std::clamp(shadows.localFilterRadius, 0.5f, 3.0f), 0.0f, 0.0f},
                 0.0f);
             store(gpu.cascadeTexelSize, math::Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+
+            const SoftShadowSettings& soft = settings.softShadows;
+            store(gpu.shadowSoftness, math::Vec3{soft.enabled ? 1.0f : 0.0f,
+                static_cast<float>(std::clamp(soft.blockerTaps, 4u, 32u)),
+                static_cast<float>(std::clamp(soft.filterTaps, 4u, 32u))}, std::max(soft.sunSize, 0.0f));
+            store(gpu.localShadowSoftness, math::Vec3{std::max(soft.localRadius, 0.0f),
+                std::clamp(soft.maxPenumbraTexels, 1.0f, 32.0f), 0.0f}, 0.0f);
 
             for (uint32_t tile = 0; tile < k_maxShadowTiles; ++tile)
             {
@@ -220,6 +249,13 @@ namespace lockstep::render
                 for (uint32_t cascade = 0; cascade < count; ++cascade)
                 {
                     gpu.cascadeTexelSize[cascade] = prepared.tiles[cascade].texelSize;
+                    const math::Mat4& viewProjection = prepared.tiles[cascade].viewProjection;
+                    const math::Vec4 start = viewProjection * math::Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+                    const math::Vec4 end = viewProjection * math::Vec4{prepared.sunTravel.x, prepared.sunTravel.y,
+                        prepared.sunTravel.z, 1.0f};
+                    const float depthPerMetre = std::max(std::abs(end.z - start.z), 1e-6f);
+                    store(gpu.shadowTileDepth[cascade], math::Vec3{1.0f, 1.0f / depthPerMetre, 0.0f},
+                        1.0f / std::max(prepared.tiles[cascade].texelSize, 1e-6f));
                 }
             }
 
@@ -355,15 +391,20 @@ namespace lockstep::render
         packSurfaceDetail(gpu, settings.surfaceDetail);
         packWetness(gpu, settings.wetness);
 
-        const std::optional<DirectionalLight> sun = frameSun(lights, settings);
-        const math::Vec3 skySunDirection = sun ? math::normalize(sun->direction)
+        const std::optional<DirectionalLight> skySun = frameSun(lights, settings);
+        const math::Vec3 skySunDirection = skySun ? math::normalize(skySun->direction)
             : sunTravelDirection(settings.sky.sunAzimuth, settings.sky.sunElevation);
+        const math::Vec3 skySunRadiance = skySun ? skySun->color * skySun->intensity : math::Vec3{0.0f, 0.0f, 0.0f};
+        const std::optional<DirectionalLight> sun = lightningSun(skySun, settings);
+        const math::Vec3 sunDirection = sun ? math::normalize(sun->direction) : skySunDirection;
         const math::Vec3 sunRadiance = sun ? sun->color * sun->intensity : math::Vec3{0.0f, 0.0f, 0.0f};
 
         prepared.hasSun = sun.has_value();
-        store(gpu.sunDirection, skySunDirection, sun ? 1.0f : 0.0f);
+        store(gpu.sunDirection, sunDirection, sun ? 1.0f : 0.0f);
         store(gpu.sunRadiance, sunRadiance, 0.0f);
-        packSky(gpu, settings, skySunDirection, sunRadiance);
+        store(gpu.skySunDirection, skySunDirection, 0.0f);
+        store(gpu.skySunRadiance, skySunRadiance, 0.0f);
+        packSky(gpu, settings, skySunDirection, skySunRadiance);
 
         const FogSettings& fog = settings.fog;
         store(gpu.fogColor, fog.color, fog.density);
@@ -376,12 +417,12 @@ namespace lockstep::render
         {
             for (const PointLight& point : lights.points)
             {
-                packPoint(gpu.lights[count++], point);
+                packPoint(gpu.lights[count++], point, settings.lightShapes);
             }
 
             for (const SpotLight& spot : lights.spots)
             {
-                packSpot(gpu.lights[count++], spot);
+                packSpot(gpu.lights[count++], spot, settings.lightShapes);
             }
         }
 

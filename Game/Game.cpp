@@ -56,6 +56,9 @@ namespace game
         using lockstep::app::TickInfo;
 
         constexpr std::string_view k_npcCrouchFlag{"--dev-npc-crouch"};
+        constexpr std::string_view k_bloodyNpcsFlag{"--dev-bloody-npcs"};
+        constexpr std::string_view k_shakeClothFlag{"--dev-shake-cloth"};
+        constexpr std::string_view k_lightningDrillFlag{"--dev-lightning-drill"};
         constexpr std::string_view k_ironSightsFlag{"--dev-iron-sights"};
         constexpr uint32_t k_menuFrameRateCap{60};
         constexpr float k_drillTargetRange{6.0f};
@@ -121,6 +124,13 @@ namespace game
             state->visuals = visuals.value();
             state->weather.forced = weather.value();
             state->npcLooks.isCrouchForced = hasArgument(engine.arguments, k_npcCrouchFlag);
+            state->gore.stains.drill = hasArgument(engine.arguments, k_bloodyNpcsFlag);
+            state->curtains.tuning.shakeDrill = hasArgument(engine.arguments, k_shakeClothFlag);
+
+            if (hasArgument(engine.arguments, k_lightningDrillFlag))
+            {
+                startLightningDrill(state->weather);
+            }
             state->pawnCharacters = loadPawnCharacters(engine.renderer, engine.files);
             state->optics = loadOptics(engine.renderer, engine.files);
 
@@ -133,6 +143,7 @@ namespace game
             state->combatAudio.bank = loadCombatSounds(engine.audio, engine.files);
             loadWeaponFx(state->weaponFx, engine);
             state->devCapture = parseDevCapture(engine.arguments);
+            state->materialDrill = parseMaterialTimingDrill(engine.arguments);
             state->weaponFeedback.sounds = loadHandlingSounds(engine.audio, engine.files);
             applyArenaLook(engine.renderer);
 

@@ -415,12 +415,14 @@ namespace lockstep::render
             return bound.error();
         }
 
-        if (isSkinned)
+        if (auto bound = bindLightingTextures(state, material.value()); !bound)
         {
-            if (auto bound = material.value().setStorageBuffer(k_jointPaletteBinding, state.jointBuffer); !bound)
-            {
-                return toError(bound.error());
-            }
+            return bound.error();
+        }
+
+        if (auto bound = material.value().setStorageBuffer(k_jointPaletteBinding, state.jointBuffer); !bound)
+        {
+            return toError(bound.error());
         }
 
         MaterialRecord record{
@@ -431,7 +433,8 @@ namespace lockstep::render
             .shading = Shading::Lit,
             .kind = kind,
             .alphaMode = description.alphaMode,
-            .factors = toFactors(description)};
+            .factors = toFactors(description),
+            .shadingModel = description.shading};
 
         if (description.alphaMode == AlphaMode::Mask)
         {

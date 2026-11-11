@@ -1,8 +1,10 @@
 #include "GraphicsPanel.hpp"
 
+#include "AtmospherePanel.hpp"
 #include "DetailLensPanel.hpp"
 #include "GraphicsLookPanel.hpp"
 #include "IndirectLightingPanel.hpp"
+#include "LightingFeaturesPanel.hpp"
 #include "QualityPanel.hpp"
 
 #include <imgui.h>
@@ -315,6 +317,8 @@ namespace lockstep::debug
             drawSky(settings.sky, settings.ibl);
             drawShadows(settings.shadows);
             drawIndirectLightingSections(settings);
+            drawLightingFeatureSections(renderer);
+            drawAtmosphereSections(settings);
             drawPostProcessing(settings);
             drawAntiAliasing(settings.antiAliasing, renderer.quality.antiAliasing);
             drawReflections(settings.reflections);

@@ -5,6 +5,7 @@
 #include <Lockstep/Physics/MeshCooker.hpp>
 
 #include "Assets/CookedFormat.hpp"
+#include "Assets/CookedIrradiance.hpp"
 #include "Assets/MeshProcessing.hpp"
 
 #include "CookerOutput.hpp"
@@ -58,6 +59,7 @@ namespace lockstep::cooker
             std::optional<WoundTemplate> woundTemplate{};
             uint32_t woundMesh{0};
             std::vector<uint32_t> woundTextures{};
+            std::vector<TextureMean> textureMeans{};
         };
 
         struct TextureSource
@@ -597,6 +599,7 @@ namespace lockstep::cooker
             });
 
             std::vector<uint32_t> remap(textures.size(), assets::k_noTexture);
+            context.textureMeans.assign(context.scene.textures.size(), TextureMean{});
 
             for (std::size_t index = 0; index < outcomes.size(); ++index)
             {
@@ -605,6 +608,11 @@ namespace lockstep::cooker
                     std::cout << "  warning: image '" << sourceName(*textures[index].texture) << "' skipped: "
                         << outcomes[index].error->message << '\n';
                     continue;
+                }
+
+                if (index < context.textureMeans.size())
+                {
+                    context.textureMeans[index] = outcomes[index].cooked->mean;
                 }
 
                 remap[index] = static_cast<uint32_t>(context.level.textures.size());
@@ -717,7 +725,7 @@ namespace lockstep::cooker
         CookContext context{.options = options, .sourceFiles = sourceFiles, .scene = scene.value(), .prefix = prefix,
             .level = {}, .writtenBytes = 0, .woundMaterial = k_noMaterial, .limbs = {},
             .woundScene = woundScene ? &*woundScene : nullptr, .woundFiles = &woundFiles, .woundTemplate = {},
-            .woundMesh = 0, .woundTextures = {}};
+            .woundMesh = 0, .woundTextures = {}, .textureMeans = {}};
 
         if (woundScene)
         {
@@ -781,6 +789,22 @@ namespace lockstep::cooker
         if (auto written = writeFile(context, prefix + "/scene", assets::writeCookedLevel(context.level)); !written)
         {
             return written;
+        }
+
+        if (options.irradiance)
+        {
+            auto volume = bakeIrradiance(scene.value(), context.textureMeans, *options.irradiance, options.threads);
+
+            if (!volume)
+            {
+                return volume.error();
+            }
+
+            if (auto written = writeFile(context, prefix + "/" + std::string(assets::k_irradianceFileName),
+                    assets::writeCookedIrradiance(volume.value())); !written)
+            {
+                return written;
+            }
         }
 
         for (const std::string& warning : scene.value().warnings)

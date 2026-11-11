@@ -77,6 +77,24 @@ namespace lockstep::debug
             ImGui::SliderFloat("Blur growth", &focus.blurScale, 0.1f, 6.0f, "%.2f");
             ImGui::SliderFloat("Max radius (px)", &focus.maxRadius, 1.0f, k_maxBlurRadius, "%.1f");
             static_cast<void>(sliderCount("Disc samples", focus.samples, k_minDiscSamples, k_maxDiscSamples));
+            static_cast<void>(sliderCount("Aperture blades (0 round)", focus.apertureBlades, 0, 8));
+            ImGui::SliderFloat("Aperture rotation", &focus.apertureRotation, 0.0f, 1.2f, "%.2f");
+            ImGui::SliderFloat("Bokeh highlights", &focus.bokehHighlights, 0.0f, 8.0f, "%.1f");
+            ImGui::Separator();
+
+            render::LensFlareSettings& flare = settings.lensFlare;
+            ImGui::Checkbox("Lens flares", &flare.enabled);
+            ImGui::SameLine();
+            ImGui::Checkbox("Sun glare", &flare.sunGlare);
+            ImGui::TextDisabled("Flares need bloom on.");
+            ImGui::SliderFloat("Ghosts", &flare.intensity, 0.0f, 4.0f, "%.2f");
+            ImGui::SliderFloat("Flare threshold (exposed)", &flare.threshold, 0.5f, 20.0f, "%.1f");
+            ImGui::SliderFloat("Halo", &flare.haloIntensity, 0.0f, 4.0f, "%.2f");
+            ImGui::SliderFloat("Halo radius", &flare.haloRadius, 0.05f, 0.5f, "%.2f");
+            ImGui::SliderFloat("Halo colour shift", &flare.chromaticShift, 0.0f, 0.05f, "%.3f");
+            ImGui::SliderFloat("Sun glare intensity", &flare.sunGlareIntensity, 0.0f, 4.0f, "%.2f");
+            ImGui::SliderFloat("Sunset boost", &flare.sunsetBoost, 0.0f, 3.0f, "%.2f");
+            ImGui::SliderFloat("Starburst share", &flare.starburst, 0.0f, 1.0f, "%.2f");
             ImGui::Separator();
 
             ImGui::Checkbox("Chromatic aberration", &settings.chromaticAberration.enabled);
@@ -85,11 +103,26 @@ namespace lockstep::debug
             ImGui::Checkbox("Lens dirt", &settings.lensDirt.enabled);
             ImGui::SliderFloat("Dirt intensity", &settings.lensDirt.intensity, 0.0f, 2.0f, "%.2f");
         }
+
+        void drawSurfaceEffects(render::SurfaceEffectSettings& effects)
+        {
+            if (!ImGui::CollapsingHeader("Screens and drip puddles"))
+            {
+                return;
+            }
+
+            ImGui::Checkbox("Animated screens", &effects.screens);
+            ImGui::SliderFloat("Scanlines", &effects.scanlines, 0.0f, 1.0f, "%.2f");
+            ImGui::Checkbox("Drip puddles", &effects.dripPuddles);
+            ImGui::SliderFloat("Ripple slope", &effects.rippleStrength, 0.0f, 2.0f, "%.2f");
+            ImGui::Text("Effect time (Game): %.1f s", static_cast<double>(effects.time));
+        }
     } //namespace
 
     void drawDetailLensSections(render::RenderSettings& settings)
     {
         drawSurfaceDetail(settings.surfaceDetail);
+        drawSurfaceEffects(settings.surfaceEffects);
         drawLens(settings);
     }
 } //namespace lockstep::debug

@@ -25,6 +25,29 @@ namespace game
         constexpr float k_splashLift{0.01f};
         constexpr uint32_t k_maxSplashesPerFrame{24};
         constexpr math::Vec3 k_down{0.0f, -1.0f, 0.0f};
+        constexpr float k_fallSpeed{9.25f};
+        constexpr float k_streakWindShare{0.8f};
+        constexpr float k_fallSeconds{0.7f};
+        constexpr float k_litterUpwind{6.0f};
+        constexpr float k_litterHeight{1.0f};
+        constexpr float k_litterWindShare{0.85f};
+        constexpr float k_litterSink{0.25f};
+        constexpr float k_litterWindEpsilon{0.05f};
+
+        math::Quat rotationFromUp(const math::Vec3& direction)
+        {
+            const math::Vec3 up{0.0f, 1.0f, 0.0f};
+            const math::Vec3 axis = math::cross(up, direction);
+            const float sine = math::length(axis);
+            const float cosine = math::dot(up, direction);
+
+            if (sine < 1e-5f)
+            {
+                return cosine > 0.0f ? math::Quat{} : math::angleAxis(math::k_pi, math::Vec3{1.0f, 0.0f, 0.0f});
+            }
+
+            return math::angleAxis(std::atan2(sine, cosine), axis * (1.0f / sine));
+        }
 
         float unit(RainParticles& rain)
         {
@@ -80,9 +103,11 @@ namespace game
             }
 
             const math::Vec3 lead = cameraLead(rain, frame);
+            const math::Vec3 drift = frame.wind * k_streakWindShare;
+            const math::Vec3 fall = math::normalize(math::Vec3{drift.x, -k_fallSpeed, drift.z});
             particles.setEmitterTransform(*rain.streaks, math::Transform{
-                .position = frame.eye + math::Vec3{0.0f, k_emitterHeight, 0.0f} + lead,
-                .rotation = math::angleAxis(math::k_pi, math::Vec3{1.0f, 0.0f, 0.0f})});
+                .position = frame.eye + math::Vec3{0.0f, k_emitterHeight, 0.0f} + lead - drift * k_fallSeconds,
+                .rotation = rotationFromUp(fall)});
             particles.setEmitterRate(*rain.streaks, frame.streaks);
 
             const render::ParticleEffectDescription* effect = particles.findEffect(ids.rainStreaks);
@@ -132,12 +157,52 @@ namespace game
                     .countScale = 0.6f + 0.8f * unit(rain)}));
             }
         }
+
+        void updateLitter(RainParticles& rain, render::ParticleSystem& particles, const EffectIds& ids,
+            const RainFrame& frame)
+        {
+            if (!rain.litter)
+            {
+                if (auto emitter = particles.createEmitter(ids.litter, math::Transform{}))
+                {
+                    rain.litter = emitter.value();
+                }
+            }
+
+            if (!rain.litter)
+            {
+                return;
+            }
+
+            const float speed = math::length(frame.wind);
+            const math::Vec3 along = speed > 1e-3f ? frame.wind * (1.0f / speed) : math::Vec3{1.0f, 0.0f, 0.0f};
+            particles.setEmitterTransform(*rain.litter, math::Transform{
+                .position = frame.eye - along * k_litterUpwind - math::Vec3{0.0f, k_litterHeight, 0.0f}});
+            particles.setEmitterRate(*rain.litter, frame.litter);
+
+            const render::ParticleEffectDescription* effect = particles.findEffect(ids.litter);
+            const math::Vec3 target = frame.wind * k_litterWindShare;
+
+            if (effect == nullptr || math::length(target - rain.litterWind) < k_litterWindEpsilon)
+            {
+                return;
+            }
+
+            render::ParticleEffectDescription changed = *effect;
+            changed.acceleration = target * changed.drag - math::Vec3{0.0f, k_litterSink * changed.drag, 0.0f};
+
+            if (particles.setEffect(ids.litter, changed))
+            {
+                rain.litterWind = target;
+            }
+        }
     } //namespace
 
     void updateRainParticles(RainParticles& rain, render::ParticleSystem& particles, const EffectIds& ids,
         const RainFrame& frame)
     {
         updateStreaks(rain, particles, ids, frame);
+        updateLitter(rain, particles, ids, frame);
 
         if (frame.splashes > 0.0f)
         {
@@ -147,5 +212,13 @@ namespace game
         {
             rain.splashCarry = 0.0f;
         }
+    }
+
+    void resetRainEmitters(RainParticles& rain)
+    {
+        rain.streaks.reset();
+        rain.litter.reset();
+        rain.streakStretch = -1.0f;
+        rain.litterWind = math::Vec3{0.0f, -1.0f, 0.0f};
     }
 } //namespace game

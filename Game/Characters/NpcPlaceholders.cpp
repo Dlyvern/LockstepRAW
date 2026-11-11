@@ -286,7 +286,7 @@ namespace game
 
             npc.instance.update(model, seconds);
             npc.instance.submit(renderer, model, npc.placement, lockstep::render::k_defaultRenderLayer,
-                gearMask(character.gearMasks, npc.gearLook));
+                gearMask(character.gearMasks, npc.gearLook), npc.stains.surface);
         }
     }
 } //namespace game

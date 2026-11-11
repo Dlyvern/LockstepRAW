@@ -101,7 +101,7 @@ namespace game
             effects.particles->clear();
             effects.markers.clear();
             effects.motes.reset();
-            effects.rain.streaks.reset();
+            resetRainEmitters(effects.rain);
             effects.wasIndoors = false;
             effects.scene = scene;
 
@@ -240,7 +240,9 @@ namespace game
                 .eye = eye,
                 .worldSeconds = worldSeconds,
                 .frameSeconds = frameSeconds,
-                .worldScale = engine.timeDomains.scale(lockstep::world::TimeDomain::World)});
+                .worldScale = engine.timeDomains.scale(lockstep::world::TimeDomain::World),
+                .wind = windVelocity(state.weather.wind),
+                .litter = engine.renderer.graphicsQuality().windDebris ? litterRate(state.weather) : 0.0f});
         }
 
         void spawnImpact(Effects& effects, const SceneLevel* level, const CombatImpact& impact)
@@ -366,7 +368,7 @@ namespace game
         {
             effects.particles->clear();
             effects.motes.reset();
-            effects.rain.streaks.reset();
+            resetRainEmitters(effects.rain);
             effects.scene = nullptr;
         }
 

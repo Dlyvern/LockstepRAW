@@ -6,10 +6,6 @@
 #include <Lockstep/Assets/Scene.hpp>
 #include <Lockstep/Render/Renderer.hpp>
 
-#if LOCKSTEP_DEV_TOOLS
-#include <imgui.h>
-#endif
-
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -28,6 +24,10 @@ namespace game
         constexpr std::string_view k_weatherFlag{"--weather"};
         constexpr std::string_view k_rainMarker{"level_weather_rain"};
         constexpr double k_rippleWrapSeconds{3600.0};
+        constexpr float k_litterMinWind{3.5f};
+        constexpr float k_drillStrikeSeconds{4.0f};
+        constexpr float k_drillFirstStrike{2.0f};
+        constexpr float k_litterFullWind{11.0f};
 
         std::string lowered(std::string_view text)
         {
@@ -151,7 +151,8 @@ namespace game
         return weather.tuning.sound ? rainAmount(weather) : 0.0f;
     }
 
-    void presentWeather(GameState& state, EngineContext& engine, float worldSeconds, float frameSeconds)
+    void presentWeather(GameState& state, EngineContext& engine, const WeatherView& view, float worldSeconds,
+        float frameSeconds)
     {
         Weather& weather = state.weather;
         const lockstep::assets::Scene* scene = state.level ? &state.level->scene : nullptr;
@@ -159,11 +160,49 @@ namespace game
         if (scene != weather.scene)
         {
             pickWeather(weather, scene);
+            weather.lens.drops.clear();
         }
 
         render::RenderSettings& settings = engine.renderer.settings();
         presentLook(weather, settings, frameSeconds);
         presentWetness(weather, settings.wetness, worldSeconds);
+
+        const float rain = rainAmount(weather);
+        updateWind(weather.wind, weather.tuning.wind, rain, worldSeconds);
+        applyWind(weather.wind, settings);
+        updateLightning(weather.lightning, weather.tuning.lightning, rain, settings.clouds.baseHeight, worldSeconds);
+        applyLightning(weather.lightning, weather.tuning.lightning, settings);
+
+        const lockstep::math::Vec2 screen = engine.renderer.screenSize();
+        updateLensDrops(weather.lens, weather.tuning.lens, LensDropFrame{.rain = rain,
+            .eye = view.eye,
+            .forward = view.forward,
+            .wind = windVelocity(weather.wind),
+            .physics = &engine.physics,
+            .interiors = state.combatAudio.interiors,
+            .seconds = view.playerSeconds,
+            .aspectRatio = screen.y > 0.0f ? screen.x / screen.y : 16.0f / 9.0f}, engine.renderer);
+    }
+
+    float litterRate(const Weather& weather)
+    {
+        if (!weather.tuning.litter)
+        {
+            return 0.0f;
+        }
+
+        const float gusting = std::clamp((weather.wind.speed - k_litterMinWind) / (k_litterFullWind - k_litterMinWind),
+            0.0f, 1.0f);
+        return gusting * gusting * std::max(weather.tuning.litterDensity, 0.0f);
+    }
+
+    void startLightningDrill(Weather& weather)
+    {
+        LightningTuning& lightning = weather.tuning.lightning;
+        lightning.minRain = 0.0f;
+        lightning.minSeconds = k_drillStrikeSeconds;
+        lightning.maxSeconds = k_drillStrikeSeconds;
+        weather.lightning.untilStrike = k_drillFirstStrike;
     }
 
     void resetWeatherLook(Weather& weather)
@@ -188,52 +227,4 @@ namespace game
 
         return "clear";
     }
-
-#if LOCKSTEP_DEV_TOOLS
-    void weatherDevSection(Weather& weather)
-    {
-        if (!ImGui::TreeNode("Weather"))
-        {
-            return;
-        }
-
-        bool isRaining = weather.kind == WeatherKind::Rain;
-
-        if (ImGui::Checkbox("Rain", &isRaining))
-        {
-            weather.kind = isRaining ? WeatherKind::Rain : WeatherKind::Clear;
-        }
-
-        WeatherTuning& tuning = weather.tuning;
-        ImGui::SliderFloat("Intensity", &tuning.intensity, 0.0f, 1.0f, "%.2f");
-        ImGui::Text("Wetness %.2f, overcast look %.2f%s", weather.wetness, weather.lookAmount,
-            weather.forced ? " (--weather)" : "");
-        ImGui::Checkbox("Rain streaks", &tuning.particles);
-        ImGui::SameLine();
-        ImGui::Checkbox("Splashes", &tuning.splashes);
-        ImGui::Checkbox("Wet surfaces", &tuning.wetness);
-        ImGui::SameLine();
-        ImGui::Checkbox("Overcast look", &tuning.overcastLook);
-        ImGui::SameLine();
-        ImGui::Checkbox("Sound", &tuning.sound);
-        ImGui::SliderFloat("Streak density", &tuning.streakDensity, 0.0f, 3.0f, "%.2f");
-        ImGui::SliderFloat("Splashes per second", &tuning.splashRate, 0.0f, 600.0f, "%.0f");
-        ImGui::SliderFloat("Soak time (s)", &tuning.soakSeconds, 0.0f, 120.0f, "%.0f");
-        ImGui::SliderFloat("Dry time (s)", &tuning.drySeconds, 0.0f, 600.0f, "%.0f");
-
-        if (ImGui::Button("Soak now"))
-        {
-            weather.wetness = 1.0f;
-        }
-
-        ImGui::SameLine();
-
-        if (ImGui::Button("Dry now"))
-        {
-            weather.wetness = 0.0f;
-        }
-
-        ImGui::TreePop();
-    }
-#endif
 } //namespace game

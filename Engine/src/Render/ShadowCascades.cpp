@@ -13,7 +13,6 @@ namespace lockstep::render
         constexpr math::Vec3 k_fallbackUp{1.0f, 0.0f, 0.0f};
         constexpr float k_parallelThreshold{0.99f};
         constexpr float k_casterReach{150.0f};
-        constexpr float k_spotShadowNear{0.05f};
         constexpr float k_spotShadowFovMargin{1.05f};
         constexpr float k_maxSpotShadowFov{math::radians(170.0f)};
         constexpr float k_faceEdgeTexels{4.0f};
@@ -40,7 +39,7 @@ namespace lockstep::render
             const math::Mat4 view = math::lookAt(position, position + direction, upFor(direction));
 
             ShadowTile result{};
-            result.viewProjection = math::perspective(fov, 1.0f, k_spotShadowNear, range) * view;
+            result.viewProjection = math::perspective(fov, 1.0f, k_localShadowNear, range) * view;
             result.atlasViewProjection = atlasTileTransform(tile) * result.viewProjection;
             result.texelSize = 2.0f * std::tan(fov * 0.5f) / static_cast<float>(shadowTileTexels(tile, atlasWidth));
 

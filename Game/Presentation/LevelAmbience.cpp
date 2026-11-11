@@ -4,6 +4,7 @@
 #include <Lockstep/Render/Lighting.hpp>
 #include <Lockstep/Render/Renderer.hpp>
 
+#include <iostream>
 #include <string_view>
 #include <vector>
 
@@ -32,6 +33,12 @@ namespace game
         }
 
         renderer.setAmbientZones(zones);
+        const render::IrradianceVolume* volume = scene.irradiance ? &*scene.irradiance : nullptr;
+
+        if (auto set = renderer.setIrradianceVolume(volume); !set)
+        {
+            std::clog << "Game: irradiance volume not used: " << set.error().message << '\n';
+        }
 
         return static_cast<uint32_t>(zones.size());
     }

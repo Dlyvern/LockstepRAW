@@ -369,9 +369,11 @@ namespace game
             combatAudioDevSection(state.combatAudio);
             weaponsDevSection(state);
             effectsDevSection(state.effects);
+            dripsDevSection(state.drips);
             weaponFxDevSection(state.weaponFx);
             glassDevSection(state, engine);
             weatherDevSection(state.weather);
+            curtainDevSection(state.curtains);
             lightAnimationDevSection(state.lightAnimation);
             goreDevSection(state, engine);
 

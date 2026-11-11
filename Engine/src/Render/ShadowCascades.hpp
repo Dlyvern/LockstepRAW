@@ -11,6 +11,9 @@
 
 namespace lockstep::render
 {
+    // Near plane of local light shadow projections, in metres.
+    inline constexpr float k_localShadowNear{0.05f};
+
     // Tiles of the shadow atlas: the sun's cascades first, then the local light tiles.
     inline constexpr uint32_t k_sunShadowTiles{k_maxShadowCascades};
     inline constexpr uint32_t k_maxShadowTiles{k_sunShadowTiles + k_maxLocalShadowTiles};

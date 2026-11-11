@@ -1,8 +1,12 @@
 #ifndef LOCKSTEP_GAME_WEATHER_WEATHER_HPP
 #define LOCKSTEP_GAME_WEATHER_WEATHER_HPP
 
+#include "Weather/LensDrops.hpp"
+#include "Weather/Lightning.hpp"
 #include "Weather/RainLook.hpp"
+#include "Weather/Wind.hpp"
 
+#include <Lockstep/Core/Math.hpp>
 #include <Lockstep/Core/Result.hpp>
 
 #include <cstdint>
@@ -45,6 +49,9 @@ namespace game
     // soakSeconds:    World seconds dry surfaces take to soak once rain starts.
     // drySeconds:     World seconds wet surfaces take to dry once it stops.
     // lookSeconds:    seconds the overcast look takes to come and go.
+    // litter:         paper scraps and leaves blowing in the wind outdoors.
+    // litterDensity:  factor on the litter's spawn rate.
+    // wind, lightning, lens: the wind, lightning and lens rain (see their tunings).
     struct WeatherTuning
     {
         float intensity{1.0f};
@@ -58,6 +65,11 @@ namespace game
         float soakSeconds{30.0f};
         float drySeconds{150.0f};
         float lookSeconds{4.0f};
+        bool litter{true};
+        float litterDensity{1.0f};
+        WindTuning wind{};
+        LightningTuning lightning{};
+        LensDropTuning lens{};
     };
 
     // The weather on this machine. Presentation only, never replicated: each machine picks it from
@@ -73,6 +85,9 @@ namespace game
     // lookBase:      the level look's values the overcast look blends from, captured the first time
     //                the overcast look changes after a level or look preset was applied.
     // rippleSeconds: World seconds of the puddle ripple animation.
+    // wind:          the level's wind (foliage, litter, rain, clouds, cloth).
+    // lightning:     strikes, flashes and their thunder.
+    // lens:          rain drops on the camera lens.
     struct Weather
     {
         WeatherKind kind{WeatherKind::Clear};
@@ -84,6 +99,20 @@ namespace game
         float appliedLook{-1.0f};
         std::optional<RainLookBase> lookBase{};
         double rippleSeconds{0.0};
+        Wind wind{};
+        Lightning lightning{};
+        LensDrops lens{};
+    };
+
+    // Where the camera is for the weather this frame.
+    // eye:           camera position.
+    // forward:       unit view direction.
+    // playerSeconds: Player time since the previous frame (the lens drops).
+    struct WeatherView
+    {
+        lockstep::math::Vec3 eye{0.0f, 0.0f, 0.0f};
+        lockstep::math::Vec3 forward{0.0f, 0.0f, -1.0f};
+        float playerSeconds{0.0f};
     };
 
     // Reads `--weather rain|clear` from the command line.
@@ -107,26 +136,39 @@ namespace game
     [[nodiscard]] float rainSoundAmount(const Weather& weather);
 
     // Updates the weather for this frame: picks it again when the level changed, eases wetness and
-    // the overcast look, and writes the wetness and look into the render settings. Call before the
-    // combat audio and the effects run.
+    // the overcast look, blows the wind, strikes lightning, rains on the lens, and writes wetness,
+    // look, wind, clouds and flash into the render settings. Call before the combat audio (thunder)
+    // and the effects (rain, litter) run.
     // state:        the game state (weather, level).
-    // engine:       the engine (render settings).
-    // worldSeconds: World time since the previous frame (bullet-time slows the soaking and ripples).
+    // engine:       the engine (render settings, physics for the lens's roof test).
+    // view:         the camera this frame.
+    // worldSeconds: World time since the previous frame (bullet-time slows the soaking, ripples,
+    //               wind and lightning).
     // frameSeconds: real time since the previous frame (the look fades in real time).
-    void presentWeather(lockstep::app::GameState& state, lockstep::app::EngineContext& engine, float worldSeconds,
-        float frameSeconds);
+    void presentWeather(lockstep::app::GameState& state, lockstep::app::EngineContext& engine, const WeatherView& view,
+        float worldSeconds, float frameSeconds);
+
+    // weather: the weather state.
+    // Returns: the litter spawn rate scale for the current wind (0 in still air or with litter off).
+    [[nodiscard]] float litterRate(const Weather& weather);
 
     // Forgets the captured level look, so the next overcast blend starts from the settings as they
     // are now. Call after applying a look preset.
     // weather: the weather state.
     void resetWeatherLook(Weather& weather);
 
+    // Makes lightning strike every few seconds from the start, in any rain (--dev-lightning-drill,
+    // for captures and timing).
+    // weather: the weather state.
+    void startLightningDrill(Weather& weather);
+
     // weather: a weather kind.
     // Returns: its name ("clear", "rain").
     [[nodiscard]] std::string_view weatherName(WeatherKind weather);
 
 #if LOCKSTEP_DEV_TOOLS
-    // Draws the weather section of the Game dev panel: weather, intensity and switches.
+    // Draws the weather section of the Game dev panel: weather, intensity, switches, wind,
+    // lightning and lens rain.
     // weather: the weather state.
     void weatherDevSection(Weather& weather);
 #endif

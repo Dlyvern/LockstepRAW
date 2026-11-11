@@ -9,8 +9,12 @@ add_executable(LockstepGame
     Breakables/BreakableGlass.cpp
     Breakables/GlassDevTools.cpp
     Breakables/GlassReplication.cpp
+    Cloth/ClothPanel.cpp
+    Cloth/CurtainMesh.cpp
+    Cloth/Curtains.cpp
     Characters/ArmedCrouch.cpp
     Characters/CharacterModel.cpp
+    Characters/CharacterStains.cpp
     Characters/FirstPersonBody.cpp
     Characters/KickPose.cpp
     Characters/GearLooks.cpp
@@ -26,6 +30,9 @@ add_executable(LockstepGame
     Characters/WeaponSway.cpp
     Dialogue/Dialogue.cpp
     Echo/EchoRecording.cpp
+    Effects/BulletHoleLooks.cpp
+    Effects/BulletHoles.cpp
+    Effects/Drips.cpp
     Effects/EffectLibrary.cpp
     Effects/EffectTextures.cpp
     Effects/Effects.cpp
@@ -38,6 +45,7 @@ add_executable(LockstepGame
     Gore/BloodDecals.cpp
     Gore/BloodSpray.cpp
     Gore/BloodTextures.cpp
+    Gore/BodyStainEvents.cpp
     Gore/CorpseHits.cpp
     Gore/Gore.cpp
     Gore/GoreDevPanel.cpp
@@ -67,6 +75,7 @@ add_executable(LockstepGame
     Lights/LightAnimation.cpp
     Lights/LightBuzz.cpp
     Lights/LightPatterns.cpp
+    Lights/Screens.cpp
     Melee/KickEvents.cpp
     Melee/KickPresentation.cpp
     Melee/KickRules.cpp
@@ -114,6 +123,7 @@ add_executable(LockstepGame
     Presentation/LensEffects.cpp
     Presentation/LevelLook.cpp
     Presentation/Lighting.cpp
+    Presentation/MaterialLooks.cpp
     Presentation/MaterialShowcase.cpp
     Presentation/SceneCharacters.cpp
     Presentation/Mirrors.cpp
@@ -162,7 +172,11 @@ add_executable(LockstepGame
     Weapons/WeaponFeedback.cpp
     Weather/RainLook.cpp
     Weather/RainParticles.cpp
+    Weather/LensDrops.cpp
+    Weather/Lightning.cpp
     Weather/Weather.cpp
+    Weather/WeatherDev.cpp
+    Weather/Wind.cpp
 )
 
 target_include_directories(LockstepGame PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

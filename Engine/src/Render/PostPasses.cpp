@@ -3,6 +3,7 @@
 #include "ExposurePasses.hpp"
 #include "FrameAttachments.hpp"
 #include "FramePasses.hpp"
+#include "LensFlare.hpp"
 #include "LensPasses.hpp"
 #include "RenderScale.hpp"
 #include "RendererState.hpp"
@@ -164,15 +165,27 @@ namespace lockstep::render
                 }
             }
 
+            if (auto added = addLensFlarePass(graph, state); !added)
+            {
+                return added;
+            }
+
             for (uint32_t level = k_bloomLevels - 1; level-- > 0;)
             {
                 const std::string_view lower = level + 1 == k_bloomLevels - 1 ? k_bloomDownAttachments[level + 1]
                     : k_bloomUpAttachments[level + 1];
                 const bool carriesExposure = level == 0;
+                std::vector<std::string> inputs{std::string(lower), std::string(k_bloomDownAttachments[level]),
+                    std::string(k_exposureAttachment)};
 
-                if (auto added = addPass(graph, state, k_bloomUpShader,
+                if (carriesExposure)
+                {
+                    inputs.emplace_back(k_lensFlareAttachment);
+                }
+
+                if (auto added = addPass(graph, state, carriesExposure ? k_bloomUpFlareShader : k_bloomUpShader,
                     colorSlot(k_bloomUpAttachments[level], k_sceneColorFormat, bloomScale(level), 0.0f),
-                    {std::string(lower), std::string(k_bloomDownAttachments[level]), std::string(k_exposureAttachment)},
+                    inputs,
                     [&state, carriesExposure](vela::graphics::PassRecorder& recorder)
                     {
                         const AutoExposureSettings& exposure = state.settings.autoExposure;

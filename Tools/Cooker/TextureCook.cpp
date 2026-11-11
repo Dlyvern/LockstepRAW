@@ -177,6 +177,50 @@ namespace lockstep::cooker
             return texels > 0 ? static_cast<double>(passing) / static_cast<double>(texels) : 0.0;
         }
 
+        TextureMean meanOf(std::span<const uint8_t> rgba, TextureUsage usage, float alphaCutoff)
+        {
+            std::array<double, 256> toLinear{};
+
+            for (std::size_t value = 0; value < toLinear.size(); ++value)
+            {
+                const double unit = static_cast<double>(value) / 255.0;
+                toLinear[value] = usage != TextureUsage::Colour ? unit
+                    : unit <= 0.04045 ? unit / 12.92 : std::pow((unit + 0.055) / 1.055, 2.4);
+            }
+
+            const float cutoff = alphaCutoff > 0.0f ? std::clamp(alphaCutoff, 1.0f / 255.0f, 1.0f) * 255.0f : 0.0f;
+            const std::size_t texels = rgba.size() / k_channels;
+            std::array<double, 3> sum{};
+            std::size_t passing = 0;
+
+            for (std::size_t texel = 0; texel < texels; ++texel)
+            {
+                const uint8_t* value = rgba.data() + texel * k_channels;
+
+                if (static_cast<float>(value[3]) < cutoff)
+                {
+                    continue;
+                }
+
+                ++passing;
+
+                for (std::size_t channel = 0; channel < sum.size(); ++channel)
+                {
+                    sum[channel] += toLinear[value[channel]];
+                }
+            }
+
+            if (passing == 0)
+            {
+                return TextureMean{.colour = {0.0f, 0.0f, 0.0f}, .coverage = 0.0f};
+            }
+
+            const auto count = static_cast<double>(passing);
+
+            return TextureMean{.colour = {static_cast<float>(sum[0] / count), static_cast<float>(sum[1] / count),
+                static_cast<float>(sum[2] / count)}, .coverage = static_cast<float>(count / static_cast<double>(texels))};
+        }
+
         void preserveAlphaCoverage(std::vector<std::vector<uint8_t>>& levels, float alphaCutoff)
         {
             constexpr int k_searchSteps{16};
@@ -261,6 +305,7 @@ namespace lockstep::cooker
             }
         }
 
+        const TextureMean mean = meanOf(base, usage, usage == TextureUsage::Colour ? alphaCutoff : -1.0f);
         std::vector<std::vector<uint8_t>> levels = mipChain(base, source.width, source.height, usage);
 
         if (usage == TextureUsage::Colour && alphaCutoff > 0.0f)
@@ -272,6 +317,7 @@ namespace lockstep::cooker
         cooked.format = cookedFormat(usage);
         cooked.sourceWidth = source.width;
         cooked.sourceHeight = source.height;
+        cooked.mean = mean;
         uint32_t topLevel = 0;
 
         while (topLevel + 1 < levels.size()

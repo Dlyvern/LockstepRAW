@@ -234,6 +234,11 @@ namespace game
                 }
 
                 assets::releaseScene(engine.renderer, engine.physics, state.level->scene, state.level->collision);
+
+                if (auto cleared = engine.renderer.setIrradianceVolume(nullptr); !cleared)
+                {
+                    std::clog << "Game: irradiance volume not cleared: " << cleared.error().message << '\n';
+                }
             }
 
             state.room.reset();

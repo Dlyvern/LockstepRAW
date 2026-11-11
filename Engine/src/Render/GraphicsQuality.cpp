@@ -48,14 +48,34 @@ namespace lockstep::render
                 .parallax = false,
                 .parallaxLocalShadows = false,
                 .surfaceDetail = false,
+                .skinScattering = false,
+                .fabricSheen = false,
+                .characterSurfaces = true,
+                .decalRelief = false,
+                .tubeLights = false,
+                .lightProfiles = false,
+                .softShadows = false,
+                .irradianceVolume = true,
+                .shadowCasterTexels = 4.0f,
                 .motionBlur = false,
                 .depthOfField = false,
                 .lensEffects = false,
                 .bloom = true,
+                .lensFlares = false,
+                .bokeh = false,
                 .planarReflections = true,
                 .reflectionResolution = 0.5f,
                 .scopeResolution = 256,
-                .particleBudget = 5000};
+                .particleBudget = 5000,
+                .decalBudget = 48,
+                .screenLights = 1,
+                .waterRipples = false,
+                .volumetricClouds = false,
+                .lensRain = true,
+                .lightningShadows = false,
+                .foliageWind = false,
+                .windDebris = false,
+                .cloth = false};
         }
 
         GraphicsQuality mediumQuality()
@@ -79,14 +99,34 @@ namespace lockstep::render
                 .parallax = true,
                 .parallaxLocalShadows = false,
                 .surfaceDetail = true,
+                .skinScattering = true,
+                .fabricSheen = true,
+                .characterSurfaces = true,
+                .decalRelief = true,
+                .tubeLights = true,
+                .lightProfiles = true,
+                .softShadows = false,
+                .irradianceVolume = true,
+                .shadowCasterTexels = 3.0f,
                 .motionBlur = true,
                 .depthOfField = true,
                 .lensEffects = true,
                 .bloom = true,
+                .lensFlares = true,
+                .bokeh = true,
                 .planarReflections = true,
                 .reflectionResolution = 0.75f,
                 .scopeResolution = 512,
-                .particleBudget = 10000};
+                .particleBudget = 10000,
+                .decalBudget = 96,
+                .screenLights = 2,
+                .waterRipples = true,
+                .volumetricClouds = true,
+                .lensRain = true,
+                .lightningShadows = true,
+                .foliageWind = true,
+                .windDebris = true,
+                .cloth = true};
         }
 
         GraphicsQuality ultraQuality()
@@ -110,14 +150,28 @@ namespace lockstep::render
                 .parallax = true,
                 .parallaxLocalShadows = true,
                 .surfaceDetail = true,
+                .skinScattering = true,
+                .fabricSheen = true,
+                .characterSurfaces = true,
+                .decalRelief = true,
+                .tubeLights = true,
+                .lightProfiles = true,
+                .softShadows = true,
+                .irradianceVolume = true,
+                .shadowCasterTexels = 1.0f,
                 .motionBlur = true,
                 .depthOfField = true,
                 .lensEffects = true,
                 .bloom = true,
+                .lensFlares = true,
+                .bokeh = true,
                 .planarReflections = true,
                 .reflectionResolution = 1.5f,
                 .scopeResolution = 1024,
-                .particleBudget = 20000};
+                .particleBudget = 20000,
+                .decalBudget = 320,
+                .screenLights = 6,
+                .waterRipples = true};
         }
 
         void limitIndirectLighting(RenderSettings& settings, const GraphicsQuality& quality)
@@ -142,6 +196,21 @@ namespace lockstep::render
             fog.maxLights = std::min(fog.maxLights, quality.volumetricFogLights);
         }
 
+        void limitLightingFeatures(RenderSettings& settings, const GraphicsQuality& quality)
+        {
+            settings.lightShapes.tubeLights = settings.lightShapes.tubeLights && quality.tubeLights;
+            settings.lightShapes.profiles = settings.lightShapes.profiles && quality.lightProfiles;
+
+            SoftShadowSettings& soft = settings.softShadows;
+            soft.enabled = soft.enabled && quality.softShadows;
+            soft.blockerTaps = scaledSteps(soft.blockerTaps, quality.effectSteps, 4, 32);
+            soft.filterTaps = scaledSteps(soft.filterTaps, quality.effectSteps, 4, 32);
+
+            settings.irradianceVolume.enabled = settings.irradianceVolume.enabled && quality.irradianceVolume;
+            settings.shadowDetail.minCasterTexels = std::max(settings.shadowDetail.minCasterTexels,
+                quality.shadowCasterTexels);
+        }
+
         void limitSurfacesAndLens(RenderSettings& settings, const GraphicsQuality& quality)
         {
             SurfaceDetailSettings& detail = settings.surfaceDetail;
@@ -153,6 +222,12 @@ namespace lockstep::render
                 detail.parallaxMinSteps, 64);
             detail.detail = detail.detail && quality.surfaceDetail;
 
+            MaterialShadingSettings& materials = settings.materials;
+            materials.skin = materials.skin && quality.skinScattering;
+            materials.fabricSheen = materials.fabricSheen && quality.fabricSheen;
+            materials.characterSurfaces = materials.characterSurfaces && quality.characterSurfaces;
+            materials.decalRelief = materials.decalRelief && quality.decalRelief;
+
             settings.motionBlur.enabled = settings.motionBlur.enabled && quality.motionBlur;
             settings.motionBlur.samples = scaledSteps(settings.motionBlur.samples, quality.effectSteps, 4, 16);
             settings.depthOfField.enabled = settings.depthOfField.enabled && quality.depthOfField;
@@ -160,6 +235,24 @@ namespace lockstep::render
             settings.chromaticAberration.enabled = settings.chromaticAberration.enabled && quality.lensEffects;
             settings.lensDirt.enabled = settings.lensDirt.enabled && quality.lensEffects;
             settings.bloom.enabled = settings.bloom.enabled && quality.bloom;
+            settings.lensFlare.enabled = settings.lensFlare.enabled && quality.lensFlares;
+            settings.lensFlare.sunGlare = settings.lensFlare.sunGlare && quality.lensFlares;
+
+            if (!quality.bokeh)
+            {
+                settings.depthOfField.apertureBlades = 0;
+                settings.depthOfField.bokehHighlights = 0.0f;
+            }
+        }
+
+        void limitAtmosphere(RenderSettings& settings, const GraphicsQuality& quality)
+        {
+            CloudSettings& clouds = settings.clouds;
+            clouds.volumetric = clouds.volumetric && quality.volumetricClouds;
+            clouds.steps = scaledSteps(clouds.steps, quality.effectSteps, 8, 64);
+            settings.lensRain.enabled = settings.lensRain.enabled && quality.lensRain;
+            settings.lightning.castsShadows = settings.lightning.castsShadows && quality.lightningShadows;
+            settings.wind.enabled = settings.wind.enabled && quality.foliageWind;
         }
     } //namespace
 
@@ -244,11 +337,13 @@ namespace lockstep::render
         clamped.volumetricFogLights = std::min(quality.volumetricFogLights, k_maxVolumetricFogLights);
         clamped.volumetricFogResolution = std::clamp(quality.volumetricFogResolution, k_minResolutionMultiplier,
             k_maxResolutionMultiplier);
+        clamped.shadowCasterTexels = std::clamp(quality.shadowCasterTexels, 0.0f, 16.0f);
         clamped.effectSteps = std::clamp(quality.effectSteps, k_minEffectSteps, k_maxEffectSteps);
         clamped.reflectionResolution = std::clamp(quality.reflectionResolution, k_minResolutionMultiplier,
             k_maxResolutionMultiplier);
         clamped.scopeResolution = std::clamp(quality.scopeResolution, k_minScopeResolution, k_maxScopeResolution);
         clamped.particleBudget = std::clamp(quality.particleBudget, k_minParticleBudget, k_maxParticleBudget);
+        clamped.screenLights = std::min(quality.screenLights, k_maxScreenLights);
         clamped.frameRateLimit = quality.frameRateLimit == 0 ? 0
             : std::clamp(quality.frameRateLimit, k_minFrameRateLimit, k_maxFrameRateLimit);
 
@@ -270,6 +365,8 @@ namespace lockstep::render
         settings.scope.resolution = std::min(settings.scope.resolution, quality.scopeResolution);
         limitIndirectLighting(settings, quality);
         limitSurfacesAndLens(settings, quality);
+        limitLightingFeatures(settings, quality);
+        limitAtmosphere(settings, quality);
 
         return settings;
     }

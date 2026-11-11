@@ -3,6 +3,7 @@
 
 #include "Lights/LightBuzz.hpp"
 #include "Lights/LightPatterns.hpp"
+#include "Lights/Screens.hpp"
 #include "Presentation/LevelLights.hpp"
 
 #include <Lockstep/Core/Math.hpp>
@@ -72,6 +73,8 @@ namespace game
     // lights:      the level's animated lights.
     // lamps:       emissive meshes driven by them.
     // overrides:   per scene light, this frame's change, handed to submitLevelLights().
+    // screens:     the level's glowing screens (their lights are submitted first and keep their
+    //              slots; GraphicsQuality::screenLights caps them).
     struct LightAnimation
     {
         LightAnimationSettings settings{};
@@ -83,6 +86,7 @@ namespace game
         std::vector<AnimatedLight> lights{};
         std::vector<LampLink> lamps{};
         std::vector<LightOverride> overrides{};
+        LevelScreens screens{};
     };
 
     // Animates the level's tagged lights, submits the level lights (see submitLevelLights()), sets

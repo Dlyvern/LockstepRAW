@@ -24,7 +24,7 @@ layout(push_constant) uniform OutputConstants
     float dither;
     uint frameIndex;
     float sharpness;
-    vec2 padding;
+    vec2 bokeh;
     vec4 grain;
     vec4 motionBlur;
     vec4 depthOfField;
